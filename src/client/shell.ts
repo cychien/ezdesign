@@ -1340,7 +1340,7 @@ function toggleShown(id: string): void {
     // positioned card with no left/top yet sits at the canvas origin, and a
     // paint slipping in there would flash a blank frame over the first card.
     const holder = document.createDocumentFragment()
-    const frame = mountFrame(id, device, holder, deviceLabel(device))
+    const frame = mountFrame(id, device, holder)
     const placed = planCanvas(canvasLayout(), canvasMetrics()).cards.find((c) => c.id === id)
     if (placed) {
       frame.card.style.left = `${placed.x}px`
@@ -1380,6 +1380,7 @@ interface Frame {
   id: string
   /** Label and screen together - what the canvas lays out as one item. */
   card: HTMLElement
+  head: HTMLElement
   /** Laid out at the scaled size, so the stage lays frames out in the space
    *  they actually occupy. Everything the scale would blur - the card's shadow,
    *  its rounded corners - belongs on this one, not on the wrap it scales. */
@@ -1476,25 +1477,31 @@ function paintPage(): void {
   document.title = `ezdesign · ${nav.url}`
 }
 
-function mountFrame(id: string, device: Device, into: ParentNode, label: string): Frame {
+function mountFrame(id: string, device: Device, into: ParentNode): Frame {
   const card = h('div', 'ez-card')
-  const head = h('div', 'ez-card-head', label)
+  const head = h('div', 'ez-card-head')
   head.title = '拖曳調整排列'
   const box = h('div', 'ez-screen')
   const wrap = h('div', 'ez-frame-wrap')
   const iframe = h('iframe', 'ez-frame')
   iframe.src = nav.url
-  iframe.title = label
   wrap.appendChild(iframe)
   box.appendChild(wrap)
   card.append(head, box)
   into.appendChild(card)
   // Zoom starts at 0 rather than 1 so the first paint always announces itself
   // to the overlay, whatever it settles on.
-  const frame: Frame = { id, card, box, wrap, iframe, device, zoom: 0 }
+  const frame: Frame = { id, card, head, box, wrap, iframe, device, zoom: 0 }
+  labelFrame(frame, device)
   frames.set(id, frame)
   head.addEventListener('pointerdown', (e) => beginCardDrag(e, frame))
   return frame
+}
+
+function labelFrame(frame: Frame, device: Device): void {
+  const label = deviceLabel(device)
+  frame.head.textContent = label
+  frame.iframe.title = label
 }
 
 /** The frame a message came from, or null for anything else that posted at us -
@@ -1550,6 +1557,7 @@ function paintFrame(
   // Only on a real change: this runs on every pointer move of a sidebar drag,
   // and the overlay counter-scales its own chrome off the back of it.
   if (frame.device.id !== device.id || frame.zoom !== applied) {
+    if (frame.device.id !== device.id) labelFrame(frame, device)
     frame.device = device
     frame.zoom = applied
     toFrame(frame.id, {
@@ -1645,11 +1653,11 @@ function rebuildStage(): void {
   frames.clear()
   if (multi) {
     for (const row of canvasLayout()) {
-      for (const d of row) mountFrame(d.id, d, canvas, deviceLabel(d))
+      for (const d of row) mountFrame(d.id, d, canvas)
     }
   } else {
     const device = deviceById(deviceId)
-    mountFrame(SINGLE, device, canvas, deviceLabel(device))
+    mountFrame(SINGLE, device, canvas)
   }
   paintFrames()
 }
