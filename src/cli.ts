@@ -327,10 +327,17 @@ async function cmdLogin(args: string[]): Promise<void> {
       },
     })
     const rl = createInterface({ input: process.stdin, output, terminal: true })
+    // Raw mode reads Ctrl+C as a key; end the way the terminal would have.
+    rl.on('SIGINT', () => {
+      rl.close()
+      process.stdout.write('\n')
+      process.kill(process.pid, 'SIGINT')
+    })
     try {
       const answer = rl.question('inspiration token: ')
       echo = false
-      token = (await answer).trim()
+      // Rejects only when Ctrl+D closes the prompt: no token.
+      token = (await answer.catch(() => '')).trim()
     } finally {
       rl.close()
       process.stdout.write('\n')
