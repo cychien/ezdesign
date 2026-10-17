@@ -1,7 +1,6 @@
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 
-/** Rename checklist: package.json name+bin, this file, skills/<name>/, README. */
 export const PKG_NAME = 'ezdesign'
 export const URL_PREFIX = '/__ezdesign'
 const ENV_PREFIX = PKG_NAME.toUpperCase()
