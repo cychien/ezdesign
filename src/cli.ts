@@ -319,11 +319,22 @@ async function cmdLogin(args: string[]): Promise<void> {
       fail('no token given', `run \`${PKG_NAME} login --token <token>\` when there is no terminal`)
     }
     const { createInterface } = await import('node:readline/promises')
-    const rl = createInterface({ input: process.stdin, output: process.stdout })
+    const { Writable } = await import('node:stream')
+    let echo = true
+    const output = new Writable({
+      write(chunk, _encoding, done) {
+        if (echo) process.stdout.write(chunk)
+        done()
+      },
+    })
+    const rl = createInterface({ input: process.stdin, output, terminal: true })
     try {
-      token = (await rl.question('inspiration token: ')).trim()
+      const answer = rl.question('inspiration token: ')
+      echo = false
+      token = (await answer).trim()
     } finally {
       rl.close()
+      process.stdout.write('\n')
     }
   }
   if (!token) fail('no token given')
