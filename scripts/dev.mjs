@@ -7,12 +7,16 @@ import { targets, watchAll } from './build.mjs'
 import {
   CLI,
   DEV_AGENT,
-  DEV_CONTROL_PORT,
   DEV_DATA_DIR,
   FIXTURE_ROOT,
-  TARGET_FILE,
+  STATE_FILE,
+  claimDevPorts,
+  commandOf,
   delay,
+  devControlPort,
   devEnv,
+  ownDaemon,
+  registeredDaemon,
   runCli,
 } from './dev-env.mjs'
 
@@ -25,22 +29,6 @@ let daemon = null
 let disposeWatch = null
 let vite = null
 
-/** A daemon that finds a live one in its control range writes the registry and
- *  exits 0 instead of serving. Restarting into that is an infinite loop, so an
- *  unexpected exit is only ever retried when the port is genuinely free. */
-async function daemonOnPort() {
-  try {
-    const res = await fetch(`http://127.0.0.1:${DEV_CONTROL_PORT}/control/health`, {
-      signal: AbortSignal.timeout(800),
-    })
-    if (!res.ok) return null
-    const body = await res.json()
-    return body?.service === 'ezdesign' ? body : null
-  } catch {
-    return null
-  }
-}
-
 /** A daemon that keeps crashing is almost always the edit under test, and a 4Hz
  *  respawn loop buries the stack trace that says so. Give up after this many
  *  crashes inside the window and wait for the next save to try again. */
@@ -50,16 +38,18 @@ let crashTimes = []
 
 function startDaemon() {
   daemon = spawn(process.execPath, [CLI, '__daemon'], {
-    env: devEnv,
+    env: devEnv(),
     stdio: ['ignore', 'inherit', 'inherit'],
   })
   const child = daemon
   child.on('exit', async (code) => {
     if (shuttingDown || child !== daemon) return
-    const squatter = await daemonOnPort()
+    // A daemon that finds a live one in its control range registers that one and
+    // exits 0 instead of serving. Restarting into that is an infinite loop.
+    const squatter = await registeredDaemon()
     if (squatter) {
-      warn(`daemon exited (${code}) - 127.0.0.1:${DEV_CONTROL_PORT} is held by pid ${squatter.pid}`)
-      warn('stop it with `npm run dev:cli stop`, then re-run `npm run dev`')
+      warn(`daemon exited (${code}) - its control range is held by pid ${squatter.pid}`)
+      warn('re-run `npm run dev` to move to a free one')
       await shutdown()
       return
     }
@@ -78,21 +68,36 @@ function startDaemon() {
   })
 }
 
-/** `npm run dev` must be idempotent after a hard kill: the dev control port is
- *  dev mode's alone, so anything still on it is our own orphan to clear. */
+function alive(pid) {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch {
+    return false
+  }
+}
+
+/** `npm run dev` must be idempotent after a hard kill, so this checkout's
+ *  orphaned daemon is cleared. Only ever this checkout's: other checkouts run
+ *  their own, and a daemon this one cannot prove is its own is left alone. */
 async function clearStrayDaemon() {
-  const stray = await daemonOnPort()
-  if (!stray) return
-  warn(`clearing an orphaned dev daemon on ${DEV_CONTROL_PORT} (pid ${stray.pid})`)
-  await fetch(`http://127.0.0.1:${DEV_CONTROL_PORT}/control/stop`, { method: 'POST' }).catch(
-    () => {},
-  )
+  const registered = await registeredDaemon()
+  if (!registered) return
+  const stray = await ownDaemon()
+  if (!stray) {
+    warn(
+      `leaving pid ${registered.pid} alone - not this checkout's daemon: ${commandOf(registered.pid)}`,
+    )
+    return
+  }
+  warn(`clearing an orphaned dev daemon on ${stray.port} (pid ${stray.pid})`)
+  await fetch(`http://127.0.0.1:${stray.port}/control/stop`, { method: 'POST' }).catch(() => {})
   const deadline = Date.now() + 5000
   while (Date.now() < deadline) {
-    if (!(await daemonOnPort())) return
+    if (!alive(stray.pid)) return
     await delay(150)
   }
-  throw new Error(`could not clear the daemon on ${DEV_CONTROL_PORT} (pid ${stray.pid})`)
+  throw new Error(`could not clear the daemon on ${stray.port} (pid ${stray.pid})`)
 }
 
 /** Resolves true once the daemon we just spawned is the one answering - matching
@@ -104,18 +109,12 @@ async function waitForDaemon(timeoutMs = 10_000) {
   const deadline = Date.now() + timeoutMs
   while (Date.now() < deadline) {
     if (!daemon) return false
-    try {
-      const res = await fetch(`http://127.0.0.1:${DEV_CONTROL_PORT}/control/health`, {
-        signal: AbortSignal.timeout(1000),
-      })
-      const body = res.ok ? await res.json() : null
-      if (body?.ok && body.pid === daemon?.pid) return true
-    } catch {
-      /* not up yet */
-    }
+    if ((await registeredDaemon())?.pid === daemon?.pid) return true
     await delay(150)
   }
-  throw new Error(`dev daemon did not come up on 127.0.0.1:${DEV_CONTROL_PORT}`)
+  throw new Error(
+    `dev daemon did not come up on 127.0.0.1:${devControlPort()}-${devControlPort() + 9}`,
+  )
 }
 
 /** Resolves once the child is really gone. SIGTERM alone is not enough: a daemon
@@ -198,9 +197,13 @@ disposeWatch = await watchAll((group, outfile, result) => {
 await firstBuild
 log('watching src/')
 
+await clearStrayDaemon()
+const { controlPort, fixturePort } = await claimDevPorts()
+
 vite = await createServer({
   root: FIXTURE_ROOT,
   configFile: join(FIXTURE_ROOT, noPlugin ? 'vite.noplugin.config.ts' : 'vite.config.ts'),
+  server: { port: fixturePort, strictPort: true },
 })
 await vite.listen()
 const targetUrl = vite.resolvedUrls?.local?.[0]
@@ -208,9 +211,8 @@ if (!targetUrl) throw new Error('vite did not report a local url')
 log(`fixture on ${targetUrl}${noPlugin ? ' (no ezdesignSource - anchors have no source)' : ''}`)
 
 mkdirSync(DEV_DATA_DIR, { recursive: true })
-writeFileSync(TARGET_FILE, JSON.stringify({ url: targetUrl }, null, 2))
+writeFileSync(STATE_FILE, JSON.stringify({ url: targetUrl, controlPort, fixturePort }, null, 2))
 
-await clearStrayDaemon()
 startDaemon()
 if (!(await waitForDaemon())) throw new Error('dev daemon gave up during startup')
 // ACP, always. Poll mode is deprecated, and a first run with no session to
