@@ -9,7 +9,7 @@ import { projectRoot } from './project-root.js'
  * 'vite' so the emitted d.ts never pins a Vite major — the object is
  * assignable to Plugin in every Vite version that has these hooks (5+).
  */
-export interface ReviewkitSourcePlugin {
+export interface EzdesignSourcePlugin {
   name: string
   apply: 'serve'
   enforce: 'pre'
@@ -48,7 +48,7 @@ function walk(node: BabelNode, visit: (node: BabelNode) => void): void {
  * Relative to the *project*, not to Vite's root: the path is for the agent to
  * open, and the agent stands where the CLI was run - see `projectRoot`.
  */
-export function ezdesignSource(): ReviewkitSourcePlugin {
+export function ezdesignSource(): EzdesignSourcePlugin {
   let root = projectRoot(process.cwd())
   return {
     name: 'ezdesign:source',
