@@ -5,7 +5,7 @@ with an ACP agent, then let that agent own the feedback loop. It receives each a
 edits the source, and streams its work, questions, permission prompts, and replies into the review
 shell while the app's HMR updates the page in place.
 
-You do not need ezdesign installed globally. Invoke it as `npx -y ezdesign@latest ...`.
+You do not need ezdesign installed globally. Invoke it as `npx -y @cychien/ezdesign@latest ...`.
 
 ## When to use
 
@@ -32,13 +32,13 @@ the user did not provide an ACP command, ask them which ACP agent to use.
 2. From the project root, run:
 
    ```sh
-   npx -y ezdesign@latest <url> --agent <profile>
+   npx -y @cychien/ezdesign@latest <url> --agent <profile>
    ```
 
    Use the full URL of the page to review, for example:
 
    ```sh
-   npx -y ezdesign@latest http://localhost:5173/pricing --agent codex
+   npx -y @cychien/ezdesign@latest http://localhost:5173/pricing --agent codex
    ```
 
    The working directory matters because the session and spawned agent are scoped to that project.
@@ -68,7 +68,7 @@ Projects using Vite get exact `file:line` anchors by adding the bundled plugin:
 
 ```ts
 // vite.config.ts
-import { ezdesignSource } from 'ezdesign/vite'
+import { ezdesignSource } from '@cychien/ezdesign/vite'
 // plugins: [ezdesignSource(), ...]
 ```
 

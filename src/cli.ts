@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url'
 import open, { apps } from 'open'
 import {
   DEFAULT_CONTROL_PORT,
-  PKG_NAME,
+  APP_NAME,
   POLL_RETRIES,
   URL_PREFIX,
   assertControlPortEnv,
@@ -36,39 +36,39 @@ const pkg = JSON.parse(readFileSync(join(dirname(cliEntry), '../package.json'), 
   version: string
 }
 
-const HELP = `${PKG_NAME} - annotate your live dev app, feedback flows to your local agent
+const HELP = `${APP_NAME} - annotate your live dev app, feedback flows to your local agent
 
 Usage:
-  ${PKG_NAME} <url> [--reopen] [--agent <name|command>]
+  ${APP_NAME} <url> [--reopen] [--agent <name|command>]
       open (or resume) a review session for a dev server.
       --agent (SPIKE) drives the agent over ACP: the session spawns it, feedback
       goes straight to it, and its stream, questions and permission prompts all
       surface in the review shell - no terminal needed. Profiles: claude, gemini,
       codex; anything else is run as an ACP agent command line.
-  ${PKG_NAME} poll <url> [--agent-reply <msg>]
+  ${APP_NAME} poll <url> [--agent-reply <msg>]
       block until the user sends feedback; prints JSON, then exits
-  ${PKG_NAME} progress <url> <msg>
+  ${APP_NAME} progress <url> <msg>
       update the "working on it" line in the review shell; send between edits
-  ${PKG_NAME} end <url>
+  ${APP_NAME} end <url>
       end the session as the agent
-  ${PKG_NAME} status | stop
+  ${APP_NAME} status | stop
       show session status / stop the background daemon
-  ${PKG_NAME} login [--token <t>] | logout
+  ${APP_NAME} login [--token <t>] | logout
       store (or forget) the inspiration database token, mode 600 in the data dir
-  ${PKG_NAME} inspire [--query "<text>"] [--tag a,b] [--limit n] [--json]
+  ${APP_NAME} inspire [--query "<text>"] [--tag a,b] [--limit n] [--json]
       search the inspiration database by a description of what the piece has to
       show, by tags, or both. Each result's images and code are cached locally
       and printed as paths
-  ${PKG_NAME} --version | --help
+  ${APP_NAME} --version | --help
 
 Environment:
-  ${PKG_NAME.toUpperCase()}_DATA_DIR       session state, daemon registry and log (default: ~/.${PKG_NAME})
-  ${PKG_NAME.toUpperCase()}_CONTROL_PORT   first port of the daemon's ten-port control range (default: ${DEFAULT_CONTROL_PORT})
+  ${APP_NAME.toUpperCase()}_DATA_DIR       session state, daemon registry and log (default: ~/.${APP_NAME})
+  ${APP_NAME.toUpperCase()}_CONTROL_PORT   first port of the daemon's ten-port control range (default: ${DEFAULT_CONTROL_PORT})
       Set both to run an isolated second instance: a starting daemon adopts any
       live daemon inside its own control range, so a separate data dir alone
       still lands you on the shared one.
-  ${PKG_NAME.toUpperCase()}_NO_UPDATE_CHECK=1  never ask the npm registry whether a newer version exists
-  ${PKG_NAME.toUpperCase()}_INSPIRE_URL    inspiration API base (default: ${DEFAULT_INSPIRE_URL})
+  ${APP_NAME.toUpperCase()}_NO_UPDATE_CHECK=1  never ask the npm registry whether a newer version exists
+  ${APP_NAME.toUpperCase()}_INSPIRE_URL    inspiration API base (default: ${DEFAULT_INSPIRE_URL})
 
 A restarted daemon picks its sessions back up from disk and re-binds each to the
 port it last held, so an open review shell only needs a reload and queued
@@ -79,8 +79,8 @@ package.json), not to the url alone, so two projects sharing a dev-server port
 never see each other's review.
 
 Examples:
-  ${PKG_NAME} http://localhost:5173/
-  ${PKG_NAME} poll http://localhost:5173/ --agent-reply "改好了 hero 區塊，請再看一次"
+  ${APP_NAME} http://localhost:5173/
+  ${APP_NAME} poll http://localhost:5173/ --agent-reply "改好了 hero 區塊，請再看一次"
 `
 
 function fail(message: string, hint?: string): never {
@@ -90,7 +90,7 @@ function fail(message: string, hint?: string): never {
 }
 
 function parseTarget(raw: string | undefined): URL {
-  if (!raw) fail('missing <url>', `e.g. ${PKG_NAME} http://localhost:5173/`)
+  if (!raw) fail('missing <url>', `e.g. ${APP_NAME} http://localhost:5173/`)
   try {
     const url = new URL(raw.includes('://') ? raw : `http://${raw}`)
     if (!['http:', 'https:'].includes(url.protocol)) throw new Error()
@@ -125,7 +125,7 @@ async function failOnVersionSkew(res: Response): Promise<void> {
 async function findSessionPort(target: URL, opts?: { quiet?: boolean }): Promise<number> {
   const bail = (message: string): number => {
     if (opts?.quiet) return 0
-    fail(message, `run \`${PKG_NAME} ${target.href}\` first to open a session`)
+    fail(message, `run \`${APP_NAME} ${target.href}\` first to open a session`)
   }
   const daemon = await findRunningDaemon()
   if (!daemon) return bail('daemon is not running')
@@ -196,7 +196,7 @@ async function cmdOpen(
   if (body.agent) {
     console.log(`agent:   ${body.agent} (ACP) - review runs in the shell`)
   } else {
-    console.log(`next:    run \`${PKG_NAME} poll ${target.origin}/\` and wait for feedback`)
+    console.log(`next:    run \`${APP_NAME} poll ${target.origin}/\` and wait for feedback`)
   }
 }
 
@@ -226,7 +226,7 @@ async function cmdPoll(rawUrl: string | undefined, reply: string | undefined): P
       if (++attempt > POLL_RETRIES) {
         fail(
           'lost connection to the daemon',
-          `re-run \`${PKG_NAME} poll ${target.origin}/\` — queued feedback is never lost`,
+          `re-run \`${APP_NAME} poll ${target.origin}/\` - queued feedback is never lost`,
         )
       }
       await new Promise((r) => setTimeout(r, Math.min(4000, 400 * 2 ** (attempt - 1))))
@@ -249,7 +249,7 @@ async function cmdPoll(rawUrl: string | undefined, reply: string | undefined): P
 }
 
 async function cmdProgress(rawUrl: string | undefined, message: string | undefined): Promise<void> {
-  if (!message?.trim()) fail('missing <message>', `e.g. ${PKG_NAME} progress <url> "adjusting the hero spacing"`)
+  if (!message?.trim()) fail('missing <message>', `e.g. ${APP_NAME} progress <url> "adjusting the hero spacing"`)
   const target = parseTarget(rawUrl)
   const port = await findSessionPort(target)
   const res = await fetch(sessionApi(port, '/agent/progress'), {
@@ -316,7 +316,7 @@ async function cmdLogin(args: string[]): Promise<void> {
   let token = args[at + 1]?.trim()
   if (!token) {
     if (!process.stdin.isTTY) {
-      fail('no token given', `run \`${PKG_NAME} login --token <token>\` when there is no terminal`)
+      fail('no token given', `run \`${APP_NAME} login --token <token>\` when there is no terminal`)
     }
     const { createInterface } = await import('node:readline/promises')
     const { Writable } = await import('node:stream')
@@ -349,10 +349,10 @@ function cmdLogout(): void {
 async function cmdInspire(args: string[]): Promise<void> {
   const query = parseSearchArgs(args)
   if ('error' in query) {
-    fail(query.error, `e.g. ${PKG_NAME} inspire --query "a command menu over the whole product"`)
+    fail(query.error, `e.g. ${APP_NAME} inspire --query "a command menu over the whole product"`)
   }
   const token = readInspireToken()
-  if (!token) failStep(`no inspiration token; run \`${PKG_NAME} login\` first`)
+  if (!token) failStep(`no inspiration token; run \`${APP_NAME} login\` first`)
   try {
     const response = await search(query, token)
     const files = await cacheFiles(response.results)

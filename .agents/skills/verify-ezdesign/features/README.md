@@ -35,4 +35,4 @@ Each feature file starts with an H1 and one paragraph describing the user-visibl
 - [Queue and note](./queue-and-note.md) covers editing and removing queued annotations, the batch note, and keyboard sends.
 - [Device previews](./device-previews.md) covers the single-size previews, the size menu, and the all-sizes canvas.
 - [CLI and sessions](./cli-and-sessions.md) covers the terminal surface: help, version, open, status, stop, env handling, login/logout/inspire, session end and reopen.
-- [Consumer install](./consumer-install.md) covers the packed tarball: contents, bin, `ezdesign/vite`, and a session from the installed daemon.
+- [Consumer install](./consumer-install.md) covers the packed tarball: contents, bin, `@cychien/ezdesign/vite`, and a session from the installed daemon.

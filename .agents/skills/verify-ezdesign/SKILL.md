@@ -5,7 +5,7 @@ description: "Drive ezdesign the way a user does: launch an isolated fixture app
 
 # verify-ezdesign
 
-ezdesign has three user surfaces. The **review shell** in a browser is the primary one: a user opens `http://127.0.0.1:<session-port>/__ezdesign/shell?path=/`, picks elements on their live page (proxied in an iframe with an overlay injected), and sends annotations to an agent. The **CLI** (`dist/cli.mjs`, bin `ezdesign`) is the second: it opens sessions, spawns the background daemon, and is the agent's side of the loop (`poll`, `progress`, `end`). The **npm tarball** is the third: `ezdesign` bin, the `ezdesign/vite` export (`ezdesignSource()`), and the bundled `skills/ezdesign/`.
+ezdesign has three user surfaces. The **review shell** in a browser is the primary one: a user opens `http://127.0.0.1:<session-port>/__ezdesign/shell?path=/`, picks elements on their live page (proxied in an iframe with an overlay injected), and sends annotations to an agent. The **CLI** (`dist/cli.mjs`, bin `ezdesign`) is the second: it opens sessions, spawns the background daemon, and is the agent's side of the loop (`poll`, `progress`, `end`). The **npm tarball** is the third: `ezdesign` bin, the `@cychien/ezdesign/vite` export (`ezdesignSource()`), and the bundled `skills/ezdesign/`.
 
 Everything goes through one helper, `scripts/vz.mjs`. Commands below run from the repo root with:
 
@@ -133,7 +133,7 @@ Run `ezdesign <url>` itself from `fixtures/playground` (`cd fixtures/playground`
 $V/vz.mjs consumer
 ```
 
-Builds, `npm pack`s, checks the tarball holds `dist/{cli,vite}.mjs`, `dist/vite.d.ts`, `dist/{shell,overlay}.{js,css}`, `skills/ezdesign/SKILL.md`, README, LICENSE and nothing from `src/ test/ fixtures/ scripts/`, installs it into a fresh temp project with an isolated `HOME`, its own data dir and control range, then drives the installed bin (`--version`, `--help`, `status`, a bad `EZDESIGN_CONTROL_PORT`), imports `ezdesign/vite` and transforms a JSX snippet, and - when a stack is up - opens a session on the fixture from the installed bin and fetches the shell and `shell.js` from its daemon before `stop`. Writes `consumer/transcript.txt` and `consumer/tarball-files.txt` into the evidence dir; exit 0 only when every step passed.
+Builds, `npm pack`s, checks the tarball holds `dist/{cli,vite}.mjs`, `dist/vite.d.ts`, `dist/{shell,overlay}.{js,css}`, `skills/ezdesign/SKILL.md`, README, LICENSE and nothing from `src/ test/ fixtures/ scripts/`, installs it into a fresh temp project with an isolated `HOME`, its own data dir and control range, then drives the installed bin (`--version`, `--help`, `status`, a bad `EZDESIGN_CONTROL_PORT`), imports `@cychien/ezdesign/vite` and transforms a JSX snippet, and - when a stack is up - opens a session on the fixture from the installed bin and fetches the shell and `shell.js` from its daemon before `stop`. Writes `consumer/transcript.txt` and `consumer/tarball-files.txt` into the evidence dir; exit 0 only when every step passed.
 
 The feature map in `features/` has the per-feature recipes.
 

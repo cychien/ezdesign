@@ -37,7 +37,7 @@ test('refuses a mismatched CLI with an upgrade hint', () => {
   assert.equal(status, 409)
   assert.match(body!.error!, /v0\.1\.0/)
   assert.match(body!.error!, /v0\.2\.0/)
-  assert.match(body!.hint!, /@latest/)
+  assert.equal(body!.hint, 're-run as `npx -y @cychien/ezdesign@latest <url>` to bring both to the current version')
 })
 
 test('refuses a CLI too old to send the version header', () => {

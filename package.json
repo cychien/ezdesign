@@ -1,5 +1,5 @@
 {
-  "name": "ezdesign",
+  "name": "@cychien/ezdesign",
   "version": "0.8.0",
   "description": "Annotate your live dev app in the browser; feedback flows to your local coding agent, which edits the source. Review, iterate, repeat.",
   "type": "module",
@@ -37,6 +37,9 @@
     "test": "node --import tsx --test \"test/**/*.test.ts\"",
     "version": "node scripts/sync-skill-version.mjs && git add skills/ezdesign/SKILL.md",
     "prepublishOnly": "npm run check"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "engines": {
     "node": ">=20"

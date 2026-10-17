@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process'
 import { existsSync, mkdirSync, readdirSync, realpathSync, rmSync } from 'node:fs'
 import { dirname, join, resolve, sep } from 'node:path'
-import { PKG_NAME, VERSIONS_DIR } from './constants.js'
+import { APP_NAME, NPM_PACKAGE, VERSIONS_DIR } from './constants.js'
 
 /** npm's entry point, run with this very node rather than whatever `npm` on
  *  PATH would pick: the daemon has no shell of the user's to inherit one from.
@@ -74,8 +74,12 @@ async function npm(label: string, args: string[]): Promise<void> {
   })
 }
 
+export function packageSpec(version: string): string {
+  return `${NPM_PACKAGE}@${version}`
+}
+
 export function installedPackageRoot(version: string): string {
-  return join(VERSIONS_DIR, version, 'node_modules', PKG_NAME)
+  return join(VERSIONS_DIR, version, 'node_modules', NPM_PACKAGE)
 }
 
 /** Whether the install at `pkgRoot` runs and is the version it should be. */
@@ -83,7 +87,7 @@ async function verifyInstall(pkgRoot: string, version: string): Promise<boolean>
   const cliEntry = join(pkgRoot, 'dist', 'cli.mjs')
   if (!existsSync(cliEntry)) return false
   try {
-    const { stdout } = await run(`${PKG_NAME} --version`, process.execPath, [cliEntry, '--version'])
+    const { stdout } = await run(`${APP_NAME} --version`, process.execPath, [cliEntry, '--version'])
     return stdout.trim() === version
   } catch {
     return false
@@ -98,7 +102,7 @@ export async function installVersion(version: string): Promise<string> {
   if (await verifyInstall(pkgRoot, version)) return pkgRoot
   const prefix = join(VERSIONS_DIR, version)
   mkdirSync(prefix, { recursive: true })
-  await npm(`npm install ${PKG_NAME}@${version}`, [
+  await npm(`npm install ${packageSpec(version)}`, [
     'install',
     '--prefix',
     prefix,
@@ -106,10 +110,10 @@ export async function installVersion(version: string): Promise<string> {
     '--no-fund',
     '--no-package-lock',
     '--loglevel=error',
-    `${PKG_NAME}@${version}`,
+    packageSpec(version),
   ])
   if (!(await verifyInstall(pkgRoot, version))) {
-    throw new Error(`the installed ${PKG_NAME}@${version} does not run as v${version}`)
+    throw new Error(`the installed ${packageSpec(version)} does not run as v${version}`)
   }
   return pkgRoot
 }
