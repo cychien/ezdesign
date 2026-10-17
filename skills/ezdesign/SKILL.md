@@ -2,7 +2,7 @@
 name: ezdesign
 description: A design harness for a web project (增強設計), and the way into an ezdesign review session. Five steps - product, stack, design, components, make - that build UI which belongs to the product and its visual system rather than to a template. Use the harness only when the user explicitly asks for 增強設計 or the design harness, never for an ordinary UI request; use the review part when the user asks to review or annotate a running page.
 metadata:
-  version: 0.7.0
+  version: 0.8.0
 ---
 
 # ezdesign

@@ -1,6 +1,6 @@
 {
   "name": "ezdesign",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "description": "Annotate your live dev app in the browser; feedback flows to your local coding agent, which edits the source. Review, iterate, repeat.",
   "type": "module",
   "author": "Justin Chien",
