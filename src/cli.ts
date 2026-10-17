@@ -68,7 +68,7 @@ Environment:
       live daemon inside its own control range, so a separate data dir alone
       still lands you on the shared one.
   ${PKG_NAME.toUpperCase()}_NO_UPDATE_CHECK=1  never ask the npm registry whether a newer version exists
-  ${PKG_NAME.toUpperCase()}_INSPIRE_URL     inspiration API base (default: ${DEFAULT_INSPIRE_URL})
+  ${PKG_NAME.toUpperCase()}_INSPIRE_URL    inspiration API base (default: ${DEFAULT_INSPIRE_URL})
 
 A restarted daemon picks its sessions back up from disk and re-binds each to the
 port it last held, so an open review shell only needs a reload and queued
