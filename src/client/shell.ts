@@ -4310,10 +4310,10 @@ function acpAskEl(ask: AcpAskWire): HTMLElement {
 }
 
 /** One field of an ask, drawn for its kind. `values` is the card's answer so far;
- *  `changed` is told after every edit whether it was a pick or typing, `submit`
- *  is ⌘/Ctrl+Enter in a typed field - the composer's own chord for "this is
- *  done". A default is shown as the current value, never sent on its own: the
- *  user still confirms. */
+ *  `changed` is told after every edit whether it was a pick or one still in hand
+ *  (typing, or an arrow moving a choice), `submit` is ⌘/Ctrl+Enter in a typed
+ *  field - the composer's own chord for "this is done". A default is shown as
+ *  the current value, never sent on its own: the user still confirms. */
 function acpFieldEl(
   field: AcpAskField,
   values: Map<string, AcpAskAnswer>,
@@ -4333,6 +4333,18 @@ function acpFieldEl(
     btn.title = option.description ?? ''
     return btn
   }
+  const radioButton = (option: AcpAskOption): HTMLButtonElement => {
+    const btn = optionButton(option)
+    btn.setAttribute('role', 'radio')
+    btn.dataset.id = option.id
+    return btn
+  }
+  /** A choose-one field's radios, painted from what `values` holds for it. */
+  const paintPick = (radios: HTMLButtonElement[]): void =>
+    paintRadios(
+      radios,
+      (btn) => values.has(field.key) && btn.dataset.id === String(values.get(field.key)),
+    )
   const chord = (e: KeyboardEvent): void => {
     if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
       e.preventDefault()
@@ -4388,30 +4400,28 @@ function acpFieldEl(
   switch (field.kind) {
     case 'select': {
       const row = labelled(h('div', 'ez-acp-ask-options'), 'radiogroup')
+      const radios = field.options.map(radioButton)
       const clearPick = (): void => {
         values.delete(field.key)
-        for (const b of row.querySelectorAll('button')) b.classList.remove('ez-on')
+        paintPick(radios)
       }
       const group = withCustom(row, clearPick)
-      for (const option of field.options) {
-        const btn = optionButton(option)
-        if (option.id === field.default) {
-          values.set(field.key, option.id)
-          btn.classList.add('ez-on')
+      const pick = (btn: HTMLButtonElement, how: 'pick' | 'edit'): void => {
+        values.set(field.key, btn.dataset.id!)
+        paintPick(radios)
+        if (field.custom) {
+          const box = group.querySelector('textarea')
+          if (box) box.value = ''
+          values.delete(field.custom.key)
         }
-        btn.onclick = () => {
-          clearPick()
-          values.set(field.key, option.id)
-          btn.classList.add('ez-on')
-          if (field.custom) {
-            const box = group.querySelector('textarea')
-            if (box) box.value = ''
-            values.delete(field.custom.key)
-          }
-          changed('pick')
-        }
-        row.append(btn)
+        changed(how)
       }
+      for (const btn of radios) btn.onclick = () => pick(btn, 'pick')
+      // An arrow only moves the choice; Space or Enter is the pick that sends a card.
+      radioKeys(row, radios, (btn) => pick(btn, 'edit'))
+      if (field.options.some((o) => o.id === field.default)) values.set(field.key, field.default!)
+      paintPick(radios)
+      row.append(...radios)
       return group
     }
     case 'multiselect': {
@@ -4444,23 +4454,20 @@ function acpFieldEl(
     }
     case 'boolean': {
       const row = labelled(h('div', 'ez-acp-ask-options'), 'radiogroup')
-      for (const [value, name] of [
-        [true, '是'],
-        [false, '否'],
-      ] as const) {
-        const btn = optionButton({ id: String(value), name })
-        if (field.default === value) {
-          values.set(field.key, value)
-          btn.classList.add('ez-on')
-        }
-        btn.onclick = () => {
-          values.set(field.key, value)
-          for (const b of row.querySelectorAll('button')) b.classList.remove('ez-on')
-          btn.classList.add('ez-on')
-          changed('pick')
-        }
-        row.append(btn)
+      const radios = [
+        radioButton({ id: 'true', name: '是' }),
+        radioButton({ id: 'false', name: '否' }),
+      ]
+      const pick = (btn: HTMLButtonElement, how: 'pick' | 'edit'): void => {
+        values.set(field.key, btn.dataset.id === 'true')
+        paintPick(radios)
+        changed(how)
       }
+      for (const btn of radios) btn.onclick = () => pick(btn, 'pick')
+      radioKeys(row, radios, (btn) => pick(btn, 'edit'))
+      if (field.default !== undefined) values.set(field.key, field.default)
+      paintPick(radios)
+      row.append(...radios)
       return row
     }
     case 'number': {
