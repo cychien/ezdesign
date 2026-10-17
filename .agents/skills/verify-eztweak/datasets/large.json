@@ -1,0 +1,267 @@
+{
+  "description": "Production-like volume: the fixture session with 6 chats and 330 acked batches of 3 items (660 log entries, 360 in the visible chat), 40 queued annotations, plus 120 ended and 4 active sessions on other origins.",
+  "epoch": "2026-01-01T00:00:00Z",
+  "sessions": [
+    {
+      "origin": "$FIXTURE_ORIGIN",
+      "project": "$FIXTURE_ROOT",
+      "state": "active",
+      "chats": [
+        {
+          "batches": 30,
+          "itemsPerBatch": 3
+        },
+        {
+          "batches": 30,
+          "itemsPerBatch": 3
+        },
+        {
+          "batches": 30,
+          "itemsPerBatch": 3
+        },
+        {
+          "batches": 30,
+          "itemsPerBatch": 3
+        },
+        {
+          "batches": 30,
+          "itemsPerBatch": 3
+        },
+        {
+          "batches": 180,
+          "itemsPerBatch": 3
+        }
+      ],
+      "queued": 40,
+      "anchors": [
+        {
+          "where": "週報不用開會寫。讓進度自己浮出來。",
+          "anchor": {
+            "source": "src/sections/Hero.tsx:13",
+            "components": [
+              "Hero",
+              "App"
+            ],
+            "section": "hero",
+            "selector": "[data-section=\"hero\"] > div > div:nth-of-type(1) > h1",
+            "text": "週報不用開會寫。讓進度自己浮出來。",
+            "viewport": {
+              "width": 1440,
+              "height": 788,
+              "preset": "desktop"
+            },
+            "page": "/"
+          }
+        },
+        {
+          "where": "Cadence 從你團隊已經在用的工具收斂進度",
+          "anchor": {
+            "source": "src/sections/Hero.tsx:18",
+            "components": [
+              "Hero",
+              "App"
+            ],
+            "section": "hero",
+            "selector": "[data-section=\"hero\"] .lede",
+            "text": "Cadence 從你團隊已經在用的工具收斂進度",
+            "viewport": {
+              "width": 1440,
+              "height": 788,
+              "preset": "desktop"
+            },
+            "page": "/"
+          }
+        },
+        {
+          "where": "免費試用 14 天",
+          "anchor": {
+            "source": "src/sections/Hero.tsx:20",
+            "components": [
+              "Hero",
+              "App"
+            ],
+            "section": "hero",
+            "selector": "[data-section=\"hero\"] .btn-primary",
+            "text": "免費試用 14 天",
+            "viewport": {
+              "width": 1440,
+              "height": 788,
+              "preset": "desktop"
+            },
+            "page": "/"
+          }
+        },
+        {
+          "where": "把「同步狀態」這件事從行事曆上拿掉",
+          "anchor": {
+            "source": "src/sections/Features.tsx:22",
+            "components": [
+              "Features",
+              "App"
+            ],
+            "section": "features",
+            "selector": "[data-section=\"features\"] h2",
+            "text": "把「同步狀態」這件事從行事曆上拿掉",
+            "viewport": {
+              "width": 1440,
+              "height": 788,
+              "preset": "desktop"
+            },
+            "page": "/"
+          }
+        },
+        {
+          "where": "寫給人看的摘要",
+          "anchor": {
+            "source": "src/ui/FeatureCard.tsx:5",
+            "components": [
+              "FeatureCard",
+              "Features",
+              "App"
+            ],
+            "section": "features",
+            "selector": "[data-section=\"features\"] article:nth-of-type(2) h3",
+            "text": "寫給人看的摘要",
+            "viewport": {
+              "width": 1440,
+              "height": 788,
+              "preset": "desktop"
+            },
+            "page": "/"
+          }
+        },
+        {
+          "where": "92%",
+          "anchor": {
+            "source": "src/sections/Stats.tsx:15",
+            "components": [
+              "Stats",
+              "App"
+            ],
+            "section": "stats",
+            "selector": "[data-section=\"stats\"] .stat:nth-of-type(2) .stat-value",
+            "text": "92%",
+            "viewport": {
+              "width": 1440,
+              "height": 788,
+              "preset": "desktop"
+            },
+            "page": "/"
+          }
+        },
+        {
+          "where": "我們以前每週一早上開 45 分鐘的同步會",
+          "anchor": {
+            "source": "src/sections/Testimonial.tsx:12",
+            "components": [
+              "Testimonial",
+              "App"
+            ],
+            "section": "testimonial",
+            "selector": "[data-section=\"testimonial\"] blockquote",
+            "text": "我們以前每週一早上開 45 分鐘的同步會",
+            "viewport": {
+              "width": 1440,
+              "height": 788,
+              "preset": "desktop"
+            },
+            "page": "/"
+          }
+        },
+        {
+          "where": "定價",
+          "anchor": {
+            "source": "src/sections/Pricing.tsx:9",
+            "components": [
+              "Pricing",
+              "App"
+            ],
+            "section": "pricing",
+            "selector": "[data-section=\"pricing\"] h2",
+            "text": "定價",
+            "viewport": {
+              "width": 1440,
+              "height": 788,
+              "preset": "desktop"
+            },
+            "page": "/"
+          }
+        },
+        {
+          "where": "12",
+          "anchor": {
+            "source": "src/ui/PriceTag.tsx:5",
+            "components": [
+              "PriceTag",
+              "PlanCard",
+              "PlanGrid",
+              "Pricing",
+              "App"
+            ],
+            "section": "pricing",
+            "selector": "[data-section=\"pricing\"] .plan:nth-of-type(2) .price-amount",
+            "text": "12",
+            "viewport": {
+              "width": 1440,
+              "height": 788,
+              "preset": "desktop"
+            },
+            "page": "/"
+          }
+        },
+        {
+          "where": "常見問題",
+          "anchor": {
+            "source": "src/sections/Faq.tsx:20",
+            "components": [
+              "Faq",
+              "App"
+            ],
+            "section": "faq",
+            "selector": "[data-section=\"faq\"] h2",
+            "text": "常見問題",
+            "viewport": {
+              "width": 1440,
+              "height": 788,
+              "preset": "desktop"
+            },
+            "page": "/"
+          }
+        }
+      ],
+      "comments": [
+        "字級再大一點，跟上一區塊的層級拉開",
+        "間距太擠，上下各多 8px",
+        "這個顏色對比不夠，換深一階",
+        "手機版這裡會斷行，改成兩行固定",
+        "按鈕圓角跟其他按鈕不一致",
+        "這段文案太長，砍到一行",
+        "對齊左邊的 grid 線",
+        "hover 狀態看不出來，加個底色"
+      ],
+      "replies": [
+        "已調整第 $N 批：改了字級與間距，請再看一次",
+        "第 $N 批改好了，順便統一了按鈕圓角",
+        "第 $N 批：顏色換成 --ink-700，對比 7.1:1"
+      ]
+    }
+  ],
+  "generated": [
+    {
+      "state": "ended",
+      "count": 120,
+      "firstPort": 3000,
+      "projectBase": "/tmp/eztweak-verify-seed/ended",
+      "entries": 20,
+      "note": "old review"
+    },
+    {
+      "state": "active",
+      "count": 4,
+      "firstPort": 8800,
+      "projectBase": "/tmp/eztweak-verify-seed/active",
+      "entries": 6,
+      "note": "other app still under review"
+    }
+  ]
+}

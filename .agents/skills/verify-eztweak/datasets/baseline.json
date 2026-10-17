@@ -1,0 +1,4 @@
+{
+  "description": "Fixture playground as committed, empty daemon data dir: no sessions, no history; the session is created by the CLI at up.",
+  "sessions": []
+}
