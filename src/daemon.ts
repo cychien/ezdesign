@@ -128,12 +128,17 @@ function decodeAttachmentName(raw: string | undefined): string {
   }
 }
 
+const SHELL_ICON = `data:image/svg+xml,${encodeURIComponent(
+  `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="7" fill="#171717"/><text x="16" y="22" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="17" font-weight="600" letter-spacing="-0.5" fill="#fff">ez</text></svg>`,
+)}`
+
 const SHELL_HTML = `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${PKG_NAME}</title>
+<link rel="icon" href="${SHELL_ICON}">
 <link rel="stylesheet" href="${URL_PREFIX}/shell.css">
 </head>
 <body>
