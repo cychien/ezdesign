@@ -160,14 +160,14 @@ export interface AcpAgentOptions {
    *  taken once: every session this agent opens asks again, and the answer
    *  changes as the review moves between its own conversations. */
   resumeSessionId?: () => string | undefined
-  /** The MCP servers this session should be opened with - eztweak's own, one
+  /** The MCP servers this session should be opened with - ezdesign's own, one
    *  per live explore round. Read at open time for the same reason as the rest,
    *  and ignored entirely by an agent that cannot reach an HTTP one. */
   mcpServers?: () => McpServer[]
-  /** Whether a tool the agent asks permission to call is one of eztweak's own -
+  /** Whether a tool the agent asks permission to call is one of ezdesign's own -
    *  served by this daemon, for this review. Such a request is granted here
    *  without a card: the user asked for the thing the tool does when they
-   *  started the round, and "may eztweak talk to eztweak" is not a question they
+   *  started the round, and "may ezdesign talk to ezdesign" is not a question they
    *  can meaningfully answer. Every other tool's request still goes to them. */
   ownTool?: (toolName: string) => boolean
   /** The last figure this agent reported, from before the daemon restarted. The
@@ -233,7 +233,7 @@ export class AcpAgent {
   /** Set when the agent advertises `session/resume`, which is what lets a review
    *  pick its own conversation back up after the daemon that held it went away. */
   private canResume = false
-  /** Set when the agent can reach an MCP server over HTTP, which is how eztweak
+  /** Set when the agent can reach an MCP server over HTTP, which is how ezdesign
    *  gives it a tool of its own: a client cannot serve one down the ACP
    *  connection until `mcp-over-acp` lands on both ends. Gated rather than
    *  assumed - a session opened with a server the agent cannot reach may fail
@@ -473,8 +473,8 @@ export class AcpAgent {
     return this.sessionTurns > 0
   }
 
-  /** Whether this agent will reach an MCP server eztweak serves over HTTP,
-   *  which is the only way it can be given a tool of eztweak's. */
+  /** Whether this agent will reach an MCP server ezdesign serves over HTTP,
+   *  which is the only way it can be given a tool of ezdesign's. */
   get servesMcpHttp(): boolean {
     return this.canMcpHttp
   }
@@ -878,7 +878,7 @@ export class AcpAgent {
       Writable.toWeb(this.child.stdin) as WritableStream<Uint8Array>,
       Readable.toWeb(this.child.stdout) as ReadableStream<Uint8Array>,
     )
-    await client({ name: 'eztweak' })
+    await client({ name: 'ezdesign' })
       // Every session update this connection carries, sorted to whichever session
       // is live. The SDK's own router leaves these unconsumed, so both can watch.
       .onNotification(methods.client.session.update, (ctx) => this.router.route(ctx.params))

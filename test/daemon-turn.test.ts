@@ -26,7 +26,7 @@ test('feedback no turn has started yet is reported as waiting', async () => {
   const before = (await world.state(port)) as { agentQueued?: true; agentBusy?: boolean }
   assert.equal(before.agentQueued, undefined, 'nothing has been asked of it yet')
 
-  await fetch(`http://127.0.0.1:${port}/__eztweak/api/send`, {
+  await fetch(`http://127.0.0.1:${port}/__ezdesign/api/send`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ note: 'waiting on nobody' }),
@@ -54,7 +54,7 @@ test('a turn that ends without saying anything still says so', async () => {
     return s.acp?.state === 'idle'
   }, 'the agent to be ready')
 
-  await fetch(`http://127.0.0.1:${port}/__eztweak/api/send`, {
+  await fetch(`http://127.0.0.1:${port}/__ezdesign/api/send`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ note: 'SILENT' }),

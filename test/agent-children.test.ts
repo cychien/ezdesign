@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 
-process.env.EZTWEAK_DATA_DIR = mkdtempSync(join(tmpdir(), 'eztweak-agents-'))
+process.env.EZDESIGN_DATA_DIR = mkdtempSync(join(tmpdir(), 'ezdesign-agents-'))
 
 const { clearAgentRecord, killGroup, reapOrphanedAgents, trackAgent, untrackAgent } = await import(
   '../src/agent-children.js'

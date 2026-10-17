@@ -8,14 +8,14 @@ import { after, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 import type { PageStorage, StorageState } from '../src/page-state.js'
-import { findChrome } from '../skills/eztweak/scripts/page.mjs'
+import { findChrome } from '../skills/ezdesign/scripts/page.mjs'
 import { DaemonWorld, FAKE_AGENT, waitFor } from './helpers/daemon.js'
 
 const world = new DaemonWorld(4640)
 const run = promisify(execFile)
 const PAGE_SCRIPT = join(
   dirname(dirname(fileURLToPath(import.meta.url))),
-  'skills/eztweak/scripts/page.mjs',
+  'skills/ezdesign/scripts/page.mjs',
 )
 
 /** An app behind a sign-in: an HttpOnly cookie the server checks, and a token, a tab flag and a
@@ -95,7 +95,7 @@ test("the agent's browser opens the page signed in the way the user's is", async
     project: mkdtempSync(join(world.dataDir, 'project-')),
     agent: FAKE_AGENT,
   })
-  const api = `http://127.0.0.1:${port}/__eztweak/api`
+  const api = `http://127.0.0.1:${port}/__ezdesign/api`
   await waitFor(
     async () => ((await world.state(port)) as { acp?: { state?: string } }).acp?.state === 'idle',
     'the agent to be ready',
@@ -150,8 +150,8 @@ test("the agent's browser opens the page signed in the way the user's is", async
       env: {
         ...process.env,
         ...(withState
-          ? { EZTWEAK_PAGE_STATE: env.url, EZTWEAK_PAGE_STATE_TOKEN: env.token }
-          : { EZTWEAK_PAGE_STATE: '', EZTWEAK_PAGE_STATE_TOKEN: '' }),
+          ? { EZDESIGN_PAGE_STATE: env.url, EZDESIGN_PAGE_STATE_TOKEN: env.token }
+          : { EZDESIGN_PAGE_STATE: '', EZDESIGN_PAGE_STATE_TOKEN: '' }),
       },
     })
     return JSON.parse(stdout) as { redirected?: string }

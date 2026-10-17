@@ -23,7 +23,7 @@ import {
 const SRC = join(dirname(dirname(fileURLToPath(import.meta.url))), 'src')
 const SKILL = skillDir(SRC)
 
-const project = () => mkdtempSync(join(tmpdir(), 'eztweak-truth-'))
+const project = () => mkdtempSync(join(tmpdir(), 'ezdesign-truth-'))
 const truth = (product: boolean, design: boolean, enabled = true, seen = false): Truth => ({
   product,
   design,
@@ -42,7 +42,7 @@ test('a turn is in the harness only when its prompt says so, and told when it no
     [HARNESS_OFF],
     'seen: retracted',
   )
-  assert.ok(HARNESS_OFF.includes('no edits to `PRODUCT.md`, `DESIGN.md` or `.eztweak/config.json`'))
+  assert.ok(HARNESS_OFF.includes('no edits to `PRODUCT.md`, `DESIGN.md` or `.ezdesign/config.json`'))
   const explore = (t: Truth) => truthExploreRule(t, SKILL).join('\n')
   assert.ok(explore(truth(true, true)).includes(HARNESS_ON))
   assert.ok(explore(truth(true, true, false, true)).includes(HARNESS_OFF))
@@ -183,7 +183,7 @@ test('the setup brief walks the steps for what is missing, and has no batch to h
   assert.ok(!done.includes(skillReference(SKILL, 'product')))
 })
 
-const CLI = '/usr/local/bin/node /Users/me/.npm/_npx/abc/node_modules/eztweak/dist/cli.mjs'
+const CLI = '/usr/local/bin/node /Users/me/.npm/_npx/abc/node_modules/ezdesign/dist/cli.mjs'
 const INSPIRE = { cli: CLI }
 
 test('the briefs stay short enough to be read', () => {
@@ -199,7 +199,7 @@ test('the briefs stay short enough to be read', () => {
 test('a harness-on turn names the CLI to run and the words to use; any other turn neither', () => {
   const on = truthBrief(truth(true, true), SKILL, INSPIRE).join('\n')
   assert.ok(on.includes(HARNESS_WORDS))
-  assert.ok(on.includes(`\`${CLI} inspire ...\``) && on.includes('never another copy of eztweak'))
+  assert.ok(on.includes(`\`${CLI} inspire ...\``) && on.includes('never another copy of ezdesign'))
   assert.ok(truthBrief(truth(false, false), SKILL, INSPIRE).join('\n').includes(`${CLI} inspire`))
   assert.ok(setupBrief(truth(false, false), SKILL, INSPIRE).join('\n').includes(`${CLI} inspire`))
   assert.ok(
@@ -217,7 +217,7 @@ test('a harness-on turn names the CLI to run and the words to use; any other tur
     /\s+/g,
     ' ',
   )
-  assert.ok(inspiration.includes('Never look for another copy or version of eztweak to run'))
+  assert.ok(inspiration.includes('Never look for another copy or version of ezdesign to run'))
   assert.ok(inspiration.includes('never another way to run the command'))
   const make = readFileSync(skillReference(SKILL, 'make'), 'utf8').replace(/\s+/g, ' ')
   assert.ok(
@@ -445,7 +445,7 @@ test('the stack reference records the design system and component library, and a
 test('the inspiration reference gives the commands, the payload, and the two rules', () => {
   const doc = readFileSync(skillReference(SKILL, 'inspiration'), 'utf8')
   const flat = doc.replace(/\s+/g, ' ')
-  assert.ok(doc.includes('npx -y eztweak@latest inspire --query'), 'the description is the way in')
+  assert.ok(doc.includes('npx -y ezdesign@latest inspire --query'), 'the description is the way in')
   assert.ok(doc.includes('[--tag onboarding]'), 'tags are free words that nudge a search')
   assert.ok(!doc.includes('vocabulary') && !doc.includes('--feeling') && !doc.includes('--pattern'))
   assert.ok(flat.includes('the elements on it, the register its wording is in, the actions'))
@@ -853,7 +853,7 @@ test("the reviewer looks before it scores, by the user's bar and not by novelty"
     'the diff is checked for reuse',
   )
   assert.ok(doc.includes('a hand-made copy that only looks the same is a flaw'))
-  assert.ok(doc.includes('`.eztweak/taste.md`') && doc.includes('it outranks the examples below'))
+  assert.ok(doc.includes('`.ezdesign/taste.md`') && doc.includes('it outranks the examples below'))
   for (const verdict of ['**ship**', '**refine**', '**pivot**']) assert.ok(doc.includes(verdict))
   assert.ok(doc.includes('useful 0/10 · refined 0/10 · clear 0/10 · fits 0/10 · craft 0/10'))
   assert.ok(doc.includes('A competent piece nobody would comment on scores 5'))
@@ -865,7 +865,7 @@ test("the reviewer looks before it scores, by the user's bar and not by novelty"
 
 test('what the user says about quality recalibrates the reviewer, in the project', () => {
   const make = readFileSync(skillReference(SKILL, 'make'), 'utf8').replace(/\s+/g, ' ')
-  assert.ok(make.includes('goes to `.eztweak/taste.md`, creating it if it is not there'))
+  assert.ok(make.includes('goes to `.ezdesign/taste.md`, creating it if it is not there'))
   assert.ok(make.includes('never on what you read into it'), 'inferences are not written down')
   assert.ok(
     make.includes('Nothing else counts: not a batch that sends back what you made, not a tone'),
@@ -884,7 +884,7 @@ test('without a login the brief says to skip the search, and names no command', 
     truthExploreRule(truth(true, true), SKILL, 'unavailable'),
   ]) {
     const text = lines.join('\n')
-    assert.ok(text.includes('cannot be searched on this machine (no `eztweak login`)'))
+    assert.ok(text.includes('cannot be searched on this machine (no `ezdesign login`)'))
     assert.ok(!text.includes(' inspire ...'))
   }
   assert.deepEqual(

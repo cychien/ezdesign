@@ -18,7 +18,7 @@ import {
   shotName,
   signInFor,
   statesFrom,
-} from '../skills/eztweak/scripts/page.mjs'
+} from '../skills/ezdesign/scripts/page.mjs'
 
 const CRC = Array.from({ length: 256 }, (_, n) => {
   let c = n
@@ -125,8 +125,8 @@ test('a change is reported by how many pixels and where', () => {
 })
 
 test('comparing two directories names every screenshot, and the ones missing on a side', () => {
-  const before = mkdtempSync(join(tmpdir(), 'eztweak-shots-'))
-  const after = mkdtempSync(join(tmpdir(), 'eztweak-shots-'))
+  const before = mkdtempSync(join(tmpdir(), 'ezdesign-shots-'))
+  const after = mkdtempSync(join(tmpdir(), 'ezdesign-shots-'))
   writeFileSync(join(before, 'index-desktop.png'), png(2, 2, 3, white))
   writeFileSync(join(after, 'index-desktop.png'), png(2, 2, 3, white))
   writeFileSync(join(before, 'index-mobile.png'), png(2, 2, 3, white))

@@ -11,7 +11,7 @@ const SESSION = '58355ceb-9969-4631-b89b-9584d17fc3e9'
 /** A Claude home with one transcript in it, written as Claude writes them: one
  *  JSON object per line, in a project folder named after a flattened path. */
 function claudeHome(lines: unknown[], id = SESSION): string {
-  const home = mkdtempSync(join(tmpdir(), 'eztweak-home-'))
+  const home = mkdtempSync(join(tmpdir(), 'ezdesign-home-'))
   const dir = join(home, '.claude', 'projects', '-Users-someone-a-project')
   mkdirSync(dir, { recursive: true })
   writeFileSync(join(dir, `${id}.jsonl`), lines.map((l) => JSON.stringify(l)).join('\n'))

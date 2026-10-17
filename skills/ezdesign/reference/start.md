@@ -1,11 +1,11 @@
 # Open a review
 
-eztweak turns a locally running dev server into an annotatable review surface. Start the session
+ezdesign turns a locally running dev server into an annotatable review surface. Start the session
 with an ACP agent, then let that agent own the feedback loop. It receives each annotation batch,
 edits the source, and streams its work, questions, permission prompts, and replies into the review
 shell while the app's HMR updates the page in place.
 
-You do not need eztweak installed globally. Invoke it as `npx -y eztweak@latest ...`.
+You do not need ezdesign installed globally. Invoke it as `npx -y ezdesign@latest ...`.
 
 ## When to use
 
@@ -22,7 +22,7 @@ another ACP agent or command:
 - Codex: `codex`
 - Gemini CLI: `gemini`
 
-Every skill invocation uses ACP mode. Never omit `--agent`, never run `eztweak poll`, and never fall
+Every skill invocation uses ACP mode. Never omit `--agent`, never run `ezdesign poll`, and never fall
 back to Poll mode after an ACP failure. If the environment does not identify a supported profile and
 the user did not provide an ACP command, ask them which ACP agent to use.
 
@@ -32,13 +32,13 @@ the user did not provide an ACP command, ask them which ACP agent to use.
 2. From the project root, run:
 
    ```sh
-   npx -y eztweak@latest <url> --agent <profile>
+   npx -y ezdesign@latest <url> --agent <profile>
    ```
 
    Use the full URL of the page to review, for example:
 
    ```sh
-   npx -y eztweak@latest http://localhost:5173/pricing --agent codex
+   npx -y ezdesign@latest http://localhost:5173/pricing --agent codex
    ```
 
    The working directory matters because the session and spawned agent are scoped to that project.
@@ -68,8 +68,8 @@ Projects using Vite get exact `file:line` anchors by adding the bundled plugin:
 
 ```ts
 // vite.config.ts
-import { eztweakSource } from 'eztweak/vite'
-// plugins: [eztweakSource(), ...]
+import { ezdesignSource } from 'ezdesign/vite'
+// plugins: [ezdesignSource(), ...]
 ```
 
 Suggest this dev-only plugin when feedback repeatedly arrives without exact source locations. It has

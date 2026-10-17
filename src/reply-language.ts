@@ -1,5 +1,5 @@
 /** The language to answer the user in, named outright. Told only "the language they write in",
- *  the agent read the prompt around the user's few words - English, written by eztweak - as
+ *  the agent read the prompt around the user's few words - English, written by ezdesign - as
  *  theirs, and answered in English. */
 
 const TRADITIONAL = 'Traditional Chinese (繁體中文)'

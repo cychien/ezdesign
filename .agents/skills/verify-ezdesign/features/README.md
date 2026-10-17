@@ -1,14 +1,14 @@
-# eztweak verification map
+# ezdesign verification map
 
-This directory is the maintained source for verifying eztweak's user-facing behavior. Read the index before driving the app, then use the matching feature file as the recipe. `../SKILL.md` covers launch, seed, doctor, evidence and cleanup.
+This directory is the maintained source for verifying ezdesign's user-facing behavior. Read the index before driving the app, then use the matching feature file as the recipe. `../SKILL.md` covers launch, seed, doctor, evidence and cleanup.
 
 ## Baseline preconditions
 
-- Run from the repo root with `V=.agents/skills/verify-eztweak/scripts`.
+- Run from the repo root with `V=.agents/skills/verify-ezdesign/scripts`.
 - `$V/vz.mjs up` has printed `ready`, and `$V/vz.mjs doctor` exits 0.
 - The dataset is `baseline` unless a recipe says otherwise (`$V/vz.mjs seed <name>` to switch).
 - `export CHROME_DEVTOOLS_AXI_SESSION=$($V/vz.mjs get axiSession)` before any browser step.
-- Never drive a stack this run did not start: not the user's `~/.eztweak` daemon, not a `npm run dev` stack.
+- Never drive a stack this run did not start: not the user's `~/.ezdesign` daemon, not a `npm run dev` stack.
 
 ## Driving conventions
 
@@ -35,4 +35,4 @@ Each feature file starts with an H1 and one paragraph describing the user-visibl
 - [Queue and note](./queue-and-note.md) covers editing and removing queued annotations, the batch note, and keyboard sends.
 - [Device previews](./device-previews.md) covers the single-size previews, the size menu, and the all-sizes canvas.
 - [CLI and sessions](./cli-and-sessions.md) covers the terminal surface: help, version, open, status, stop, env handling, login/logout/inspire, session end and reopen.
-- [Consumer install](./consumer-install.md) covers the packed tarball: contents, bin, `eztweak/vite`, and a session from the installed daemon.
+- [Consumer install](./consumer-install.md) covers the packed tarball: contents, bin, `ezdesign/vite`, and a session from the installed daemon.

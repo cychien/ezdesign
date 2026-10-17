@@ -3,10 +3,10 @@
 > Only for a turn whose prompt says 增強設計 (the design harness) is on for it, or a request that
 > asks for it by name. In any other turn, handle the request as if you had never read this file.
 
-The request in front of you is job A: something to change or build. It arrives as an eztweak
+The request in front of you is job A: something to change or build. It arrives as an ezdesign
 feedback batch, as a plain request in chat, or as an explore round asking for variants of one
 element. Whichever it is, `PRODUCT.md` at the project root is the brief and `DESIGN.md` the visual
-direction - read them first if you have not - and `.eztweak/config.json` says what the project is built on, which
+direction - read them first if you have not - and `.ezdesign/config.json` says what the project is built on, which
 browser tool to look at it with, and where its design system and components are. When the config
 is missing or names no browser tool, run [stack.md](stack.md) first; when it records no
 `components.primitives`, run [components.md](components.md) first.
@@ -123,11 +123,11 @@ Gather the inputs before deciding anything:
   component set (`components.path` in the config), and how the pages that use it use it. Do not
   invent a second version of a thing the project already has a version of.
 - **The system.** `DESIGN.md`'s direction, the design system, and the component set.
-- **This user's taste.** `.eztweak/taste.md`, when it exists: how this user has judged earlier
+- **This user's taste.** `.ezdesign/taste.md`, when it exists: how this user has judged earlier
   work. Build the first version to it; the review judges by it too.
 
 Search [inspiration.md](inspiration.md) for precedent only when the database is available: the
-prompt says so, or, outside an eztweak session, `~/.eztweak/credentials.json` holds an `inspire`
+prompt says so, or, outside an ezdesign session, `~/.ezdesign/credentials.json` holds an `inspire`
 token. Otherwise skip the search and say nothing about it. When you do search, describe what the thing
 is and has to show, and read what comes back in the order inspiration.md gives: the text and the
 first image of each result, then the code of only the ones you learn from. A precedent is the
@@ -204,7 +204,7 @@ change makes a value or a piece of UI appear for the third time - the same shado
 third time, a third card with the same header - extract it. A value becomes a token in the design
 system, under a name that says what it is; a piece of UI becomes a component in the project's
 library, written the way `components.library` says, and its name goes into `components.primitives`
-in `.eztweak/config.json` so later work finds it among the project's own kin and uses it. Switch
+in `.ezdesign/config.json` so later work finds it among the project's own kin and uses it. Switch
 the existing copies to it without changing how they look, and name the extraction in your reply.
 Twice is not yet a pattern; leave it. An explore extracts nothing, since nothing in it is settled.
 
@@ -267,7 +267,7 @@ by critique.md, strictly, as if someone else had made it.
 
 ## Learn
 
-An ordinary change edits code only. `PRODUCT.md`, `DESIGN.md` and `.eztweak/taste.md` change only
+An ordinary change edits code only. `PRODUCT.md`, `DESIGN.md` and `.ezdesign/taste.md` change only
 on what the user has actually said, never on what you read into it. Two signals count:
 
 - **The user states a rule.** "Never", "always", "from now on", in so many words, is a rule the
@@ -289,7 +289,7 @@ into the document it belongs to, in the form that document already uses:
 - A product rule goes to `PRODUCT.md`: Product Principles when it is a principle, Capabilities and
   Constraints when it is a fact.
 - How the user judges quality - what they have called good or bad in general terms, or corrected
-  twice - goes to `.eztweak/taste.md`, creating it if it is not there: the judgment ("a single
+  twice - goes to `.ezdesign/taste.md`, creating it if it is not there: the judgment ("a single
   emphasised figure beats a row of equal badges"), not the element it came from. Newest first.
 - One line, in the user's own terms, not an essay. If it contradicts an entry already there, change
   that entry rather than adding a second one that disagrees, and say so.

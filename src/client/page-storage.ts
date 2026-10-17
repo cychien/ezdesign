@@ -7,7 +7,7 @@ import type {
 } from '../page-state.js'
 
 /** The shell shares the page's origin, and so its storage; these keys are the shell's. */
-const SHELL_OWNED_PREFIXES = ['eztweak:', 'ez-update-dismissed', 'ez-confirm-skip:']
+const SHELL_OWNED_PREFIXES = ['ezdesign:', 'ez-update-dismissed', 'ez-confirm-skip:']
 const MAX_RECORDS_PER_STORE = 1000
 const MAX_BYTES = 1_500_000
 const COLLECT_TIMEOUT_MS = 1500

@@ -251,7 +251,7 @@
       "state": "ended",
       "count": 120,
       "firstPort": 3000,
-      "projectBase": "/tmp/eztweak-verify-seed/ended",
+      "projectBase": "/tmp/ezdesign-verify-seed/ended",
       "entries": 20,
       "note": "old review"
     },
@@ -259,7 +259,7 @@
       "state": "active",
       "count": 4,
       "firstPort": 8800,
-      "projectBase": "/tmp/eztweak-verify-seed/active",
+      "projectBase": "/tmp/ezdesign-verify-seed/active",
       "entries": 6,
       "note": "other app still under review"
     }

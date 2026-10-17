@@ -21,7 +21,7 @@ headings, so the file stays portable across DESIGN.md-aware tools.
 
 **Components are not defined here.** A markdown file cannot carry a component's states, variants
 and behaviour completely, so the components step turns this file's language into the stack's own
-design system and a component set, and records where in `.eztweak/config.json`. This file
+design system and a component set, and records where in `.ezdesign/config.json`. This file
 therefore carries no `components:` group in its frontmatter and no `## Components` section; a
 reader who needs a component goes to the design system. See [components.md](components.md).
 
@@ -82,7 +82,7 @@ Every section is a short paragraph or a few bullets. The whole file reads in a c
 
 - `PRODUCT.md` comes first. If it is missing, run [product.md](product.md) and come back: the
   Overview's voice and the visual constraints come from it.
-- Read `.eztweak/config.json` for the stack and the browser tool. If it is missing or names no
+- Read `.ezdesign/config.json` for the stack and the browser tool. If it is missing or names no
   browser tool, run [stack.md](stack.md) and come back.
 - If `DESIGN.md` already exists, **do not silently overwrite it**. Show the user what is there, and
   ask whether to refresh, overwrite or merge. Use the structured question tool when available;

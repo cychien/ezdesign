@@ -32,16 +32,16 @@ export async function waitFor<T>(
  *  installs. Each world picks its range from `controlPort`, which callers keep
  *  distinct across test files. */
 export class DaemonWorld {
-  readonly dataDir = mkdtempSync(join(tmpdir(), 'eztweak-daemon-'))
+  readonly dataDir = mkdtempSync(join(tmpdir(), 'ezdesign-daemon-'))
   readonly env: NodeJS.ProcessEnv
   readonly children = new Set<ChildProcess>()
 
   constructor(readonly controlPort: number) {
     this.env = {
       ...process.env,
-      EZTWEAK_DATA_DIR: this.dataDir,
-      EZTWEAK_CONTROL_PORT: String(controlPort),
-      EZTWEAK_NO_UPDATE_CHECK: '1',
+      EZDESIGN_DATA_DIR: this.dataDir,
+      EZDESIGN_CONTROL_PORT: String(controlPort),
+      EZDESIGN_NO_UPDATE_CHECK: '1',
       HOME: this.dataDir,
       USERPROFILE: this.dataDir,
     }
@@ -93,7 +93,7 @@ export class DaemonWorld {
       ...init,
       headers: {
         'content-type': 'application/json',
-        'x-eztweak-version': PKG_VERSION,
+        'x-ezdesign-version': PKG_VERSION,
         ...(init?.headers ?? {}),
       },
     })
@@ -112,14 +112,14 @@ export class DaemonWorld {
   }
 
   async state(sessionPort: number): Promise<Record<string, unknown>> {
-    const res = await fetch(`http://127.0.0.1:${sessionPort}/__eztweak/api/state`)
+    const res = await fetch(`http://127.0.0.1:${sessionPort}/__ezdesign/api/state`)
     return (await res.json()) as Record<string, unknown>
   }
 
   /** Queue one annotation and send it, which is what puts a user entry - and
    *  whatever the agent replies to it - in the thread. */
   async sendFeedback(sessionPort: number, comment: string): Promise<void> {
-    const api = `http://127.0.0.1:${sessionPort}/__eztweak/api`
+    const api = `http://127.0.0.1:${sessionPort}/__ezdesign/api`
     const headers = { 'content-type': 'application/json' }
     await fetch(`${api}/annotations`, {
       method: 'POST',

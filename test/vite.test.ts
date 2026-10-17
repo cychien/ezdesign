@@ -3,12 +3,12 @@ import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
-import { eztweakSource } from '../src/vite.js'
+import { ezdesignSource } from '../src/vite.js'
 
 type TransformFn = (code: string, id: string) => { code: string } | null
 
 function transform(code: string, file = 'src/page.tsx'): string | null {
-  const plugin = eztweakSource()
+  const plugin = ezdesignSource()
   const fn = plugin.transform as unknown as TransformFn
   const result = fn(code, join(process.cwd(), file))
   return result ? result.code : null
@@ -55,7 +55,7 @@ test('a vite root nested inside the project stamps paths from the project root',
   writeFileSync(join(project, 'package.json'), '{}')
   const site = join(project, 'fixtures', 'site')
   mkdirSync(site, { recursive: true })
-  const plugin = eztweakSource()
+  const plugin = ezdesignSource()
   plugin.configResolved({ root: site })
   const out = plugin.transform(`export const P = () => <p>hi</p>\n`, join(site, 'src/App.tsx'))
   assert.match(out!.code, /data-ez-source="fixtures\/site\/src\/App\.tsx:1"/)
@@ -64,7 +64,7 @@ test('a vite root nested inside the project stamps paths from the project root',
 test('a vite root that is the project stamps paths from itself, as before', () => {
   const project = mkdtempSync(join(tmpdir(), 'ez-vite-'))
   writeFileSync(join(project, 'package.json'), '{}')
-  const plugin = eztweakSource()
+  const plugin = ezdesignSource()
   plugin.configResolved({ root: project })
   const out = plugin.transform(`export const P = () => <p>hi</p>\n`, join(project, 'src/App.tsx'))
   assert.match(out!.code, /data-ez-source="src\/App\.tsx:1"/)

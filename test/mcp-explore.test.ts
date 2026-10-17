@@ -93,7 +93,7 @@ test('a variant sent to a live round reaches its sink, and the answer is the sin
     return `got ${got.length}`
   })
   const c = await client(port, 'r1', token)
-  assert.equal((c.init.body.result as { serverInfo: { name: string } }).serverInfo.name, 'eztweak')
+  assert.equal((c.init.body.result as { serverInfo: { name: string } }).serverInfo.name, 'ezdesign')
 
   const first = await c.call({ name: '緊湊版', html: '<div>a</div>', note: 'tighter' })
   assert.equal(isError(first.body), false)
@@ -170,8 +170,8 @@ test('each live round is its own server entry, named and tokened apart', async (
   assert.deepEqual(
     entries.map((e) => [e.type, e.name, e.url]),
     [
-      ['http', 'eztweak-explore-r1', `http://127.0.0.1:4321${MCP_PATH}/r1`],
-      ['http', 'eztweak-explore-r2', `http://127.0.0.1:4321${MCP_PATH}/r2`],
+      ['http', 'ezdesign-explore-r1', `http://127.0.0.1:4321${MCP_PATH}/r1`],
+      ['http', 'ezdesign-explore-r2', `http://127.0.0.1:4321${MCP_PATH}/r2`],
     ],
   )
   assert.deepEqual(entries[0]!.headers, [{ name: 'authorization', value: `Bearer ${a.token}` }])

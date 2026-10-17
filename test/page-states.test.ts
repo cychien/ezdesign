@@ -8,12 +8,12 @@ import { dirname, join } from 'node:path'
 import { after, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
-import { decodePng, findChrome } from '../skills/eztweak/scripts/page.mjs'
+import { decodePng, findChrome } from '../skills/ezdesign/scripts/page.mjs'
 
 const run = promisify(execFile)
 const PAGE_SCRIPT = join(
   dirname(dirname(fileURLToPath(import.meta.url))),
-  'skills/eztweak/scripts/page.mjs',
+  'skills/ezdesign/scripts/page.mjs',
 )
 
 /** Each state paints the button one colour, and a click leaves a mark a later load shows. */
@@ -30,7 +30,7 @@ const PAGE = `<!doctype html><style>
 </script>`
 
 let server: Server
-const dir = mkdtempSync(join(tmpdir(), 'eztweak-states-'))
+const dir = mkdtempSync(join(tmpdir(), 'ezdesign-states-'))
 after(() => {
   server?.close()
   rmSync(dir, { recursive: true, force: true })

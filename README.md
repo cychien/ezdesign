@@ -1,17 +1,17 @@
-# eztweak
+# ezdesign
 
 > Point at your live app. Your agent fixes it.
 
-eztweak turns any locally running dev server into an annotatable review surface for human ↔
+ezdesign turns any locally running dev server into an annotatable review surface for human ↔
 agent iteration. The user marks up the **real page** - click an element, frame a region, select
 some text, leave a comment - and the feedback flows to a local coding agent (Claude Code, Codex,
 anything that can run a CLI) as structured items that resolve to **exact source locations**. The
 agent edits the code, HMR updates the page in place, the user reviews the next round.
 
 ```
-$ npx -y eztweak@latest http://localhost:5173/pricing --agent claude  # managed ACP agent
-$ npx -y eztweak@latest http://localhost:5173/pricing                 # portable poll mode
-$ npx -y eztweak@latest poll http://localhost:5173/                   # agent waits for feedback
+$ npx -y ezdesign@latest http://localhost:5173/pricing --agent claude  # managed ACP agent
+$ npx -y ezdesign@latest http://localhost:5173/pricing                 # portable poll mode
+$ npx -y ezdesign@latest poll http://localhost:5173/                   # agent waits for feedback
 ```
 
 - **Zero config.** A local daemon reverse-proxies your dev server and injects the annotation
@@ -24,30 +24,30 @@ $ npx -y eztweak@latest poll http://localhost:5173/                   # agent wa
 - **Every screen at once.** Review on one device or lay all three out on a canvas - desktop,
   iPad and iPhone side by side at their real viewports, scrolling together. An annotation stays on
   the screen it was made on, and reaches the agent tagged with the width it was made at.
-- **Built for the loop.** In ACP mode, eztweak owns the agent and keeps its live work, questions,
+- **Built for the loop.** In ACP mode, ezdesign owns the agent and keeps its live work, questions,
   and permission prompts in the review shell. Poll mode keeps the blocking structured-JSON contract
   for any external agent or automation. HMR keeps iterations in place; the review chrome lives
   outside the app frame, so it survives your agent's syntax errors.
 - **Local-first.** Everything binds to 127.0.0.1. Nothing leaves your machine, except one
   request to the npm registry every few hours to learn whether a newer version exists (opt out
-  with `EZTWEAK_NO_UPDATE_CHECK=1`).
+  with `EZDESIGN_NO_UPDATE_CHECK=1`).
 
 ## Install
 
-Nothing to install - `npx -y eztweak@latest` is enough. For agents, add the bundled skill:
+Nothing to install - `npx -y ezdesign@latest` is enough. For agents, add the bundled skill:
 
 ```
-npx skills add cychien/eztweak --skill eztweak
+npx skills add cychien/ezdesign --skill ezdesign
 ```
 
 Optional, for exact `file:line` anchors in Vite + React projects:
 
 ```ts
 // vite.config.ts
-import { eztweakSource } from 'eztweak/vite'
+import { ezdesignSource } from 'ezdesign/vite'
 
 export default defineConfig({
-  plugins: [eztweakSource(), react()],
+  plugins: [ezdesignSource(), react()],
 })
 ```
 
@@ -55,8 +55,8 @@ Dev-only (`apply: 'serve'`) - it never touches production builds.
 
 ## Updating
 
-When a newer eztweak is on npm, a card appears at the top of the review shell and one button takes
-it. The new version is installed under `~/.eztweak/versions/` and started as this daemon's
+When a newer ezdesign is on npm, a card appears at the top of the review shell and one button takes
+it. The new version is installed under `~/.ezdesign/versions/` and started as this daemon's
 successor: the successor binds and registers first, and only once it is up does the old daemon let
 go - so a version that fails to start leaves you on the one you had, with the error in the card.
 Your sessions come back on the ports they held and the shell reloads itself.
@@ -71,21 +71,21 @@ that click.
 
 Without the shell:
 
-- **CLI** - always invoke it as `npx -y eztweak@latest`. A bare `npx eztweak` reuses whatever
+- **CLI** - always invoke it as `npx -y ezdesign@latest`. A bare `npx ezdesign` reuses whatever
   version npx cached and never checks for a newer one.
 - **Daemon** - opening a session with a different CLI version replaces the running daemon with that
   version, under the same restore guarantee any daemon restart gets (see Configuration). A CLI
   that reaches a daemon on another version is refused with a `409` that says how to update,
   instead of speaking a mismatched protocol.
-- **Skill** - `npx skills update eztweak`, whenever you feel like it. Deliberately not part of the
-  update button: the skill's own instructions launch the CLI as `npx -y eztweak@latest`, so an old
+- **Skill** - `npx skills update ezdesign`, whenever you feel like it. Deliberately not part of the
+  update button: the skill's own instructions launch the CLI as `npx -y ezdesign@latest`, so an old
   copy still starts a current review, and everything that governs a review once it is running
-  ships with the daemon. Its reader is also an agent session eztweak did not spawn and cannot
+  ships with the daemon. Its reader is also an agent session ezdesign did not spawn and cannot
   restart, so a sync would not take effect until that agent's next session either way. The bundled
   copy carries the release it came from in its frontmatter (`metadata.version`).
 
 The daemon asks the npm registry for the latest version at most once every four hours. Set
-`EZTWEAK_NO_UPDATE_CHECK=1` to never ask.
+`EZDESIGN_NO_UPDATE_CHECK=1` to never ask.
 
 ## Annotating
 
@@ -147,7 +147,7 @@ mid-word stays a slash, so urls and paths are left alone. The commands:
 - **`/element`** points the comment at a *second* element - "make this match that one". The page
   stays live while you choose, so a plain click still follows links and opens menus and only
   ⌘/Ctrl+click picks; the comment box steps aside and comes back when you are done. You can cross to
-  another page to find what you meant, and eztweak brings you back to finish the comment. The
+  another page to find what you meant, and ezdesign brings you back to finish the comment. The
   element arrives as a chip carrying the same layered anchor an annotation gets, so the agent is
   handed a `file:line` instead of a description, and `[ref 1]` in the comment text says exactly where
   in the sentence you meant it.
@@ -264,10 +264,10 @@ canvas scaled to 60% is still one you can read and type into.
 
 | Variable | Default | What it moves |
 | --- | --- | --- |
-| `EZTWEAK_DATA_DIR` | `~/.eztweak` | Session state, the daemon registry and log, versions installed by the in-shell update, and the update-check cache |
-| `EZTWEAK_CONTROL_PORT` | `4400` | First port of the ten-port range the daemon searches for its control server |
-| `EZTWEAK_NO_UPDATE_CHECK` | unset | Set to `1` and the daemon never asks the npm registry for the latest version, so the shell never offers an update |
-| `EZTWEAK_INSPIRE_URL` | `https://inspire.ezdesign.dev` | The inspiration database the `inspire` commands query |
+| `EZDESIGN_DATA_DIR` | `~/.ezdesign` | Session state, the daemon registry and log, versions installed by the in-shell update, and the update-check cache |
+| `EZDESIGN_CONTROL_PORT` | `4400` | First port of the ten-port range the daemon searches for its control server |
+| `EZDESIGN_NO_UPDATE_CHECK` | unset | Set to `1` and the daemon never asks the npm registry for the latest version, so the shell never offers an update |
+| `EZDESIGN_INSPIRE_URL` | `https://inspire.ezdesign.dev` | The inspiration database the `inspire` commands query |
 
 Set both together to run a second, fully isolated instance: a starting daemon adopts any live
 daemon it finds inside its own control range, so moving the data dir alone still lands you on the
@@ -285,12 +285,12 @@ fresh context, and only then does the thread say so.
 A session belongs to one project on one origin, not to the origin alone. Dev servers all default
 to the same port, so reviewing a second project on `localhost:5173` would otherwise inherit the
 first one's conversation and hand its undelivered feedback to the wrong agent. The project is the
-nearest `.git` or `package.json` ancestor of the directory you run `eztweak` from, so switching
+nearest `.git` or `package.json` ancestor of the directory you run `ezdesign` from, so switching
 projects on a port starts a clean review and switching back finds the old one intact.
 
 ## Agent modes
 
-eztweak can either manage an ACP agent inside the review session or expose feedback through its
+ezdesign can either manage an ACP agent inside the review session or expose feedback through its
 portable polling contract. Both modes receive the same structured feedback and exact anchors.
 
 ### ACP mode (experimental)
@@ -298,14 +298,14 @@ portable polling contract. Both modes receive the same structured feedback and e
 Pass `--agent` when opening the session:
 
 ```
-npx -y eztweak@latest http://localhost:5173/ --agent claude
+npx -y ezdesign@latest http://localhost:5173/ --agent claude
 ```
 
 The daemon starts the agent as a child process, sends each feedback batch as one turn, and shows
 the agent's streaming reply, plan, tool activity, questions, and permission prompts in the review
 shell. The completed reply is saved in the conversation, and the next queued batch is delivered
 automatically. No second terminal or `poll` loop is needed. This is also the mode used by the
-bundled eztweak skill.
+bundled ezdesign skill.
 
 Three controls come with owning the agent:
 
@@ -338,7 +338,7 @@ Three controls come with owning the agent:
   half on a cheap model, move up for the layout problem that needs it. Sending mid-turn is allowed
   and applies from the next turn.
 
-  What the menu holds is whatever the agent reports, not a list eztweak keeps. That matters because
+  What the menu holds is whatever the agent reports, not a list ezdesign keeps. That matters because
   the list changes with the choice: pick a model with no reasoning levels and no fast mode and both
   options leave the menu, and the agent can move a value on its own - a refusal falling back to
   another model - which arrives here and redraws. Some models do not support every permission mode,
@@ -354,7 +354,7 @@ answer one question between them - what is about to read this feedback - and the
 *within* the agent, so changing the agent replaces the list the model was chosen from. That always
 starts a new conversation, and the shell says so before it does it: a session id belongs to the agent that issued
 it - Claude keeps its conversations in one store and Codex in another, and neither can resolve the
-other's - so there is no way to hand a conversation over. Nothing eztweak owns is lost. Every earlier
+other's - so there is no way to hand a conversation over. Nothing ezdesign owns is lost. Every earlier
 conversation stays in the thread's own picker with the agent that had it, and switching back finds it
 again, resumable by the agent that remembers it.
 
@@ -376,8 +376,8 @@ a direction rather than a rule: a document held to the letter makes everything l
 agent may go past it. An ordinary change edits code only. The two files change
 when you ask for it, when a correction has come twice, or when you state a rule - only on what you
 actually said, never on what the agent reads into a send-back; a change that only leaves a line stale is mentioned in the reply, not edited. Between them,
-`.eztweak/config.json` records the stack and the browser tool the agent looks at the page with. The
-skill needs no eztweak session to run: installed in Claude Code or Codex and invoked on its own, it
+`.ezdesign/config.json` records the stack and the browser tool the agent looks at the page with. The
+skill needs no ezdesign session to run: installed in Claude Code or Codex and invoked on its own, it
 walks the same steps against the project and the dev server.
 
 Turning the switch on in a project that lacks either file asks first, in the card above the
@@ -400,7 +400,7 @@ looks at the agent's screenshots of the change and scores it against the reactio
 X and Dribbble, "super clean!", in a product held to the standard of Shopify, Stripe, Linear and
 Vercel - useful, super clean, clear, fitting, well made - and answers ship, refine or pivot. One review; a second only after a pivot,
 comparing the two directions. The reply never mentions the review. What you say about quality in so many words, or correct twice, is
-written to `.eztweak/taste.md`, which the agent builds to and the reviewer judges by,
+written to `.ezdesign/taste.md`, which the agent builds to and the reviewer judges by,
 so both move toward your eye. The daemon carries
 only the facts a skill cannot know: whether the switch is on, which files exist, where the page
 is, what the turn is for.
@@ -422,8 +422,8 @@ the daemon before switching it to a different agent.
 Without `--agent`, the review uses the existing CLI contract:
 
 ```
-npx -y eztweak@latest http://localhost:5173/
-npx -y eztweak@latest poll http://localhost:5173/
+npx -y ezdesign@latest http://localhost:5173/
+npx -y ezdesign@latest poll http://localhost:5173/
 ```
 
 `poll` blocks until the user sends feedback, prints the structured batch as JSON, and exits. This
@@ -437,12 +437,12 @@ choice. It is searched by meaning - a description of what the piece has to show 
 tags in their curator's own words, which nudge a search that names one. It needs a token:
 
 ```
-npx -y eztweak@latest login --token <token>
-npx -y eztweak@latest inspire --query "a command menu over the whole product"
-npx -y eztweak@latest inspire --query "an onboarding checklist" --tag "dark popover" --limit 3
+npx -y ezdesign@latest login --token <token>
+npx -y ezdesign@latest inspire --query "a command menu over the whole product"
+npx -y ezdesign@latest inspire --query "an onboarding checklist" --tag "dark popover" --limit 3
 ```
 
-`login` writes the token to `~/.eztweak/credentials.json`, mode 600; without `--token` it prompts,
+`login` writes the token to `~/.ezdesign/credentials.json`, mode 600; without `--token` it prompts,
 and `logout` forgets it. A search takes a `--query`, `--tag`, or both. `inspire` prints a block per
 result - the tags, `Shows:`, `Components:`,
 `Actions:`, `Why it works:`, `Wrong when:`, and local paths to the entry's images, which are
@@ -458,14 +458,14 @@ reached - exits 2 with one line, so the agent says so and carries on.
 
 ## Development
 
-Working on eztweak itself takes one command:
+Working on ezdesign itself takes one command:
 
 ```
 npm run dev                 # watch src/, serve the playground fixture, start an isolated daemon,
                             # open the review shell with an ACP agent on it
-npm run dev -- --no-plugin  # the same page without eztweakSource(), to see fallback-only anchors
+npm run dev -- --no-plugin  # the same page without ezdesignSource(), to see fallback-only anchors
 npm run dev:agent           # a stand-in poll-mode agent, for working on the poll contract itself
-npm run dev:cli status      # the eztweak CLI, pointed at the dev daemon instead of the real one
+npm run dev:cli status      # the ezdesign CLI, pointed at the dev daemon instead of the real one
 ```
 
 `npm run dev` opens the review in ACP mode, scoped to the fixture - the agent's working directory
@@ -474,7 +474,7 @@ is only for the poll contract.
 
 A client rebuild (`src/client/**`) only needs a browser reload; a rebuild the daemon loads
 restarts it, and in-flight polls reconnect on their own. Dev mode keeps its daemon registry and
-sessions in `.dev/`, so your own `~/.eztweak` is never touched. The review target is
+sessions in `.dev/`, so your own `~/.ezdesign` is never touched. The review target is
 [`fixtures/playground`](fixtures/playground/README.md).
 
 ## Status

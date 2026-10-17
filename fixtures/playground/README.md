@@ -24,11 +24,11 @@ that continues on the other page.
 `package.json` is what makes the fixture its own project. A session is scoped to the
 nearest `.git` or `package.json` above the directory the CLI was run from, and the
 agent works from there - so without one, `npm run dev` would hand the agent the
-eztweak repository as the thing under review, and anything it writes about the
+ezdesign repository as the thing under review, and anything it writes about the
 project under review (a `DESIGN.md`, say) would land at the repo root. The fixture
 plays a reviewed project, so it has to be one.
 
-`vite.config.ts` loads `eztweakSource()` straight from `src/`, so annotations
+`vite.config.ts` loads `ezdesignSource()` straight from `src/`, so annotations
 carry `anchor.source` as `file:line`. Run `npm run dev -- --no-plugin` to serve the
 same page through `vite.noplugin.config.ts` instead and see what an agent gets
 when only the fallback layers are available.

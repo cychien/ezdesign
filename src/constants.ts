@@ -2,8 +2,8 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 
 /** Rename checklist: package.json name+bin, this file, skills/<name>/, README. */
-export const PKG_NAME = 'eztweak'
-export const URL_PREFIX = '/__eztweak'
+export const PKG_NAME = 'ezdesign'
+export const URL_PREFIX = '/__ezdesign'
 const ENV_PREFIX = PKG_NAME.toUpperCase()
 export const DATA_DIR = process.env[`${ENV_PREFIX}_DATA_DIR`] ?? join(homedir(), `.${PKG_NAME}`)
 export const SESSIONS_DIR = join(DATA_DIR, 'sessions')
@@ -33,7 +33,7 @@ export function resolveControlPort(raw: string | undefined): number {
 }
 
 /** Ten consecutive ports starting at the resolved start. Resolved on call, not
- *  at import: this module is a dependency of the published `eztweak/vite`
+ *  at import: this module is a dependency of the published `ezdesign/vite`
  *  entry point, which must never read - let alone fail on - this variable. */
 export function controlPortRange(): { start: number; end: number } {
   const start = resolveControlPort(process.env[CONTROL_PORT_ENV])

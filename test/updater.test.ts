@@ -25,7 +25,7 @@ interface World {
 }
 
 function world(current: string, overrides: Partial<UpdaterDeps> = {}): World {
-  const base = mkdtempSync(join(tmpdir(), 'eztweak-updater-'))
+  const base = mkdtempSync(join(tmpdir(), 'ezdesign-updater-'))
   const w = { base, log: [] as string[], changes: 0, latest: null as string | null } as World
   let retire!: () => void
   w.retired = new Promise<void>((r) => {
@@ -111,14 +111,14 @@ test('a failed install is reported and can be retried; the daemon is untouched',
   w.latest = '0.7.0'
   await w.updater.check()
   w.install = async () => {
-    throw new Error('npm install eztweak@0.7.0 failed: code ETARGET')
+    throw new Error('npm install ezdesign@0.7.0 failed: code ETARGET')
   }
   assert.equal(w.updater.run(), 'started')
   await settle()
   assert.deepEqual(w.updater.snapshot(), {
     latest: '0.7.0',
     phase: 'failed',
-    error: 'npm install eztweak@0.7.0 failed: code ETARGET',
+    error: 'npm install ezdesign@0.7.0 failed: code ETARGET',
   })
   assert.deepEqual(w.log, [], 'nothing was handed over')
 

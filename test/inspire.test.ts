@@ -33,8 +33,8 @@ const entry: InspireEntry = {
 
 test('the base url comes from the environment, and falls back to the service', () => {
   assert.equal(inspireBaseUrl({}), DEFAULT_INSPIRE_URL)
-  assert.equal(inspireBaseUrl({ EZTWEAK_INSPIRE_URL: '' }), DEFAULT_INSPIRE_URL)
-  assert.equal(inspireBaseUrl({ EZTWEAK_INSPIRE_URL: 'http://127.0.0.1:9/' }), 'http://127.0.0.1:9')
+  assert.equal(inspireBaseUrl({ EZDESIGN_INSPIRE_URL: '' }), DEFAULT_INSPIRE_URL)
+  assert.equal(inspireBaseUrl({ EZDESIGN_INSPIRE_URL: 'http://127.0.0.1:9/' }), 'http://127.0.0.1:9')
   assert.equal(apiUrl('/v1/search', 'http://127.0.0.1:9'), 'http://127.0.0.1:9/v1/search')
   assert.equal(apiUrl('v1/search', 'http://127.0.0.1:9'), 'http://127.0.0.1:9/v1/search')
 })
@@ -205,7 +205,7 @@ test('an image that could not be cached keeps its url, and does not shift the ot
 })
 
 test('the desktop screenshot is listed first, whatever order the service sent', async () => {
-  const dataDir = mkdtempSync(join(tmpdir(), 'eztweak-inspire-'))
+  const dataDir = mkdtempSync(join(tmpdir(), 'ezdesign-inspire-'))
   const shot = (viewport: string, url: string) => ({
     kind: 'screenshot',
     viewport,

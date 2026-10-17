@@ -75,7 +75,7 @@ test('ending the session drops the agent, so a restore does not resurrect it', a
     `/control/sessions/find?origin=${encodeURIComponent(new URL(TARGET).origin)}`,
   )
   const { port } = (await found.json()) as { port: number }
-  const res = await fetch(`http://127.0.0.1:${port}/__eztweak/api/end`, {
+  const res = await fetch(`http://127.0.0.1:${port}/__ezdesign/api/end`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ by: 'user' }),
@@ -121,7 +121,7 @@ test('the update endpoint takes only the JSON requests the shell makes', async (
     url: 'http://127.0.0.1:11/',
     project: PROJECT,
   })
-  const url = `http://127.0.0.1:${port}/__eztweak/api/update`
+  const url = `http://127.0.0.1:${port}/__ezdesign/api/update`
   const formPost = await fetch(url, {
     method: 'POST',
     headers: { 'content-type': 'text/plain' },
@@ -177,7 +177,7 @@ test('the restart notice is not repeated, and an empty thread never gets one', a
 // session with it - down at startup.
 test('a restored session whose project is gone reports a dead agent, not a dead daemon', async () => {
   const live = await world.liveDaemon()
-  const gone = mkdtempSync(join(tmpdir(), 'eztweak-vanishing-'))
+  const gone = mkdtempSync(join(tmpdir(), 'ezdesign-vanishing-'))
   const origin = 'http://127.0.0.1:13'
   const opened = await world.openSession(live.port, {
     url: `${origin}/`,
@@ -317,7 +317,7 @@ test('a restore into a branch whose round was cut off holding nothing opens on t
     ((await world.state(opened.port)) as unknown as { chats: { id: string; current: boolean }[] })
       .chats
   const main = (await chats()).find((c) => c.current)!.id
-  const res = await fetch(`http://127.0.0.1:${opened.port}/__eztweak/api/explore/start`, {
+  const res = await fetch(`http://127.0.0.1:${opened.port}/__ezdesign/api/explore/start`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({

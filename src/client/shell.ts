@@ -220,7 +220,7 @@ const PREFIX = (() => {
   try {
     return new URL(script!.src).pathname.replace(/\/shell\.js$/, '')
   } catch {
-    return '/__eztweak'
+    return '/__ezdesign'
   }
 })()
 const API = `${PREFIX}/api`
@@ -293,7 +293,7 @@ const canvasDevice = (id: string): Device => CANVAS_DEVICES.find((d) => d.id ===
 
 const canvasLayout = (): Device[][] => layout.map((row) => row.map(canvasDevice))
 
-const VIEW_KEY = 'eztweak:view'
+const VIEW_KEY = 'ezdesign:view'
 
 /** The arrangement the shell was left in. A preference only - a stored device
  *  that no longer exists falls back the way any unknown id does. */
@@ -344,7 +344,7 @@ function h<K extends keyof HTMLElementTagNameMap>(
 
 // ---------------------------------------------------------------- static layout
 
-const brand = h('div', 'ez-brand', 'eztweak')
+const brand = h('div', 'ez-brand', 'ezdesign')
 const version = h('span', 'ez-version')
 /** The way back to an update the user put off: the card is gone, this is not.
  *  Opens a one-item menu rather than bringing the card back - by this point the
@@ -1473,7 +1473,7 @@ window.addEventListener('popstate', (e) => {
 function paintPage(): void {
   const origin = snapshot?.targetOrigin.replace(/^https?:\/\//, '') ?? ''
   target.textContent = `${origin}${nav.url}`
-  document.title = `eztweak · ${nav.url}`
+  document.title = `ezdesign · ${nav.url}`
 }
 
 function mountFrame(id: string, device: Device, into: ParentNode, label: string): Frame {
@@ -2734,7 +2734,7 @@ function beginCardDrag(e: PointerEvent, frame: Frame): void {
 
 // ---------------------------------------------------------------- sidebar width
 
-const WIDTH_KEY = 'eztweak:sidebar-width'
+const WIDTH_KEY = 'ezdesign:sidebar-width'
 
 const maxSidebar = () => maxSidebarWidth(innerWidth)
 const clampSidebar = (w: number) => clampSidebarWidth(w, innerWidth)

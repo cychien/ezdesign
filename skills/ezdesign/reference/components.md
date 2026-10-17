@@ -11,7 +11,7 @@ that system in the project's own component library. That set is the foundation t
 builds UI from.
 
 The stack step has already recorded which design system and which component library the project
-uses, in `design_system` and `components` in `.eztweak/config.json`. This step builds to them and
+uses, in `design_system` and `components` in `.ezdesign/config.json`. This step builds to them and
 adds one field, the list of primitives that now exist, so the making step reuses rather than
 reinvents:
 
@@ -38,7 +38,7 @@ documents get more complete; its UI does not move. Concretely:
 
 ## Step 1: Load current state
 
-`PRODUCT.md`, `DESIGN.md` and `.eztweak/config.json` with a stack and a browser tool are the
+`PRODUCT.md`, `DESIGN.md` and `.ezdesign/config.json` with a stack and a browser tool are the
 prerequisites; run [product.md](product.md), [design.md](design.md) or [stack.md](stack.md) for
 whichever is missing, and come back.
 
@@ -95,7 +95,7 @@ it shoots every path at desktop and at 390px. After writing, shoot them again in
 and run `node <skill>/scripts/page.mjs compare <dir>/before <dir>/after`. Every line must say
 `same`; any difference is a change to undo, not a finding to report. Only when the script cannot
 run - there is no Chrome - do the same with the browser tool. Then write `components.primitives` into
-`.eztweak/config.json`, and `design_system` when this step created one.
+`.ezdesign/config.json`, and `design_system` when this step created one.
 
 Tell the user in a few lines what the design system now carries, which primitives were added and
 where, and every divergence between `DESIGN.md` and the existing system that you left as it was.

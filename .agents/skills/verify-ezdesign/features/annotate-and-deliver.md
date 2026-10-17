@@ -10,9 +10,9 @@ A user arms a mode in the review shell, picks an element (or drags a box) on the
 - `deliver-send` sends the queue as one batch; a waiting `poll` prints it and exits 0.
 - `deliver-anchor` the batch carries `anchor.source`, `components`, `section`, `selector`, `text`, `rect`, `viewport`, `page`.
 - `agent-status` the shell shows Agent 未連線 / 已連線 / 修改中 from the poller's state.
-- `agent-progress` `eztweak progress` replaces the status line text.
+- `agent-progress` `ezdesign progress` replaces the status line text.
 - `agent-reply` `poll --agent-reply` appends the reply under the batch in the thread.
-- `agent-end` `eztweak end` ends the session; the shell disables annotating and sending and says so.
+- `agent-end` `ezdesign end` ends the session; the shell disables annotating and sending and says so.
 
 ## How to get to it (user POV)
 
@@ -20,7 +20,7 @@ A user arms a mode in the review shell, picks an element (or drags a box) on the
 - Press `r` or choose `範圍`, drag a box over the page.
 - Choose `加入待送清單` or press `⌘+Enter` in the comment box.
 - Choose `送出給 agent` or press `⌘+Enter` outside the comment box.
-- As the agent: `eztweak poll <url>`, `eztweak progress <url> <msg>`, `eztweak poll <url> --agent-reply <msg>`, `eztweak end <url>`.
+- As the agent: `ezdesign poll <url>`, `ezdesign progress <url> <msg>`, `ezdesign poll <url> --agent-reply <msg>`, `ezdesign end <url>`.
 
 ## Driving it with chrome-devtools-axi and vz.mjs
 

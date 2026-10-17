@@ -10,8 +10,8 @@
 //   node page.mjs compare <before-dir> <after-dir> which screenshots changed; exit 1 when any did
 //
 // It drives a headless Chrome of its own over the DevTools protocol, one browser per command. In an
-// eztweak session that browser is signed in the way the user's is: the daemon hands over the page's
-// cookies and storage, in Playwright's storageState shape, through EZTWEAK_PAGE_STATE.
+// ezdesign session that browser is signed in the way the user's is: the daemon hands over the page's
+// cookies and storage, in Playwright's storageState shape, through EZDESIGN_PAGE_STATE.
 
 import { spawn } from 'node:child_process'
 import {
@@ -70,7 +70,7 @@ export function findChrome(env = process.env, platform = process.platform) {
 
 /** The DevTools protocol over the pipe Chrome opens on fds 3 and 4: JSON messages ended by NUL. */
 async function launch() {
-  const profile = mkdtempSync(join(tmpdir(), 'eztweak-page-'))
+  const profile = mkdtempSync(join(tmpdir(), 'ezdesign-page-'))
   const chrome = spawn(
     findChrome(),
     [
@@ -271,10 +271,10 @@ async function withBrowser(url, run) {
 // ---------------------------------------------------------------------------- signing in
 
 async function fetchPageState(env = process.env) {
-  if (!env.EZTWEAK_PAGE_STATE || !env.EZTWEAK_PAGE_STATE_TOKEN) return null
+  if (!env.EZDESIGN_PAGE_STATE || !env.EZDESIGN_PAGE_STATE_TOKEN) return null
   try {
-    const res = await fetch(env.EZTWEAK_PAGE_STATE, {
-      headers: { authorization: `Bearer ${env.EZTWEAK_PAGE_STATE_TOKEN}` },
+    const res = await fetch(env.EZDESIGN_PAGE_STATE, {
+      headers: { authorization: `Bearer ${env.EZDESIGN_PAGE_STATE_TOKEN}` },
       signal: AbortSignal.timeout(STATE_TIMEOUT_MS),
     })
     return res.ok ? await res.json() : null
