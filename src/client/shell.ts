@@ -992,7 +992,18 @@ function paintStrip(): void {
   const signature = JSON.stringify([currentChatId(), snapshot?.agentBusy ?? false, rounds])
   if (signature === stripDrawn) return
   stripDrawn = signature
+  const focused = document.activeElement
+  const chip = focused instanceof HTMLElement && strip.contains(focused) ? focused : null
+  const heldRound = chip?.closest<HTMLElement>('[data-round]')?.dataset.round
+  const heldChoice = chip?.dataset.choice
   strip.replaceChildren(...rounds.map((round) => roundPill(round)))
+  // Rebuilt whole, so the chip being chosen with the arrow keys has to be handed focus back.
+  if (heldRound === undefined || heldChoice === undefined) return
+  strip
+    .querySelector<HTMLElement>(
+      `[data-round="${CSS.escape(heldRound)}"] [data-choice="${CSS.escape(heldChoice)}"]`,
+    )
+    ?.focus()
 }
 
 /** Which conversation the review is reading, for the pills - a round's actions
@@ -1210,28 +1221,73 @@ function askOnStrip(
   go.focus()
 }
 
+/** A choose-one row's state, from one place: the class for the eye,
+ *  `aria-checked` for assistive tech, and the row's single tab stop - on the
+ *  checked option, or the first when none is. */
+function paintRadios(
+  radios: HTMLButtonElement[],
+  isOn: (radio: HTMLButtonElement) => boolean,
+): void {
+  const checked = radios.find(isOn)
+  for (const radio of radios) {
+    const on = radio === checked
+    radio.classList.toggle('ez-on', on)
+    radio.setAttribute('aria-checked', String(on))
+    radio.tabIndex = radio === (checked ?? radios[0]) ? 0 : -1
+  }
+}
+
+/** Arrows move the choice along a radio row, wrapping, and focus goes with it. */
+function radioKeys(
+  row: HTMLElement,
+  radios: HTMLButtonElement[],
+  choose: (radio: HTMLButtonElement) => void,
+): void {
+  row.addEventListener('keydown', (e) => {
+    const step =
+      e.key === 'ArrowRight' || e.key === 'ArrowDown'
+        ? 1
+        : e.key === 'ArrowLeft' || e.key === 'ArrowUp'
+          ? -1
+          : 0
+    const at = radios.indexOf(e.target as HTMLButtonElement)
+    if (!step || at < 0) return
+    e.preventDefault()
+    const next = radios[(at + step + radios.length) % radios.length]!
+    next.focus()
+    choose(next)
+  })
+}
+
 function roundPill(round: ExploreWire): HTMLElement {
   const pill = h('div', 'ez-strip-pill')
+  pill.dataset.round = round.id
   pill.title = round.direction ? `${round.label}：${round.direction}` : round.label
   pill.setAttribute('role', 'group')
   pill.setAttribute('aria-label', `探索 ${round.label}`)
   pill.append(icon(MagicWand01Icon as IconNode, 14))
 
   const chips = h('div', 'ez-strip-chips')
-  const original = h('button', `ez-strip-chip${round.selected === null ? ' ez-on' : ''}`, '原本')
-  original.title = '這個元素原本的樣子'
-  original.onclick = () => select(round, null)
-  chips.append(original)
-  for (const variant of round.variants) {
-    const on = variant.id === round.selected
-    const chip = h('button', `ez-strip-chip${on ? ' ez-on' : ''}`, variant.name)
+  chips.setAttribute('role', 'radiogroup')
+  chips.setAttribute('aria-label', '變體')
+  const chip = (choice: string | null, name: string, title: string): HTMLButtonElement => {
+    const btn = h('button', 'ez-strip-chip', name)
+    btn.setAttribute('role', 'radio')
+    btn.dataset.choice = choice ?? ''
+    btn.title = title
+    btn.onclick = () => select(round, choice)
+    return btn
+  }
+  const radios = [
+    chip(null, '原本', '這個元素原本的樣子'),
     // The note is a sentence about what this variant did, and on the pill it
     // would set the width that four variants have to share. It is the tooltip's
     // to carry, alongside the name in full - the chip clips that too.
-    chip.title = variant.note ? `${variant.name}：${variant.note}` : variant.name
-    chip.onclick = () => select(round, variant.id)
-    chips.append(chip)
-  }
+    ...round.variants.map((v) => chip(v.id, v.name, v.note ? `${v.name}：${v.note}` : v.name)),
+  ]
+  paintRadios(radios, (btn) => btn.dataset.choice === (round.selected ?? ''))
+  radioKeys(chips, radios, (btn) => select(round, btn.dataset.choice || null))
+  chips.append(...radios)
   if (round.status === 'generating') {
     chips.append(h('div', 'ez-strip-pending', round.variants.length ? '還在想…' : '正在產生…'))
   }
