@@ -3,7 +3,7 @@ import { after, test } from 'node:test'
 import type { ExploreState } from '../src/protocol.js'
 import { DaemonWorld, FAKE_AGENT, waitFor } from './helpers/daemon.js'
 
-const world = new DaemonWorld(4500)
+const world = await DaemonWorld.create()
 after(() => world.dispose())
 
 interface State {
