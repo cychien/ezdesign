@@ -167,17 +167,25 @@ export class DaemonWorld {
     return (await res.json()) as Record<string, unknown>
   }
 
-  /** Queue one annotation and send it, which is what puts a user entry - and
-   *  whatever the agent replies to it - in the thread. */
+  /** Queue one annotation, send it, and wait for the agent's reply: a session
+   *  is only resumable once a turn on it has ended. */
   async sendFeedback(sessionPort: number, comment: string): Promise<void> {
     const api = `http://127.0.0.1:${sessionPort}/__ezdesign/api`
     const headers = { 'content-type': 'application/json' }
+    const replies = async () => {
+      const { conversation } = (await this.state(sessionPort)) as {
+        conversation: { role: string }[]
+      }
+      return conversation.filter((e) => e.role === 'agent').length
+    }
+    const before = await replies()
     await fetch(`${api}/annotations`, {
       method: 'POST',
       headers,
       body: JSON.stringify({ kind: 'element', comment, anchor: { selector: 'div' } }),
     })
     await fetch(`${api}/send`, { method: 'POST', headers, body: JSON.stringify({ note: null }) })
+    await waitFor(async () => (await replies()) > before, 'the agent to answer the feedback')
   }
 
   /** Stops the daemon on `port` and waits for its process to be gone, ports
