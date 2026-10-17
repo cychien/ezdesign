@@ -167,11 +167,24 @@ export class DaemonWorld {
     return (await res.json()) as Record<string, unknown>
   }
 
-  /** Queue one annotation, send it, and wait for the agent's reply: a session
-   *  is only resumable once a turn on it has ended. */
+  /** Queue one annotation and send it. Returns once the daemon holds the batch,
+   *  whether or not any agent is there to take it. */
+  async postFeedback(sessionPort: number, comment: string): Promise<void> {
+    const post = async (path: string, body: unknown) => {
+      const res = await fetch(`http://127.0.0.1:${sessionPort}/__ezdesign/api/${path}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      if (!res.ok) throw new Error(`POST ${path} failed: ${res.status} ${await res.text()}`)
+    }
+    await post('annotations', { kind: 'element', comment, anchor: { selector: 'div' } })
+    await post('send', { note: null })
+  }
+
+  /** Post feedback and wait for the agent's reply: a session is only resumable
+   *  once a turn on it has ended. */
   async sendFeedback(sessionPort: number, comment: string): Promise<void> {
-    const api = `http://127.0.0.1:${sessionPort}/__ezdesign/api`
-    const headers = { 'content-type': 'application/json' }
     const replies = async () => {
       const { conversation } = (await this.state(sessionPort)) as {
         conversation: { role: string }[]
@@ -179,12 +192,7 @@ export class DaemonWorld {
       return conversation.filter((e) => e.role === 'agent').length
     }
     const before = await replies()
-    await fetch(`${api}/annotations`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({ kind: 'element', comment, anchor: { selector: 'div' } }),
-    })
-    await fetch(`${api}/send`, { method: 'POST', headers, body: JSON.stringify({ note: null }) })
+    await this.postFeedback(sessionPort, comment)
     await waitFor(async () => (await replies()) > before, 'the agent to answer the feedback')
   }
 
