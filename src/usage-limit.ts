@@ -16,7 +16,7 @@
  *  percentage from a window that has since reset is not stale, it is wrong. */
 
 import { spawn } from 'node:child_process'
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { AcpLimit, AcpUsageWindow } from './acp-agent.js'
@@ -277,10 +277,11 @@ export function claudeLimitFromUsageText(text: string, now = Date.now()): AcpLim
 }
 
 async function readClaudeLimit(binary: string): Promise<AcpLimit | undefined> {
+  // A scratch cwd: `/usage` loads the settings of wherever it is run, and this
+  // has no business inheriting the review's.
+  const cwd = mkdtempSync(join(tmpdir(), 'ezdesign-usage-'))
   const child = spawn(binary, ['-p', '/usage', '--output-format', 'json'], {
-    // A scratch cwd: `/usage` loads the settings of wherever it is run, and this
-    // has no business inheriting the review's.
-    cwd: mkdtempSync(join(tmpdir(), 'ezdesign-usage-')),
+    cwd,
     stdio: ['ignore', 'pipe', 'ignore'],
   })
   const timer = setTimeout(() => child.kill('SIGKILL'), READ_TIMEOUT_MS)
@@ -305,6 +306,7 @@ async function readClaudeLimit(binary: string): Promise<AcpLimit | undefined> {
     })
   } finally {
     clearTimeout(timer)
+    rmSync(cwd, { recursive: true, force: true })
   }
 }
 
