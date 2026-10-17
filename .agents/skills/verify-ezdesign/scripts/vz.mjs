@@ -603,20 +603,23 @@ async function cmdConsumer() {
   const required = ['dist/cli.mjs', 'dist/vite.mjs', 'dist/vite.d.ts', 'dist/shell.js', 'dist/shell.css', 'dist/overlay.js', 'dist/overlay.css', 'skills/ezdesign/SKILL.md', 'README.md', 'LICENSE', 'package.json']
   const missing = required.filter((f) => !files.includes(f))
   const stray = files.filter((f) => /^(src|test|fixtures|scripts|\.agents|\.claude)\//.test(f))
-  transcript.push(`# tarball ${info.filename}: ${files.length} files; missing: ${missing.join(', ') || 'none'}; stray: ${stray.join(', ') || 'none'}`, '')
-  if (missing.length || stray.length) failed++
-  say(`${missing.length || stray.length ? 'FAIL' : 'ok  '} tarball contents (${files.length} files)`)
+  transcript.push(`# tarball ${info.filename} (${info.name}@${info.version}): ${files.length} files; missing: ${missing.join(', ') || 'none'}; stray: ${stray.join(', ') || 'none'}`, '')
+  const misnamed = info.name !== PKG.name || info.filename !== `${PKG.name.replace('@', '').replace('/', '-')}-${PKG.version}.tgz`
+  if (missing.length || stray.length || misnamed) failed++
+  say(`${missing.length || stray.length || misnamed ? 'FAIL' : 'ok  '} tarball ${info.filename} contents (${files.length} files)`)
   writeFileSync(join(app, 'package.json'), JSON.stringify({ name: 'consumer-app', private: true, type: 'module' }, null, 2))
-  step('install tarball into a fresh project', 'npm', ['install', '--no-audit', '--no-fund', join(work, info.filename)])
+  step('install tarball into a fresh project', 'npm', ['install', '--no-audit', '--no-fund', join(work, info.filename)], {
+    expect: (r) => r.status === 0 && existsSync(join(app, 'node_modules', PKG.name, 'dist', 'cli.mjs')),
+  })
   const bin = join(app, 'node_modules/.bin/ezdesign')
   step('bin --version', bin, ['--version'], { expect: (r) => r.status === 0 && r.stdout.trim() === PKG.version })
-  step('bin --help', bin, ['--help'], { expect: (r) => r.status === 0 && r.stdout.includes('Usage:') })
+  step('bin --help', bin, ['--help'], { expect: (r) => r.status === 0 && r.stdout.startsWith('ezdesign - ') && r.stdout.includes('Usage:') })
   step('bin status (no daemon)', bin, ['status'], { expect: (r) => r.status === 0 && r.stdout.includes('daemon: not running') })
   step('bad EZDESIGN_CONTROL_PORT is fatal', bin, ['status'], {
     env: { ...env, EZDESIGN_CONTROL_PORT: 'abc' },
     expect: (r) => r.status === 1 && r.stderr.includes('EZDESIGN_CONTROL_PORT must be an integer'),
   })
-  step('import ezdesign/vite', 'node', ['--input-type=module', '-e', "import { ezdesignSource } from 'ezdesign/vite'; const p = ezdesignSource(); if (p.name !== 'ezdesign:source' || p.apply !== 'serve' || typeof p.transform !== 'function') process.exit(1); const out = p.transform('export const A = () => <div>hi</div>', process.cwd() + '/A.tsx'); console.log(out && out.code); if (!out || !out.code.includes('data-ez-source=\"A.tsx:1\"')) process.exit(1)"])
+  step('import @cychien/ezdesign/vite', 'node', ['--input-type=module', '-e', "import { ezdesignSource } from '@cychien/ezdesign/vite'; const p = ezdesignSource(); if (p.name !== 'ezdesign:source' || p.apply !== 'serve' || typeof p.transform !== 'function') process.exit(1); const out = p.transform('export const A = () => <div>hi</div>', process.cwd() + '/A.tsx'); console.log(out && out.code); if (!out || !out.code.includes('data-ez-source=\"A.tsx:1\"')) process.exit(1)"])
   const state = readState()
   if (state && alive(state.vitePid)) {
     let installedDaemon = null

@@ -17,7 +17,7 @@ see what you asked for.
 ## The commands
 
 ```
-npx -y ezdesign@latest inspire --query "<what the piece has to show>" [--tag onboarding] [--limit 5]
+npx -y @cychien/ezdesign@latest inspire --query "<what the piece has to show>" [--tag onboarding] [--limit 5]
 ```
 
 A `--query`, `--tag`, or both. A search prints a block per result: what it is, its tags, `Shows:`
@@ -31,9 +31,9 @@ There is no fixed list of tags, so lean on the query: it finds by meaning, and a
 helps when some entry happens to carry it.
 
 It works without a review session, a daemon or a dev server. It needs a token, stored once by
-`npx -y ezdesign@latest login`.
+`npx -y @cychien/ezdesign@latest login`.
 
-When the prompt names the ezdesign command to run, run that one instead of `npx -y ezdesign@latest`.
+When the prompt names the ezdesign command to run, run that one instead of `npx -y @cychien/ezdesign@latest`.
 Never look for another copy or version of ezdesign to run - a repository checkout, a global install,
 a different package version: the command you were given is the only one.
 

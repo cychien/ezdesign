@@ -9,9 +9,9 @@ anything that can run a CLI) as structured items that resolve to **exact source 
 agent edits the code, HMR updates the page in place, the user reviews the next round.
 
 ```
-$ npx -y ezdesign@latest http://localhost:5173/pricing --agent claude  # managed ACP agent
-$ npx -y ezdesign@latest http://localhost:5173/pricing                 # portable poll mode
-$ npx -y ezdesign@latest poll http://localhost:5173/                   # agent waits for feedback
+$ npx -y @cychien/ezdesign@latest http://localhost:5173/pricing --agent claude  # managed ACP agent
+$ npx -y @cychien/ezdesign@latest http://localhost:5173/pricing                 # portable poll mode
+$ npx -y @cychien/ezdesign@latest poll http://localhost:5173/                   # agent waits for feedback
 ```
 
 - **Zero config.** A local daemon reverse-proxies your dev server and injects the annotation
@@ -34,7 +34,7 @@ $ npx -y ezdesign@latest poll http://localhost:5173/                   # agent w
 
 ## Install
 
-Nothing to install - `npx -y ezdesign@latest` is enough. For agents, add the bundled skill:
+Nothing to install - `npx -y @cychien/ezdesign@latest` is enough. For agents, add the bundled skill:
 
 ```
 npx skills add cychien/ezdesign --skill ezdesign
@@ -44,7 +44,7 @@ Optional, for exact `file:line` anchors in Vite + React projects:
 
 ```ts
 // vite.config.ts
-import { ezdesignSource } from 'ezdesign/vite'
+import { ezdesignSource } from '@cychien/ezdesign/vite'
 
 export default defineConfig({
   plugins: [ezdesignSource(), react()],
@@ -71,18 +71,18 @@ that click.
 
 Without the shell:
 
-- **CLI** - always invoke it as `npx -y ezdesign@latest`. A bare `npx ezdesign` reuses whatever
-  version npx cached and never checks for a newer one.
+- **CLI** - always invoke it as `npx -y @cychien/ezdesign@latest`. A bare `npx @cychien/ezdesign`
+  reuses whatever version npx cached and never checks for a newer one.
 - **Daemon** - opening a session with a different CLI version replaces the running daemon with that
   version, under the same restore guarantee any daemon restart gets (see Configuration). A CLI
   that reaches a daemon on another version is refused with a `409` that says how to update,
   instead of speaking a mismatched protocol.
 - **Skill** - `npx skills update ezdesign`, whenever you feel like it. Deliberately not part of the
-  update button: the skill's own instructions launch the CLI as `npx -y ezdesign@latest`, so an old
-  copy still starts a current review, and everything that governs a review once it is running
-  ships with the daemon. Its reader is also an agent session ezdesign did not spawn and cannot
-  restart, so a sync would not take effect until that agent's next session either way. The bundled
-  copy carries the release it came from in its frontmatter (`metadata.version`).
+  update button: the skill's own instructions launch the CLI as `npx -y @cychien/ezdesign@latest`,
+  so an old copy still starts a current review, and everything that governs a review once it is
+  running ships with the daemon. Its reader is also an agent session ezdesign did not spawn and
+  cannot restart, so a sync would not take effect until that agent's next session either way. The
+  bundled copy carries the release it came from in its frontmatter (`metadata.version`).
 
 The daemon asks the npm registry for the latest version at most once every four hours. Set
 `EZDESIGN_NO_UPDATE_CHECK=1` to never ask.
@@ -298,7 +298,7 @@ portable polling contract. Both modes receive the same structured feedback and e
 Pass `--agent` when opening the session:
 
 ```
-npx -y ezdesign@latest http://localhost:5173/ --agent claude
+npx -y @cychien/ezdesign@latest http://localhost:5173/ --agent claude
 ```
 
 The daemon starts the agent as a child process, sends each feedback batch as one turn, and shows
@@ -422,8 +422,8 @@ the daemon before switching it to a different agent.
 Without `--agent`, the review uses the existing CLI contract:
 
 ```
-npx -y ezdesign@latest http://localhost:5173/
-npx -y ezdesign@latest poll http://localhost:5173/
+npx -y @cychien/ezdesign@latest http://localhost:5173/
+npx -y @cychien/ezdesign@latest poll http://localhost:5173/
 ```
 
 `poll` blocks until the user sends feedback, prints the structured batch as JSON, and exits. This
@@ -437,9 +437,9 @@ choice. It is searched by meaning - a description of what the piece has to show 
 tags in their curator's own words, which nudge a search that names one. It needs a token:
 
 ```
-npx -y ezdesign@latest login --token <token>
-npx -y ezdesign@latest inspire --query "a command menu over the whole product"
-npx -y ezdesign@latest inspire --query "an onboarding checklist" --tag "dark popover" --limit 3
+npx -y @cychien/ezdesign@latest login --token <token>
+npx -y @cychien/ezdesign@latest inspire --query "a command menu over the whole product"
+npx -y @cychien/ezdesign@latest inspire --query "an onboarding checklist" --tag "dark popover" --limit 3
 ```
 
 `login` writes the token to `~/.ezdesign/credentials.json`, mode 600; without `--token` it prompts,

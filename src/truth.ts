@@ -62,7 +62,7 @@ function inspireLine(inspire: Inspire | undefined, skill: string): string[] {
     ]
   }
   return [
-    `Run inspiration commands as \`${inspire.cli} inspire ...\` in place of \`npx -y ezdesign@latest inspire ...\`,`,
+    `Run inspiration commands as \`${inspire.cli} inspire ...\` in place of \`npx -y @cychien/ezdesign@latest inspire ...\`,`,
     'and never another copy of ezdesign: if it fails, that is the failure. Before a search, read',
     `\`${skillReference(skill, 'inspiration')}\`: how to search, and how to read what comes back.`,
   ]

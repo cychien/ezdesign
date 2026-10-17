@@ -8,6 +8,7 @@ import {
   fetchLatestVersion,
   isNewer,
   latestVersion,
+  REGISTRY_LATEST_URL,
   updateChecksDisabled,
 } from '../src/update-check.js'
 
@@ -52,6 +53,17 @@ test('fetchLatestVersion reads the dist-tag manifest and swallows every failure'
     throw new TypeError('fetch failed')
   }) as unknown as typeof fetch
   assert.equal(await fetchLatestVersion(offline), null)
+})
+
+test('fetchLatestVersion asks the registry for the scoped package', async () => {
+  assert.equal(REGISTRY_LATEST_URL, 'https://registry.npmjs.org/@cychien/ezdesign/latest')
+  const asked: string[] = []
+  const recording = (async (url: string) => {
+    asked.push(url)
+    return new Response(JSON.stringify({ version: '0.8.0' }))
+  }) as unknown as typeof fetch
+  assert.equal(await fetchLatestVersion(recording), '0.8.0')
+  assert.deepEqual(asked, ['https://registry.npmjs.org/@cychien/ezdesign/latest'])
 })
 
 test('latestVersion asks the registry once per TTL and keeps the last answer offline', async () => {

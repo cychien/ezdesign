@@ -7,20 +7,29 @@ import { test } from 'node:test'
 
 process.env.EZDESIGN_DATA_DIR = mkdtempSync(join(tmpdir(), 'ezdesign-installer-'))
 
-const { npmErrorSummary, pruneInstalledVersions, shellQuote } = await import('../src/installer.js')
+const { installedPackageRoot, npmErrorSummary, packageSpec, pruneInstalledVersions, shellQuote } =
+  await import('../src/installer.js')
 const { VERSIONS_DIR } = await import('../src/constants.js')
+
+test('a self-update installs the scoped npm package under the data dir', () => {
+  assert.equal(packageSpec('0.8.0'), '@cychien/ezdesign@0.8.0')
+  assert.equal(
+    installedPackageRoot('0.8.0'),
+    join(process.env.EZDESIGN_DATA_DIR!, 'versions/0.8.0/node_modules/@cychien/ezdesign'),
+  )
+})
 
 test('npmErrorSummary keeps what npm said and drops the noise around it', () => {
   const stderr = [
     'npm error code ETARGET',
-    'npm error notarget No matching version found for ezdesign@9.9.9.',
+    'npm error notarget No matching version found for @cychien/ezdesign@9.9.9.',
     'npm error notarget In most cases you or one of your dependencies are requesting',
     "npm error notarget a package version that doesn't exist.",
     'npm error A complete log of this run can be found in: /Users/x/.npm/_logs/1.log',
   ].join('\n')
   assert.equal(
     npmErrorSummary(stderr),
-    'code ETARGET notarget No matching version found for ezdesign@9.9.9.',
+    'code ETARGET notarget No matching version found for @cychien/ezdesign@9.9.9.',
   )
   assert.equal(npmErrorSummary('something odd\nlast line'), 'last line')
   assert.equal(npmErrorSummary(''), '')
@@ -37,7 +46,7 @@ test('shellQuote survives a round trip through the shell it is quoting for', {
     '/tmp/a$HOME/b',
     '/tmp/a&b;c/d',
     '/tmp/back\\slash',
-    'ezdesign@0.7.0',
+    '@cychien/ezdesign@0.7.0',
     '--no-audit',
   ]) {
     const out = spawnSync('sh', ['-c', `printf %s ${shellQuote(arg)}`], { encoding: 'utf8' })
@@ -47,7 +56,7 @@ test('shellQuote survives a round trip through the shell it is quoting for', {
 })
 
 function installedVersion(version: string): string {
-  const dir = join(VERSIONS_DIR, version, 'node_modules', 'ezdesign', 'dist')
+  const dir = join(installedPackageRoot(version), 'dist')
   mkdirSync(dir, { recursive: true })
   writeFileSync(join(dir, 'cli.mjs'), '')
   return join(dir, 'cli.mjs')
@@ -71,13 +80,13 @@ test('pruning compares real paths, so a symlinked data dir is not self-destructi
   symlinkSync(real, link)
 
   const viaLink = join(link, 'versions')
-  const dir = join(viaLink, '0.7.0', 'node_modules', 'ezdesign', 'dist')
+  const dir = join(viaLink, '0.7.0', 'node_modules', '@cychien', 'ezdesign', 'dist')
   mkdirSync(dir, { recursive: true })
   writeFileSync(join(dir, 'cli.mjs'), '')
   mkdirSync(join(viaLink, '0.6.1'), { recursive: true })
 
   // What the daemon passes in: its own entry, symlinks already resolved.
-  const running = join(real, 'versions', '0.7.0', 'node_modules', 'ezdesign', 'dist', 'cli.mjs')
+  const running = join(real, 'versions', '0.7.0', 'node_modules', '@cychien', 'ezdesign', 'dist', 'cli.mjs')
   pruneInstalledVersions(running, viaLink)
   assert.deepEqual(readdirSync(viaLink).sort(), ['0.7.0'])
 })

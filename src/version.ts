@@ -1,7 +1,7 @@
 import type { RequestHandler } from 'express'
-import { PKG_NAME } from './constants.js'
+import { APP_NAME, NPM_PACKAGE } from './constants.js'
 
-export const VERSION_HEADER = `x-${PKG_NAME}-version`
+export const VERSION_HEADER = `x-${APP_NAME}-version`
 
 /** Reopening with @latest restarts the daemon on the CLI's version, so one hint
  *  covers a stale CLI and a stale daemon alike. */
@@ -11,9 +11,9 @@ export function versionMismatchBody(
 ): { error: string; hint: string } {
   return {
     error: cliVersion
-      ? `this ${PKG_NAME} CLI is v${cliVersion} but the daemon is running v${daemonVersion}`
-      : `this ${PKG_NAME} CLI predates the running daemon (v${daemonVersion})`,
-    hint: `re-run as \`npx -y ${PKG_NAME}@latest <url>\` to bring both to the current version`,
+      ? `this ${APP_NAME} CLI is v${cliVersion} but the daemon is running v${daemonVersion}`
+      : `this ${APP_NAME} CLI predates the running daemon (v${daemonVersion})`,
+    hint: `re-run as \`npx -y ${NPM_PACKAGE}@latest <url>\` to bring both to the current version`,
   }
 }
 

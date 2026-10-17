@@ -1,6 +1,6 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
-import { NO_UPDATE_CHECK_ENV, PKG_NAME, UPDATE_CHECK_FILE, UPDATE_CHECK_TTL_MS } from './constants.js'
+import { NO_UPDATE_CHECK_ENV, NPM_PACKAGE, UPDATE_CHECK_FILE, UPDATE_CHECK_TTL_MS } from './constants.js'
 
 interface ParsedVersion {
   nums: [number, number, number]
@@ -40,7 +40,7 @@ export function updateChecksDisabled(env: NodeJS.ProcessEnv = process.env): bool
   return raw !== undefined && raw !== '' && raw !== '0' && raw.toLowerCase() !== 'false'
 }
 
-export const REGISTRY_LATEST_URL = `https://registry.npmjs.org/${PKG_NAME}/latest`
+export const REGISTRY_LATEST_URL = `https://registry.npmjs.org/${NPM_PACKAGE}/latest`
 
 /** The `latest` dist-tag, or null when the registry cannot be reached or says
  *  something unexpected. Both are the same to the caller: nothing to offer. */

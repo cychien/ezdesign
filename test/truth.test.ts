@@ -183,7 +183,7 @@ test('the setup brief walks the steps for what is missing, and has no batch to h
   assert.ok(!done.includes(skillReference(SKILL, 'product')))
 })
 
-const CLI = '/usr/local/bin/node /Users/me/.npm/_npx/abc/node_modules/ezdesign/dist/cli.mjs'
+const CLI = '/usr/local/bin/node /Users/me/.npm/_npx/abc/node_modules/@cychien/ezdesign/dist/cli.mjs'
 const INSPIRE = { cli: CLI }
 
 test('the briefs stay short enough to be read', () => {
@@ -445,7 +445,7 @@ test('the stack reference records the design system and component library, and a
 test('the inspiration reference gives the commands, the payload, and the two rules', () => {
   const doc = readFileSync(skillReference(SKILL, 'inspiration'), 'utf8')
   const flat = doc.replace(/\s+/g, ' ')
-  assert.ok(doc.includes('npx -y ezdesign@latest inspire --query'), 'the description is the way in')
+  assert.ok(doc.includes('npx -y @cychien/ezdesign@latest inspire --query'), 'the description is the way in')
   assert.ok(doc.includes('[--tag onboarding]'), 'tags are free words that nudge a search')
   assert.ok(!doc.includes('vocabulary') && !doc.includes('--feeling') && !doc.includes('--pattern'))
   assert.ok(flat.includes('the elements on it, the register its wording is in, the actions'))

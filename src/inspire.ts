@@ -3,10 +3,10 @@
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-import { DATA_DIR, PKG_NAME } from './constants.js'
+import { DATA_DIR, APP_NAME } from './constants.js'
 
 export const DEFAULT_INSPIRE_URL = 'https://inspire.ezdesign.dev'
-export const INSPIRE_URL_ENV = `${PKG_NAME.toUpperCase()}_INSPIRE_URL`
+export const INSPIRE_URL_ENV = `${APP_NAME.toUpperCase()}_INSPIRE_URL`
 
 const SEARCH_TIMEOUT_MS = 15_000
 const IMAGE_TIMEOUT_MS = 30_000
@@ -199,7 +199,7 @@ export async function search(
   )
   if (res.status === 401) {
     throw new InspireError(
-      `the inspiration token was refused; run \`${PKG_NAME} login\` with a current token`,
+      `the inspiration token was refused; run \`${APP_NAME} login\` with a current token`,
     )
   }
   if (!res.ok) throw new InspireError(`the inspiration service answered ${res.status}`)
