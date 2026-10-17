@@ -70,10 +70,12 @@ import { listSkills, skillPrefix, spendSkillMarkers } from './skills.js'
 import { SessionStore, listRestorableSessions, newId } from './store.js'
 import {
   clearRegistry,
+  dataDirId,
   findRunningDaemon,
   launchDaemon,
   probeDaemon,
   readRegistry,
+  servesThisDataDir,
   writeRegistry,
 } from './registry.js'
 import { installVersion, pruneInstalledVersions } from './installer.js'
@@ -2089,9 +2091,10 @@ class SessionRuntime {
   }
 }
 
-/** A daemon already holding the control range — from a run whose registry file
- *  was deleted or corrupted. Adopting it beats racing it for ports and leaving
- *  two daemons alive with one registry between them. */
+/** A daemon of this data dir already holding the control range - from a run
+ *  whose registry file was deleted or corrupted. Adopting it beats racing it for
+ *  ports and leaving two daemons alive with one registry between them. One
+ *  serving another data dir is only a taken port. */
 async function findLiveDaemonInRange(range: {
   start: number
   end: number
@@ -2102,8 +2105,8 @@ async function findLiveDaemonInRange(range: {
         signal: AbortSignal.timeout(400),
       })
       if (!res.ok) continue
-      const body = (await res.json()) as { service?: string; pid?: number }
-      if (body.service === APP_NAME && typeof body.pid === 'number') {
+      const body = (await res.json()) as { service?: string; pid?: number; dataDirId?: string }
+      if (body.service === APP_NAME && typeof body.pid === 'number' && servesThisDataDir(body)) {
         return { port, pid: body.pid }
       }
     } catch {
@@ -2219,7 +2222,7 @@ export async function daemonMain(version: string, opts: DaemonOptions = {}): Pro
     // A daemon on its way out must not look healthy, or a daemon starting up in
     // that window adopts it and exits — leaving no daemon at all.
     if (stopping) return res.status(503).json({ ok: false, stopping: true })
-    res.json({ ok: true, service: APP_NAME, version, pid: process.pid })
+    res.json({ ok: true, service: APP_NAME, version, pid: process.pid, dataDirId: dataDirId() })
   })
 
   // Registered before sessions are restored, so a CLI that finds this daemon

@@ -269,9 +269,9 @@ canvas scaled to 60% is still one you can read and type into.
 | `EZDESIGN_NO_UPDATE_CHECK` | unset | Set to `1` and the daemon never asks the npm registry for the latest version, so the shell never offers an update |
 | `EZDESIGN_INSPIRE_URL` | `https://inspire.ezdesign.dev` | The inspiration database the `inspire` commands query |
 
-Set both together to run a second, fully isolated instance: a starting daemon adopts any live
-daemon it finds inside its own control range, so moving the data dir alone still lands you on the
-shared daemon. `npm run dev` sets both.
+Set `EZDESIGN_DATA_DIR` to run a second, fully isolated instance: a starting daemon only adopts a
+live daemon that serves its own data dir, so instances sharing a control range each take their own
+port in it. `npm run dev` sets both.
 
 Sessions outlive the daemon that served them. On start, the daemon picks each session back up
 from disk and re-binds it to the port it last held, so a review shell tab you already have open
