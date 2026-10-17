@@ -13,7 +13,7 @@
  *    CONFIGPUSH  push a `config_option_update` nobody asked for, then end the turn
  *    MODEPUSH  push a bare `current_mode_update`, then end the turn
  *    REFUSEHAIKU  from here on, take the request to switch to haiku and decline it
- *    PAGESTATE  reply with the page-state url and token eztweak put in its environment
+ *    PAGESTATE  reply with the page-state url and token ezdesign put in its environment
  *
  *  Env: EZ_FAKE_NO_RESUME     do not advertise session/resume
  *       EZ_FAKE_REFUSE_RESUME advertise it, then refuse every resume
@@ -167,7 +167,7 @@ async function mcpCall(server, method, params, id) {
  *  server, then send variants through its tool one at a time. */
 async function sendVariants(sessionId, variants) {
   const server = (mcpBySession.get(sessionId)?.servers ?? []).find((s) =>
-    s.name.startsWith('eztweak-explore-'),
+    s.name.startsWith('ezdesign-explore-'),
   )
   if (!server) return ['no explore server was offered']
   let id = 0
@@ -328,8 +328,8 @@ const app = agent({ name: 'fake-acp-agent' })
     if (text.includes('PAGESTATE')) {
       await say(
         JSON.stringify({
-          url: process.env.EZTWEAK_PAGE_STATE,
-          token: process.env.EZTWEAK_PAGE_STATE_TOKEN,
+          url: process.env.EZDESIGN_PAGE_STATE,
+          token: process.env.EZDESIGN_PAGE_STATE_TOKEN,
         }),
       )
       return { stopReason: 'end_turn' }
@@ -400,7 +400,7 @@ const app = agent({ name: 'fake-acp-agent' })
       // tool's full name, and the three options its dialog offers. What the
       // client picks is logged, and a refusal ends the turn with nothing sent.
       const server = (mcpBySession.get(sessionId)?.servers ?? []).find((s) =>
-        s.name.startsWith('eztweak-explore-'),
+        s.name.startsWith('ezdesign-explore-'),
       )
       const picked = await askPermission(ctx, sessionId, `mcp__${server?.name}__explore_variant`)
       if (picked !== 'allow-once' && picked !== 'allow-always') {

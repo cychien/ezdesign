@@ -5,7 +5,7 @@
 
 This is the taste the harness is built on, and the standard every piece is held to, whatever its
 direction. `DESIGN.md` sets how this product looks; the baseline is what good means under any look.
-The user's own words, in the request or in `.eztweak/taste.md`, can move a rule here; nothing else
+The user's own words, in the request or in `.ezdesign/taste.md`, can move a rule here; nothing else
 does.
 
 Everything below serves one goal: the person on the page understands it quickly and gets done what

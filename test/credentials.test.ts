@@ -11,7 +11,7 @@ import {
   writeInspireToken,
 } from '../src/credentials.js'
 
-const file = () => credentialsFile(mkdtempSync(join(tmpdir(), 'eztweak-creds-')))
+const file = () => credentialsFile(mkdtempSync(join(tmpdir(), 'ezdesign-creds-')))
 
 test('the file sits in the data dir and is written owner-only', () => {
   const path = file()

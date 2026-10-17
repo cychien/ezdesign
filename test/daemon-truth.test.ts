@@ -51,7 +51,7 @@ async function ready(projectDir: string): Promise<number> {
 }
 
 const api = (port: number, path: string, body?: unknown) =>
-  fetch(`http://127.0.0.1:${port}/__eztweak/api${path}`, {
+  fetch(`http://127.0.0.1:${port}/__ezdesign/api${path}`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body ?? {}),
@@ -342,7 +342,7 @@ test('every prompt sets the reply language, and a harness-on one names the daemo
   }
   assert.ok(!at('unlogged').includes(' inspire ...'))
   assert.ok(at('with').includes('src/cli.ts inspire ...'), "the daemon's own CLI, run as it runs")
-  assert.ok(at('with').includes('never another copy of eztweak'))
+  assert.ok(at('with').includes('never another copy of ezdesign'))
   assert.ok(at('with').includes('reference/inspiration.md'), 'how to search, named where it starts')
   assert.ok(!at('unlogged').includes('reference/inspiration.md'), 'and not when there is none')
 })

@@ -810,7 +810,7 @@ test('a form with a required field the shell cannot draw is declined without ask
 
 /** One explore round's server, as `ExploreMcp.serverEntries` builds it. */
 const EXPLORE_SERVERS: McpServerEntry[] = [
-  { type: 'http', name: 'eztweak-explore-r1', url: 'http://127.0.0.1:1/x', headers: [] },
+  { type: 'http', name: 'ezdesign-explore-r1', url: 'http://127.0.0.1:1/x', headers: [] },
 ]
 
 /** What a fork is for: the branch carries the parent's history, the parent never
@@ -892,8 +892,8 @@ test('the explore servers reach every session, including a branch', async () => 
   const report = JSON.parse((await h.ask('REPORT')).reply) as Report & {
     mcpBySession: Record<string, string[]>
   }
-  assert.deepEqual(report.mcpBySession[h.opens[0]!.sessionId], ['eztweak-explore-r1'])
-  assert.deepEqual(report.mcpBySession[forked], ['eztweak-explore-r1'])
+  assert.deepEqual(report.mcpBySession[h.opens[0]!.sessionId], ['ezdesign-explore-r1'])
+  assert.deepEqual(report.mcpBySession[forked], ['ezdesign-explore-r1'])
 })
 
 test('an agent that cannot reach an http mcp server is offered none', async () => {
@@ -929,7 +929,7 @@ test("a tool that is not the daemon's own is put to the user as a permission car
 
 test("the daemon's own tool is granted once, with no card and nothing to write down", async () => {
   // Named the way Claude Code names an MCP tool on one of our round servers.
-  const tool = 'mcp__eztweak-explore-r1__explore_variant'
+  const tool = 'mcp__ezdesign-explore-r1__explore_variant'
   const h = harness({ ownTool: isExploreTool, env: { EZ_FAKE_PERMISSION_TOOL: tool } })
   after(() => h.acp.stop())
   await h.idle()

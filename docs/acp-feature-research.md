@@ -135,7 +135,7 @@ remaining options inside the menu it opens.
 Ships `MODEL_CONFIG_ID = 'model'`, `session/set_config_option`, and `config_option_update`. So this
 is the one feature of the three that is not Claude-specific.
 
-### What eztweak has to change
+### What ezdesign has to change
 
 1. `AcpAgent.onUpdate` currently ends in `default: return`, which drops `config_option_update`,
    `current_mode_update`, `available_commands_update`, `session_info_update` and `usage_update`.
@@ -206,22 +206,22 @@ sessionCapabilities: { list:{}, delete:{}, fork:{}, resume:{}, close:{}, additio
 
 - **`session/list`** `{ cwd }` -> `{ sessions: [{ sessionId, cwd, title, updatedAt }] }`. `title` is
   the transcript summary. This is the picker's data source. Note it lists *every* Claude Code
-  session for that directory, including ones the user ran in a terminal, not only eztweak's.
+  session for that directory, including ones the user ran in a terminal, not only ezdesign's.
 - **`session/load`** -> restores context **and replays the whole history back as `session/update`
   notifications**, then sends `available_commands_update`.
 - **`session/resume`** -> restores context without replaying. Cheaper, and the right call here.
 - **`session/fork`** -> the adapter supports `_meta.jetbrains.air.fork = { version: 1, messageId,
   messageFingerprint?, messageOccurrence? }` and forks **up to that message**, i.e. a
   non-destructive rewind to a point in the conversation. `messageId` is the first-class ACP field
-  `messageId` on `agent_message_chunk` / `user_message_chunk` / `agent_thought_chunk`, so eztweak
+  `messageId` on `agent_message_chunk` / `user_message_chunk` / `agent_thought_chunk`, so ezdesign
   only has to record it while streaming. Without the `_meta`, fork means "fork at latest".
 
 `codex-acp` reports `loadSession: false` and `sessionCapabilities: {}`. This whole feature needs
 gating in the same shape as the existing `canClose`.
 
-**Do not rebuild the thread from the replay.** eztweak's prompts are the `acpPrompt()` poll JSON, so
+**Do not rebuild the thread from the replay.** ezdesign's prompts are the `acpPrompt()` poll JSON, so
 `session/load`'s replayed `user_message_chunk`s are that JSON. The thread should stay sourced from
-eztweak's own `conversation.json`, keyed to the ACP session it belongs to. That means replacing the
+ezdesign's own `conversation.json`, keyed to the ACP session it belongs to. That means replacing the
 single `conversationClear: { at }` in `session.json` with a list of chat epochs
 (`{ acpSessionId, startedAt }`), so "restore that conversation" is: pick an epoch, `session/resume`
 its `acpSessionId`, move the thread window to it. `session/resume` over `session/load` follows from
@@ -268,12 +268,12 @@ So this has to be built here. Three mechanisms:
 
 **(a) git checkpoints - recommended.** Before handing a batch to the agent, record a tree
 (`git stash create`, or `add`+`write-tree` against a temp index) under
-`refs/eztweak/<session>/<batchId>`. Restore with `git restore --source=<tree> -- <paths>`. Standard,
+`refs/ezdesign/<session>/<batchId>`. Restore with `git restore --source=<tree> -- <paths>`. Standard,
 durable, and it covers files the agent changed by running a shell command. Requires a git repo, which
-eztweak's project resolution (nearest `.git` *or* `package.json`) does not guarantee.
+ezdesign's project resolution (nearest `.git` *or* `package.json`) does not guarantee.
 
 **(b) diff replay.** ACP's `ToolCallContent` has a `diff` variant carrying `path`, `oldText`
-(optional) and `newText`. eztweak throws all tool content away today - `AcpFeedItem`'s `tool` keeps
+(optional) and `newText`. ezdesign throws all tool content away today - `AcpFeedItem`'s `tool` keeps
 only `title` and `status`. Wiring it up gives the README roadmap's "diff-derived Keep/Undo". But
 `oldText` is optional and it only sees `Edit`/`Write`, never a file changed by a shell command. Not
 sufficient alone.
@@ -293,8 +293,8 @@ three are in scope:
 - **R1 - resume across a daemon restart.** No UI. Store the `acpSessionId`, restore through
   `session/resume`. Removes the context loss the README currently promises, and the
   `AGENT_RESTARTED_NOTE` with it. A dev daemon restarts on every file save, so this is the one that
-  changes day-to-day work on eztweak itself.
-- **R2 - continue an earlier conversation.** A picker over eztweak's own chats. Touches no files.
+  changes day-to-day work on ezdesign itself.
+- **R2 - continue an earlier conversation.** A picker over ezdesign's own chats. Touches no files.
 - **R3 - rewind this review to before batch N, files included.** The only destructive one.
 
 **R3's two halves are one action, not two.** An earlier draft of this document said to keep
@@ -309,13 +309,13 @@ work, but it rests on two unstable things: `session/fork` is marked UNSTABLE in 
 removed or changed at any point") and the fork point travels in `_meta.jetbrains.air.fork`, another
 editor's vendor namespace inside the Claude adapter. Pinning the correctness of a destructive
 feature to that is the wrong trade. With `/new` the agent's memory is *empty* rather than *wrong* -
-and an empty memory does not lie - while the conversation before N stays in eztweak's own thread
+and an empty memory does not lie - while the conversation before N stays in ezdesign's own thread
 where the user can still read it. The cost is the lost context; if that proves annoying, fork can be
 added later behind a capability check, as an optimisation rather than the foundation.
 
 **Files come back from a git checkpoint, one click, behind a file list.** Before each batch is
 handed over: `GIT_INDEX_FILE=<tmp> git add -A`, `write-tree`, `commit-tree`, and a ref under
-`refs/eztweak/<sessionKey>/<batchId>`. That includes untracked files, respects `.gitignore`, never
+`refs/ezdesign/<sessionKey>/<batchId>`. That includes untracked files, respects `.gitignore`, never
 touches the working tree, and stays out of the user's own ref namespace; the session's refs are
 pruned when it ends. `ToolCallContent.diff` carries `oldText` and could rebuild a file without git,
 but it is optional and blind to anything a shell command wrote - an undo that silently misses a file
@@ -330,7 +330,7 @@ ambiguous - the file list is what makes that the user's call instead of ours.
 
 **UI.** R3 hangs off each user bubble in the thread ("rewind to before this"), because which batch is
 the action's only parameter and the bubble is where that lives; clicking it expands the file list and
-the confirm. R2's list is eztweak's own chats only, drawn from `chats[]` - every one of those has a
+the confirm. R2's list is ezdesign's own chats only, drawn from `chats[]` - every one of those has a
 thread to show, where a session the user ran in their terminal would open on an empty one.
 `session/list` is still used, for two things: dropping chats the agent no longer has on disk, and
 borrowing its `title` (the agent's own summary).
@@ -493,7 +493,7 @@ plain JSON-RPC call that costs no model turn.
 Verified by driving the app-server directly:
 
 ```jsonc
->> {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"clientInfo":{"name":"eztweak","version":"1"}}}
+>> {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"clientInfo":{"name":"ezdesign","version":"1"}}}
 >> {"jsonrpc":"2.0","id":2,"method":"account/rateLimits/read","params":null}
 << {"rateLimits":{"primary":  {"usedPercent":5, "windowDurationMins":300,  "resetsAt":1789465332},
                   "secondary":{"usedPercent":35,"windowDurationMins":10080,"resetsAt":1789910451},

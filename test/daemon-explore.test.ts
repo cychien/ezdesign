@@ -35,7 +35,7 @@ async function ready(env?: Record<string, string>): Promise<number> {
 }
 
 const api = (port: number, path: string, body?: unknown) =>
-  fetch(`http://127.0.0.1:${port}/__eztweak/api${path}`, {
+  fetch(`http://127.0.0.1:${port}/__ezdesign/api${path}`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body ?? {}),
@@ -122,7 +122,7 @@ test('an explore runs on a branch and its variants come back through the tool', 
   // without a card the user would have had to answer for the round to finish.
   const { log, prompts } = await report(port)
   assert.ok(
-    log.includes(`permission:mcp__eztweak-explore-${round.id}__explore_variant:allow-once`),
+    log.includes(`permission:mcp__ezdesign-explore-${round.id}__explore_variant:allow-once`),
     log.join('\n'),
   )
   // The agent is told the one reset the variant is given, and its value, so it
@@ -198,7 +198,7 @@ test('the round settles when its turn ends, and the url answers nobody else', as
 
   // And it is the round's own agent's url, nobody else's: the token is what says
   // so, and an unknown round and a wrong token are refused the same way.
-  const refused = await fetch(`http://127.0.0.1:${port}/__eztweak/api/mcp/${round.id}`, {
+  const refused = await fetch(`http://127.0.0.1:${port}/__ezdesign/api/mcp/${round.id}`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream' },
     body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} }),
@@ -408,7 +408,7 @@ test('an explore without markup to vary is a bad request', async () => {
 
 test('the direction takes its files and references with it', async () => {
   const port = await ready()
-  const uploaded = await fetch(`http://127.0.0.1:${port}/__eztweak/api/attachments`, {
+  const uploaded = await fetch(`http://127.0.0.1:${port}/__ezdesign/api/attachments`, {
     method: 'POST',
     headers: { 'content-type': 'image/png', 'x-ez-name': 'mood.png' },
     body: Buffer.from('not really a png'),

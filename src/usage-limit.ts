@@ -280,7 +280,7 @@ async function readClaudeLimit(binary: string): Promise<AcpLimit | undefined> {
   const child = spawn(binary, ['-p', '/usage', '--output-format', 'json'], {
     // A scratch cwd: `/usage` loads the settings of wherever it is run, and this
     // has no business inheriting the review's.
-    cwd: mkdtempSync(join(tmpdir(), 'eztweak-usage-')),
+    cwd: mkdtempSync(join(tmpdir(), 'ezdesign-usage-')),
     stdio: ['ignore', 'pipe', 'ignore'],
   })
   const timer = setTimeout(() => child.kill('SIGKILL'), READ_TIMEOUT_MS)

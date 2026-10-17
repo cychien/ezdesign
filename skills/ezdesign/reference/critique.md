@@ -25,7 +25,7 @@ praise nothing you cannot point at.
   piece belongs, not whether it complies.
 - `baseline.md` and `principles.md`, which the brief names: the standard every piece is held to,
   which these criteria are drawn from, and the craft floor. Read both before you score.
-- `.eztweak/taste.md`, when it exists: what this user has shown they consider good, learned from
+- `.ezdesign/taste.md`, when it exists: what this user has shown they consider good, learned from
   their own feedback. Read it before you judge; it outranks the examples below where they disagree.
 
 ## Look first
@@ -33,10 +33,10 @@ praise nothing you cannot point at.
 Study the screenshots before you score: the pixels are the work, and they are what the user will
 see. Judge details on the piece's own screenshots, which are at twice the page's pixels, and the
 rhythm of the page on the whole-page one; the files named `-hover`, `-focus` and `-active` are the
-piece in those states, and a state that looks wrong is a flaw of the piece. Open the page yourself, with the browser tool `.eztweak/config.json` names, only for what a
+piece in those states, and a state that looks wrong is a flaw of the piece. Open the page yourself, with the browser tool `.ezdesign/config.json` names, only for what a
 screenshot cannot show - a hover, an open menu, a state behind a click. Then glance at the diff
 (`git diff`) for one thing only: whether a control the project has a component for - a button, an
-input, a card, a dialog, the ones `.eztweak/config.json` lists under `components` - was built from
+input, a card, a dialog, the ones `.ezdesign/config.json` lists under `components` - was built from
 that component rather than by hand. Do not tour other widths or measure the DOM: a review takes a
 minute, and the user is waiting on it. Judge **what changed**,
 and what it does to the page: a flaw elsewhere that the change did not cause is not this piece's.
@@ -87,7 +87,7 @@ Score each from 1 to 10. They are listed in order of weight.
 ## What good has looked like
 
 What this skill's author picked when judging blind, as the kind of judgment to make - never as
-treatments to ask for. `.eztweak/taste.md` carries on from here for each user.
+treatments to ask for. `.ezdesign/taste.md` carries on from here for each user.
 
 - Hierarchy beat decoration: making what matters stand out did more than restyling everything.
 - Plain beat clever: a well-made clever idea lost to a clear, direct treatment every time.

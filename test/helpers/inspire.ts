@@ -164,7 +164,7 @@ export interface CliRun {
 export function runCli(args: string[], env: NodeJS.ProcessEnv): Promise<CliRun> {
   return new Promise((resolve) => {
     const child = spawn(process.execPath, ['--import', 'tsx', CLI_SRC, ...args], {
-      env: { ...process.env, EZTWEAK_NO_UPDATE_CHECK: '1', ...env },
+      env: { ...process.env, EZDESIGN_NO_UPDATE_CHECK: '1', ...env },
       stdio: ['ignore', 'pipe', 'pipe'],
     })
     let stdout = ''

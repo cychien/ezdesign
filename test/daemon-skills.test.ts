@@ -20,7 +20,7 @@ function projectWithSkills(): string {
 }
 
 const api = (port: number, path: string, body: unknown) =>
-  fetch(`http://127.0.0.1:${port}/__eztweak/api${path}`, {
+  fetch(`http://127.0.0.1:${port}/__ezdesign/api${path}`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body),

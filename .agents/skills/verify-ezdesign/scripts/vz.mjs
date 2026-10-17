@@ -26,7 +26,7 @@ const FIXTURE = realpathSync(join(REPO, 'fixtures/playground'))
 const CLI = join(REPO, 'dist/cli.mjs')
 const PKG = JSON.parse(readFileSync(join(REPO, 'package.json'), 'utf8'))
 const REPO_HASH = createHash('sha1').update(REPO).digest('hex').slice(0, 8)
-const RUN_DIR = process.env.EZTWEAK_VERIFY_RUN_DIR ?? join(tmpdir(), `eztweak-verify-${REPO_HASH}`)
+const RUN_DIR = process.env.EZDESIGN_VERIFY_RUN_DIR ?? join(tmpdir(), `ezdesign-verify-${REPO_HASH}`)
 const STATE_FILE = join(RUN_DIR, 'state.json')
 const DATA_DIR = join(RUN_DIR, 'data')
 const LOG_DIR = join(RUN_DIR, 'logs')
@@ -99,9 +99,9 @@ async function freeRange(start, step, width, limit) {
 function runEnv(state) {
   return {
     ...process.env,
-    EZTWEAK_DATA_DIR: state.dataDir,
-    EZTWEAK_CONTROL_PORT: String(state.controlPort),
-    EZTWEAK_NO_UPDATE_CHECK: '1',
+    EZDESIGN_DATA_DIR: state.dataDir,
+    EZDESIGN_CONTROL_PORT: String(state.controlPort),
+    EZDESIGN_NO_UPDATE_CHECK: '1',
     PATH: `${BROWSER_OPENER_STUB_DIR}:${process.env.PATH}`,
   }
 }
@@ -117,7 +117,7 @@ function stubBrowserOpeners() {
 
 async function getJson(url, timeout = 1500) {
   try {
-    const res = await fetch(url, { signal: AbortSignal.timeout(timeout), headers: { 'x-eztweak-version': PKG.version } })
+    const res = await fetch(url, { signal: AbortSignal.timeout(timeout), headers: { 'x-ezdesign-version': PKG.version } })
     if (!res.ok) return null
     return await res.json()
   } catch {
@@ -167,7 +167,7 @@ function evidenceDir() {
     const r = spawnSync('python3', [script, 'where'], { cwd: REPO, encoding: 'utf8' })
     if (r.status === 0 && r.stdout.trim()) return r.stdout.trim()
   }
-  return join(tmpdir(), `eztweak-verify-evidence-${REPO_HASH}`)
+  return join(tmpdir(), `ezdesign-verify-evidence-${REPO_HASH}`)
 }
 
 function sessionKey(origin, project) {
@@ -308,9 +308,9 @@ function runCli(state, args, { capture = false } = {}) {
 
 function openSession(state) {
   const r = runCli(state, [`${state.fixtureOrigin}/`], { capture: true })
-  if (r.status !== 0) die(`eztweak open failed (${r.status}):\n${r.stdout}${r.stderr}`)
+  if (r.status !== 0) die(`ezdesign open failed (${r.status}):\n${r.stdout}${r.stderr}`)
   const shell = /shell:\s+(\S+)/.exec(r.stdout)?.[1]
-  if (!shell) die(`eztweak open printed no shell url:\n${r.stdout}`)
+  if (!shell) die(`ezdesign open printed no shell url:\n${r.stdout}`)
   const reg = registry(state)
   if (!reg) die('daemon registry missing after open')
   state.shellUrl = shell
@@ -435,7 +435,7 @@ async function waitReady(state) {
   while (Date.now() < deadline) {
     const shell = await getText(state.shellUrl, 'text/html')
     const page = await getText(`http://127.0.0.1:${state.sessionPort}/`, 'text/html')
-    if (shell.status === 200 && page.status === 200 && page.body.includes('/__eztweak/overlay.js')) return
+    if (shell.status === 200 && page.status === 200 && page.body.includes('/__ezdesign/overlay.js')) return
     await delay(200)
   }
   die('shell or proxied page did not answer within 15s - run `vz.mjs doctor`')
@@ -493,7 +493,7 @@ async function cmdDoctor() {
   const shell = await getText(state.shellUrl, 'text/html')
   check(shell.status === 200 && shell.body.includes('shell.js'), 'shell url serves the shell', state.shellUrl)
   const page = await getText(`http://127.0.0.1:${state.sessionPort}/`, 'text/html')
-  check(page.body.includes('/__eztweak/overlay.js'), 'proxied page has the overlay injected')
+  check(page.body.includes('/__ezdesign/overlay.js'), 'proxied page has the overlay injected')
   say(`dataset ${state.dataset}; data dir ${state.dataDir}`)
   process.exit(failed ? 1 : 0)
 }
@@ -509,9 +509,9 @@ function cmdCli(args) {
 function cmdEnv() {
   const state = readState()
   if (!state) die('no stack recorded - run `vz.mjs up`')
-  say(`export EZTWEAK_DATA_DIR='${state.dataDir}'`)
-  say(`export EZTWEAK_CONTROL_PORT='${state.controlPort}'`)
-  say(`export EZTWEAK_NO_UPDATE_CHECK=1`)
+  say(`export EZDESIGN_DATA_DIR='${state.dataDir}'`)
+  say(`export EZDESIGN_CONTROL_PORT='${state.controlPort}'`)
+  say(`export EZDESIGN_NO_UPDATE_CHECK=1`)
   say(`export PATH='${BROWSER_OPENER_STUB_DIR}':"$PATH"`)
 }
 
@@ -580,9 +580,9 @@ async function cmdConsumer() {
     ...process.env,
     HOME: home,
     npm_config_cache: npmCache,
-    EZTWEAK_DATA_DIR: join(work, 'data'),
-    EZTWEAK_CONTROL_PORT: String(controlPort),
-    EZTWEAK_NO_UPDATE_CHECK: '1',
+    EZDESIGN_DATA_DIR: join(work, 'data'),
+    EZDESIGN_CONTROL_PORT: String(controlPort),
+    EZDESIGN_NO_UPDATE_CHECK: '1',
     PATH: `${BROWSER_OPENER_STUB_DIR}:${process.env.PATH}`,
   }
   let failed = 0
@@ -600,7 +600,7 @@ async function cmdConsumer() {
   const info = JSON.parse(pack.stdout)[0]
   const files = info.files.map((f) => f.path)
   writeFileSync(join(out, 'tarball-files.txt'), files.join('\n') + '\n')
-  const required = ['dist/cli.mjs', 'dist/vite.mjs', 'dist/vite.d.ts', 'dist/shell.js', 'dist/shell.css', 'dist/overlay.js', 'dist/overlay.css', 'skills/eztweak/SKILL.md', 'README.md', 'LICENSE', 'package.json']
+  const required = ['dist/cli.mjs', 'dist/vite.mjs', 'dist/vite.d.ts', 'dist/shell.js', 'dist/shell.css', 'dist/overlay.js', 'dist/overlay.css', 'skills/ezdesign/SKILL.md', 'README.md', 'LICENSE', 'package.json']
   const missing = required.filter((f) => !files.includes(f))
   const stray = files.filter((f) => /^(src|test|fixtures|scripts|\.agents|\.claude)\//.test(f))
   transcript.push(`# tarball ${info.filename}: ${files.length} files; missing: ${missing.join(', ') || 'none'}; stray: ${stray.join(', ') || 'none'}`, '')
@@ -608,25 +608,25 @@ async function cmdConsumer() {
   say(`${missing.length || stray.length ? 'FAIL' : 'ok  '} tarball contents (${files.length} files)`)
   writeFileSync(join(app, 'package.json'), JSON.stringify({ name: 'consumer-app', private: true, type: 'module' }, null, 2))
   step('install tarball into a fresh project', 'npm', ['install', '--no-audit', '--no-fund', join(work, info.filename)])
-  const bin = join(app, 'node_modules/.bin/eztweak')
+  const bin = join(app, 'node_modules/.bin/ezdesign')
   step('bin --version', bin, ['--version'], { expect: (r) => r.status === 0 && r.stdout.trim() === PKG.version })
   step('bin --help', bin, ['--help'], { expect: (r) => r.status === 0 && r.stdout.includes('Usage:') })
   step('bin status (no daemon)', bin, ['status'], { expect: (r) => r.status === 0 && r.stdout.includes('daemon: not running') })
-  step('bad EZTWEAK_CONTROL_PORT is fatal', bin, ['status'], {
-    env: { ...env, EZTWEAK_CONTROL_PORT: 'abc' },
-    expect: (r) => r.status === 1 && r.stderr.includes('EZTWEAK_CONTROL_PORT must be an integer'),
+  step('bad EZDESIGN_CONTROL_PORT is fatal', bin, ['status'], {
+    env: { ...env, EZDESIGN_CONTROL_PORT: 'abc' },
+    expect: (r) => r.status === 1 && r.stderr.includes('EZDESIGN_CONTROL_PORT must be an integer'),
   })
-  step('import eztweak/vite', 'node', ['--input-type=module', '-e', "import { eztweakSource } from 'eztweak/vite'; const p = eztweakSource(); if (p.name !== 'eztweak:source' || p.apply !== 'serve' || typeof p.transform !== 'function') process.exit(1); const out = p.transform('export const A = () => <div>hi</div>', process.cwd() + '/A.tsx'); console.log(out && out.code); if (!out || !out.code.includes('data-ez-source=\"A.tsx:1\"')) process.exit(1)"])
+  step('import ezdesign/vite', 'node', ['--input-type=module', '-e', "import { ezdesignSource } from 'ezdesign/vite'; const p = ezdesignSource(); if (p.name !== 'ezdesign:source' || p.apply !== 'serve' || typeof p.transform !== 'function') process.exit(1); const out = p.transform('export const A = () => <div>hi</div>', process.cwd() + '/A.tsx'); console.log(out && out.code); if (!out || !out.code.includes('data-ez-source=\"A.tsx:1\"')) process.exit(1)"])
   const state = readState()
   if (state && alive(state.vitePid)) {
     let installedDaemon = null
     try {
       const open = step('installed bin opens a session on the fixture', bin, [`${state.fixtureOrigin}/`], { cwd: FIXTURE })
-      installedDaemon = registry({ dataDir: env.EZTWEAK_DATA_DIR })?.pid ?? null
+      installedDaemon = registry({ dataDir: env.EZDESIGN_DATA_DIR })?.pid ?? null
       const shell = /shell:\s+(\S+)/.exec(open.stdout)?.[1]
       if (shell) {
         const page = await getText(shell, 'text/html')
-        const js = await getText(new URL('/__eztweak/shell.js', shell).href)
+        const js = await getText(new URL('/__ezdesign/shell.js', shell).href)
         const ok = page.status === 200 && js.status === 200 && js.body.length > 1000
         if (!ok) failed++
         transcript.push(`# GET ${shell} -> ${page.status}; shell.js -> ${js.status} (${js.body.length} bytes)`, '')
@@ -639,8 +639,8 @@ async function cmdConsumer() {
   } else {
     say('skip installed-bin session (no stack up; run `vz.mjs up` first to include it)')
   }
-  const leakedHome = existsSync(join(home, '.eztweak'))
-  transcript.push(`# isolated HOME has .eztweak: ${leakedHome}`)
+  const leakedHome = existsSync(join(home, '.ezdesign'))
+  transcript.push(`# isolated HOME has .ezdesign: ${leakedHome}`)
   if (leakedHome) failed++
   writeFileSync(join(out, 'transcript.txt'), transcript.join('\n') + '\n')
   rmSync(work, { recursive: true, force: true })
@@ -648,7 +648,7 @@ async function cmdConsumer() {
   process.exit(failed ? 1 : 0)
 }
 
-const HELP = `vz.mjs - drive eztweak the way a user does (one isolated stack per checkout)
+const HELP = `vz.mjs - drive ezdesign the way a user does (one isolated stack per checkout)
 
   up [--dataset <name>] [--no-build]   install deps if missing, build, start the fixture and
                                        the daemon, load a dataset (default baseline), open the session

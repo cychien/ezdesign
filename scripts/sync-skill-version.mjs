@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url'
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)))
 const { version } = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
-const skillFile = join(root, 'skills', 'eztweak', 'SKILL.md')
+const skillFile = join(root, 'skills', 'ezdesign', 'SKILL.md')
 const skill = readFileSync(skillFile, 'utf8')
 const line = /^(\s+version:\s*).*$/m
 if (!line.test(skill)) throw new Error(`no metadata.version line to stamp in ${skillFile}`)

@@ -33,11 +33,11 @@ test('an unparseable version never counts as newer', () => {
 
 test('the opt-out env var is read the way people set it', () => {
   assert.equal(updateChecksDisabled({}), false)
-  assert.equal(updateChecksDisabled({ EZTWEAK_NO_UPDATE_CHECK: '' }), false)
-  assert.equal(updateChecksDisabled({ EZTWEAK_NO_UPDATE_CHECK: '0' }), false)
-  assert.equal(updateChecksDisabled({ EZTWEAK_NO_UPDATE_CHECK: 'false' }), false)
-  assert.equal(updateChecksDisabled({ EZTWEAK_NO_UPDATE_CHECK: '1' }), true)
-  assert.equal(updateChecksDisabled({ EZTWEAK_NO_UPDATE_CHECK: 'true' }), true)
+  assert.equal(updateChecksDisabled({ EZDESIGN_NO_UPDATE_CHECK: '' }), false)
+  assert.equal(updateChecksDisabled({ EZDESIGN_NO_UPDATE_CHECK: '0' }), false)
+  assert.equal(updateChecksDisabled({ EZDESIGN_NO_UPDATE_CHECK: 'false' }), false)
+  assert.equal(updateChecksDisabled({ EZDESIGN_NO_UPDATE_CHECK: '1' }), true)
+  assert.equal(updateChecksDisabled({ EZDESIGN_NO_UPDATE_CHECK: 'true' }), true)
 })
 
 const fakeFetch = (status: number, body: unknown): typeof fetch =>
@@ -55,7 +55,7 @@ test('fetchLatestVersion reads the dist-tag manifest and swallows every failure'
 })
 
 test('latestVersion asks the registry once per TTL and keeps the last answer offline', async () => {
-  const file = join(mkdtempSync(join(tmpdir(), 'eztweak-update-')), 'update-check.json')
+  const file = join(mkdtempSync(join(tmpdir(), 'ezdesign-update-')), 'update-check.json')
   let clock = 1_000_000
   const now = () => clock
   const answers: (string | null)[] = []

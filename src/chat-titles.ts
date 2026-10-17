@@ -96,7 +96,7 @@ function scanForTitle(path: string, want: number): { title?: string; wholeFile: 
  *  `thread/list`.
  *
  *  `name` only, never `preview`. A preview is the thread's first user message,
- *  and every conversation eztweak opens begins with the same preamble, so
+ *  and every conversation ezdesign opens begins with the same preamble, so
  *  previews would title every row in the picker identically. A thread codex has
  *  not named is left for the fallback to name. */
 export async function codexTitles(cwd: string, binary = 'codex'): Promise<Map<string, string>> {

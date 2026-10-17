@@ -1,19 +1,19 @@
 {
-  "name": "eztweak",
+  "name": "ezdesign",
   "version": "0.7.0",
   "description": "Annotate your live dev app in the browser; feedback flows to your local coding agent, which edits the source. Review, iterate, repeat.",
   "type": "module",
   "author": "Justin Chien",
-  "homepage": "https://github.com/cychien/eztweak#readme",
+  "homepage": "https://github.com/cychien/ezdesign#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/cychien/eztweak.git"
+    "url": "git+https://github.com/cychien/ezdesign.git"
   },
   "bugs": {
-    "url": "https://github.com/cychien/eztweak/issues"
+    "url": "https://github.com/cychien/ezdesign/issues"
   },
   "bin": {
-    "eztweak": "dist/cli.mjs"
+    "ezdesign": "dist/cli.mjs"
   },
   "exports": {
     "./vite": {
@@ -23,7 +23,7 @@
   },
   "files": [
     "dist",
-    "skills/eztweak",
+    "skills/ezdesign",
     "LICENSE",
     "README.md"
   ],
@@ -35,7 +35,7 @@
     "check": "npm run build && npm run typecheck && npm test",
     "typecheck": "tsc --noEmit && tsc -p fixtures/playground --noEmit",
     "test": "node --import tsx --test \"test/**/*.test.ts\"",
-    "version": "node scripts/sync-skill-version.mjs && git add skills/eztweak/SKILL.md",
+    "version": "node scripts/sync-skill-version.mjs && git add skills/ezdesign/SKILL.md",
     "prepublishOnly": "npm run check"
   },
   "engines": {

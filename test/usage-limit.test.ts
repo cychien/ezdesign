@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { test } from 'node:test'
 import type { AcpLimit } from '../src/acp-agent.js'
 
-process.env.EZTWEAK_DATA_DIR = mkdtempSync(join(tmpdir(), 'eztweak-limits-'))
+process.env.EZDESIGN_DATA_DIR = mkdtempSync(join(tmpdir(), 'ezdesign-limits-'))
 // The reset times below are rendered in this zone, and the reader only trusts a
 // zone that is the machine's own - so the machine is made to be in it.
 process.env.TZ = 'Asia/Taipei'

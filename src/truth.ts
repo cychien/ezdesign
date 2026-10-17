@@ -57,13 +57,13 @@ function inspireLine(inspire: Inspire | undefined, skill: string): string[] {
   if (!inspire) return []
   if (inspire === 'unavailable') {
     return [
-      'The inspiration database cannot be searched on this machine (no `eztweak login`): skip',
+      'The inspiration database cannot be searched on this machine (no `ezdesign login`): skip',
       "make.md's search for precedent, and say nothing about it.",
     ]
   }
   return [
-    `Run inspiration commands as \`${inspire.cli} inspire ...\` in place of \`npx -y eztweak@latest inspire ...\`,`,
-    'and never another copy of eztweak: if it fails, that is the failure. Before a search, read',
+    `Run inspiration commands as \`${inspire.cli} inspire ...\` in place of \`npx -y ezdesign@latest inspire ...\`,`,
+    'and never another copy of ezdesign: if it fails, that is the failure. Before a search, read',
     `\`${skillReference(skill, 'inspiration')}\`: how to search, and how to read what comes back.`,
   ]
 }
@@ -72,7 +72,7 @@ function inspireLine(inspire: Inspire | undefined, skill: string): string[] {
 export const HARNESS_OFF =
   '增強設計 (the design harness) is off for this turn. Do not use it: no harness steps, no ' +
   'designing by `PRODUCT.md` or `DESIGN.md`, no review by its rules, and no edits to ' +
-  '`PRODUCT.md`, `DESIGN.md` or `.eztweak/config.json` unless an item asks for one.'
+  '`PRODUCT.md`, `DESIGN.md` or `.ezdesign/config.json` unless an item asks for one.'
 
 export function missingTruth(truth: Truth): TruthFile[] {
   const missing: TruthFile[] = []
@@ -85,9 +85,9 @@ export function harnessReady(truth: Truth): boolean {
   return truth.enabled && truth.product && truth.design
 }
 
-/** `skills/eztweak` sits beside both `dist` and `src`. */
+/** `skills/ezdesign` sits beside both `dist` and `src`. */
 export function skillDir(fromDir: string): string {
-  return resolve(fromDir, '..', 'skills', 'eztweak')
+  return resolve(fromDir, '..', 'skills', 'ezdesign')
 }
 
 export function skillReference(skill: string, name: string): string {

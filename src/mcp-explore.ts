@@ -1,6 +1,6 @@
 /** The MCP server the agent sends variants back through.
  *
- *  eztweak is the ACP *client*, so the ordinary way to give an agent a tool -
+ *  ezdesign is the ACP *client*, so the ordinary way to give an agent a tool -
  *  be an MCP server it connects to - is not open to it: a client has no way to
  *  hand tools down the ACP connection. ACP's own answer to that is the
  *  `mcp-over-acp` RFD (`mcp/connect`, `mcp/message`, a `type: "acp"` server),
@@ -49,11 +49,11 @@ import { URL_PREFIX } from './constants.js'
 export const MCP_PATH = `${URL_PREFIX}/api/mcp`
 export const MCP_ROUTE = '/mcp/:exploreId'
 
-const SERVER_PREFIX = 'eztweak-explore-'
+const SERVER_PREFIX = 'ezdesign-explore-'
 const TOOL_NAME = 'explore_variant'
 
 /** Whether a tool the agent wants to call is this one - `explore_variant` on one
- *  of eztweak's own round servers - as the agent names it when it asks
+ *  of ezdesign's own round servers - as the agent names it when it asks
  *  permission: `mcp__<server>__<tool>`, Claude Code's convention. An agent that
  *  names tools some other way is not recognised, and its request is put to the
  *  user like any other, which is the conservative failure. */
@@ -146,7 +146,7 @@ export class ExploreMcp {
         return
       }
       const server = new McpServer(
-        { name: 'eztweak', version: '1' },
+        { name: 'ezdesign', version: '1' },
         { capabilities: { tools: {} } },
       )
       register(server, round.sink)

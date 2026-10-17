@@ -5,7 +5,7 @@
 
 ## What this file is
 
-`.eztweak/config.json` at the project root records the architecture the application is built on,
+`.ezdesign/config.json` at the project root records the architecture the application is built on,
 the design system and component library it already uses, and where the tools used to work on it
 come from. Later steps read it instead of rediscovering any of it: the stack and the component
 library tell the components and making steps what code to write and in which style, and the tools
@@ -56,7 +56,7 @@ The platform is web only, so the stack is a web stack.
 If there is no `PRODUCT.md`, run [product.md](product.md) first and come back: the stack of a
 new project is inferred from what the product is.
 
-Read `.eztweak/config.json` if it exists. Take its values as the record of an earlier pass, to be
+Read `.ezdesign/config.json` if it exists. Take its values as the record of an earlier pass, to be
 checked against the project now, not as truth.
 
 ## Step 2: Define the architecture
@@ -118,6 +118,6 @@ making and reviewing steps then work from source alone and say so.
 
 ## Step 4: Wrap up or resume
 
-Write `.eztweak/config.json`, creating the directory if needed. Say something to the user only
+Write `.ezdesign/config.json`, creating the directory if needed. Say something to the user only
 when they have to act on it - no browser tool was found, and here is how to install one. The rest
 of this step is the harness's own business. Then end, or resume the request that invoked this.

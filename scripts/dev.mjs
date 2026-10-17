@@ -35,7 +35,7 @@ async function daemonOnPort() {
     })
     if (!res.ok) return null
     const body = await res.json()
-    return body?.service === 'eztweak' ? body : null
+    return body?.service === 'ezdesign' ? body : null
   } catch {
     return null
   }
@@ -205,7 +205,7 @@ vite = await createServer({
 await vite.listen()
 const targetUrl = vite.resolvedUrls?.local?.[0]
 if (!targetUrl) throw new Error('vite did not report a local url')
-log(`fixture on ${targetUrl}${noPlugin ? ' (no eztweakSource - anchors have no source)' : ''}`)
+log(`fixture on ${targetUrl}${noPlugin ? ' (no ezdesignSource - anchors have no source)' : ''}`)
 
 mkdirSync(DEV_DATA_DIR, { recursive: true })
 writeFileSync(TARGET_FILE, JSON.stringify({ url: targetUrl }, null, 2))

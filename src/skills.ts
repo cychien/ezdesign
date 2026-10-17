@@ -130,7 +130,7 @@ export function listSkills(project: string, home: string = homedir()): Skill[] {
 /** How this agent expects a skill to be named in a prompt.
  *
  *  Claude reads `/name`. Codex builds its own command list as `` `$${name}` ``,
- *  so it reads `$name` - which is also what eztweak's composer writes, so for
+ *  so it reads `$name` - which is also what ezdesign's composer writes, so for
  *  codex the user's own text already speaks the right language and only Claude's
  *  has to be translated.
  *

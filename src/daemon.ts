@@ -242,7 +242,7 @@ async function listenOn(app: express.Express, candidates: number[]): Promise<Ser
 
 /** The batch as one prompt turn. The JSON is exactly what `poll` prints, so an
  *  agent that knows the skill reads it unchanged; the preamble covers one that
- *  has never seen eztweak. */
+ *  has never seen ezdesign. */
 function acpPrompt(
   feedback: Extract<PollResult, { type: 'feedback' }>,
   skills: string[],
@@ -818,7 +818,7 @@ class SessionRuntime {
    *  handing a conversation over, so the new agent starts knowing nothing - and
    *  a chat is what a *conversation* is here, so it gets its own.
    *
-   *  Nothing is lost that eztweak owns. Every earlier chat stays in the picker
+   *  Nothing is lost that ezdesign owns. Every earlier chat stays in the picker
    *  with the agent that had it, and switching back finds that conversation
    *  again, resumable by the agent that remembers it. */
   switchAcpAgent(command: string): boolean {
@@ -869,8 +869,8 @@ class SessionRuntime {
       mcpServers: () => this.exploreMcp.serverEntries(this.port),
       ownTool: isExploreTool,
       env: {
-        EZTWEAK_PAGE_STATE: `http://127.0.0.1:${this.port}${URL_PREFIX}/api/page-state`,
-        EZTWEAK_PAGE_STATE_TOKEN: this.pageStateToken,
+        EZDESIGN_PAGE_STATE: `http://127.0.0.1:${this.port}${URL_PREFIX}/api/page-state`,
+        EZDESIGN_PAGE_STATE_TOKEN: this.pageStateToken,
       },
       // Delivery rides on every state change: the moment the agent first goes
       // idle - or comes back idle - whatever is queued goes out.

@@ -14,14 +14,14 @@ after(async () => {
   await service.stop()
 })
 
-/** Its own data dir, so nothing leaks between tests or into the real `~/.eztweak`. */
+/** Its own data dir, so nothing leaks between tests or into the real `~/.ezdesign`. */
 function world(): { dataDir: string; env: NodeJS.ProcessEnv } {
-  const dataDir = mkdtempSync(join(tmpdir(), 'eztweak-inspire-cli-'))
+  const dataDir = mkdtempSync(join(tmpdir(), 'ezdesign-inspire-cli-'))
   return {
     dataDir,
     env: {
-      EZTWEAK_DATA_DIR: dataDir,
-      EZTWEAK_INSPIRE_URL: service.url,
+      EZDESIGN_DATA_DIR: dataDir,
+      EZDESIGN_INSPIRE_URL: service.url,
       HOME: dataDir,
       USERPROFILE: dataDir,
     },
@@ -40,7 +40,7 @@ test('without a token the search does not run, and says which command fixes that
   assert.equal(run.code, 2)
   assert.equal(run.stdout, '')
   assert.deepEqual(errorLines(run).length, 1, 'one line')
-  assert.match(run.stderr, /run `eztweak login`/)
+  assert.match(run.stderr, /run `ezdesign login`/)
 })
 
 test('login stores the token owner-only, and the search then works', async () => {
@@ -241,6 +241,6 @@ test('the help lists the inspiration commands with the rest', async () => {
   ]) {
     assert.ok(run.stdout.includes(line), line)
   }
-  assert.ok(run.stdout.includes('EZTWEAK_INSPIRE_URL'))
+  assert.ok(run.stdout.includes('EZDESIGN_INSPIRE_URL'))
   assert.ok(!run.stdout.includes('vocabulary') && !run.stdout.includes('--feeling'))
 })

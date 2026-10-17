@@ -22,8 +22,8 @@ export const DEV_AGENT = 'claude'
 
 export const devEnv = {
   ...process.env,
-  EZTWEAK_DATA_DIR: DEV_DATA_DIR,
-  EZTWEAK_CONTROL_PORT: String(DEV_CONTROL_PORT),
+  EZDESIGN_DATA_DIR: DEV_DATA_DIR,
+  EZDESIGN_CONTROL_PORT: String(DEV_CONTROL_PORT),
 }
 
 export function runCli(args, opts = {}) {
@@ -41,7 +41,7 @@ export function runCli(args, opts = {}) {
     })
     child.on('error', reject)
     child.on('exit', (code) =>
-      code === 0 ? resolve(out) : reject(new Error(`eztweak ${args[0]} exited with ${code}`)),
+      code === 0 ? resolve(out) : reject(new Error(`ezdesign ${args[0]} exited with ${code}`)),
     )
   })
 }

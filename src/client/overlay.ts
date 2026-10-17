@@ -75,7 +75,7 @@ const PREFIX = (() => {
   try {
     return new URL(script!.src).pathname.replace(/\/overlay\.js$/, '')
   } catch {
-    return '/__eztweak'
+    return '/__ezdesign'
   }
 })()
 const API = `${PREFIX}/api`

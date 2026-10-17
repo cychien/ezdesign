@@ -48,10 +48,10 @@ function walk(node: BabelNode, visit: (node: BabelNode) => void): void {
  * Relative to the *project*, not to Vite's root: the path is for the agent to
  * open, and the agent stands where the CLI was run - see `projectRoot`.
  */
-export function eztweakSource(): ReviewkitSourcePlugin {
+export function ezdesignSource(): ReviewkitSourcePlugin {
   let root = projectRoot(process.cwd())
   return {
-    name: 'eztweak:source',
+    name: 'ezdesign:source',
     apply: 'serve',
     enforce: 'pre',
     configResolved(config) {
