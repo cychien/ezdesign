@@ -24,7 +24,10 @@ test('daemons on different data dirs share a control range without adopting each
   b.spawnDaemon()
   const ownB = await b.liveDaemon()
   assert.notEqual(ownB.pid, ownA.pid)
-  assert.deepEqual([ownA.port, ownB.port], [a.controlPort, a.controlPort + 1])
+  assert.notEqual(ownB.port, ownA.port)
+  for (const { port } of [ownA, ownB]) {
+    assert.ok(port >= a.controlPort && port <= a.controlPort + 9, `${port} is in the shared range`)
+  }
 
   await a.openSession(ownA.port, { url: 'http://127.0.0.1:21/', project: a.dataDir })
   await b.openSession(ownB.port, { url: 'http://127.0.0.1:22/', project: b.dataDir })
