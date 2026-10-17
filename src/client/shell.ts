@@ -734,6 +734,14 @@ const annotateBtns = ANNOTATE_MODES.map((m) => {
   return { id: m.id, btn }
 })
 
+function paintAnnotateMode(): void {
+  for (const { id, btn } of annotateBtns) {
+    const on = annotateMode === id
+    btn.classList.toggle('ez-on', on)
+    btn.setAttribute('aria-pressed', String(on))
+  }
+}
+
 const sideHead = h('div', 'ez-side-head')
 sideHead.append(headRow, target, deviceRow, annotateGroup)
 
@@ -1663,6 +1671,7 @@ function rebuildStage(): void {
 }
 
 paintControls()
+paintAnnotateMode()
 paintStageClasses()
 rebuildStage()
 
@@ -4485,7 +4494,7 @@ window.addEventListener('message', (e: MessageEvent) => {
   }
   if (data?.type === 'ez:mode') {
     annotateMode = data.mode ?? 'off'
-    for (const { id, btn } of annotateBtns) btn.classList.toggle('ez-on', annotateMode === id)
+    paintAnnotateMode()
     // A change born inside one frame - Escape, mostly - has to reach the rest:
     // left armed, they keep offering highlights for a mode the shell has
     // already put away. No echo risk: a frame already in this mode stays quiet.

@@ -47,7 +47,7 @@ Preconditions:
 
 - `poll` blocks and is the only thing that flips the status to 已連線; start it in the background before sending, or the batch waits in the outbox (that is correct behavior, but nothing prints).
 - `drag` goes from the center of one element to the center of another, so the drawn box cuts through both endpoints and they are looked past. Pick endpoints that bracket what you mean; a 7px-wide box (endpoints stacked vertically) falls back to an element it does not enclose. Proving `anchor.contains` needs a box that encloses two or more elements whole, which this map has not pinned down yet.
-- The mode buttons have no `aria-pressed`; read the `ez-on` class to know a mode is armed. Pressing `e`/`r` toggles, so pressing it on an armed mode disarms it.
+- A mode button is armed when its `aria-pressed` is `"true"` (`pressed` in the snapshot). Pressing `e`/`r` toggles, so pressing it on an armed mode disarms it.
 - A single 電腦 preview takes the stage's own size, so `anchor.viewport` reads the frame width (856 in a 1200px-wide headless window) with `preset: "desktop"`, not 1440.
 - The shell requests `/favicon.ico` through the proxy and the fixture has none: one console error `404 (Not Found)` on every shell load. Known, not caused by your change.
 - Do not use `--agent` here: an ACP agent also consumes every batch and edits the fixture.

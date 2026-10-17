@@ -100,7 +100,7 @@ Run axi from a neutral directory (or give `screenshot` absolute paths): relative
 
 | Handle | What it is |
 | --- | --- |
-| `button "元素"` / key `e` | element mode (class `ez-on` on `.ez-mode-element` when armed; there is no `aria-pressed`) |
+| `button "元素"` / key `e` | element mode (`aria-pressed="true"`, shown as `pressed` in the snapshot, when armed) |
 | `button "範圍"` / key `r` | region mode (drag a box) |
 | `textbox "想怎麼調整？輸入 / 用指令 (⌘+Enter 送出)"` | the comment box on the page, with `button "取消"` and `button "加入待送清單"`; `Meta+Enter` also adds |
 | `button "改這則標註（送出前都還能改）"` / `button "移除這則標註"` | per queued row; editing shows `button "儲存（⌘+Enter）"`, `button "取消（Esc）"` |
