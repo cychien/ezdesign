@@ -474,7 +474,10 @@ is only for the poll contract.
 
 A client rebuild (`src/client/**`) only needs a browser reload; a rebuild the daemon loads
 restarts it, and in-flight polls reconnect on their own. Dev mode keeps its daemon registry and
-sessions in `.dev/`, so your own `~/.ezdesign` is never touched. The review target is
+sessions in `.dev/`, so your own `~/.ezdesign` is never touched. Each checkout runs its own stack:
+its daemon takes a control range in 4100-4199 and the fixture a port from 5173, both picked from
+the checkout's path and recorded in `.dev/dev.json`, so worktrees run `npm run dev` side by side
+and `npm run dev:cli` reaches its own checkout's daemon. The review target is
 [`fixtures/playground`](fixtures/playground/README.md).
 
 ## Status
