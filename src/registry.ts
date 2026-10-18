@@ -1,5 +1,6 @@
 import { type ChildProcess, spawn } from 'node:child_process'
-import { mkdirSync, openSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
+import { mkdirSync, openSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { DAEMON_LOG, DATA_DIR, REGISTRY_FILE } from './constants.js'
 
 export interface DaemonInfo {
@@ -32,6 +33,28 @@ export function clearRegistry(pid?: number): void {
   rmSync(REGISTRY_FILE, { force: true })
 }
 
+let ownDataDirId: string | undefined
+
+/** The data dir a daemon serves, as `/control/health` reports it: daemons on
+ *  different data dirs can share a control range, and this tells ours apart.
+ *  Hashed so an unauthenticated endpoint never shows a home path; resolved so
+ *  two spellings of one dir agree. */
+export function dataDirId(): string {
+  if (ownDataDirId === undefined) {
+    mkdirSync(DATA_DIR, { recursive: true })
+    const real = realpathSync.native(DATA_DIR)
+    ownDataDirId = createHash('sha256').update(real).digest('hex').slice(0, 16)
+  }
+  return ownDataDirId
+}
+
+/** A daemon from before the id cannot say, so it counts as ours: on a cold start
+ *  that is this data dir's daemon with its registry lost, which `ensureDaemon`
+ *  then replaces over the version, as it always has. */
+export function servesThisDataDir(health: { dataDirId?: unknown }): boolean {
+  return health.dataDirId === undefined || health.dataDirId === dataDirId()
+}
+
 /** Confirms the port is serving *our* daemon, not just something that answers.
  *  A registry left behind by a killed daemon can otherwise point at whatever
  *  later took the port — including an older daemon from a previous build. */
@@ -41,8 +64,13 @@ export async function probeDaemon(port: number, pid: number): Promise<{ version:
       signal: AbortSignal.timeout(1500),
     })
     if (!res.ok) return null
-    const body = (await res.json()) as { ok?: boolean; pid?: number; version?: string }
-    if (body.ok !== true || body.pid !== pid) return null
+    const body = (await res.json()) as {
+      ok?: boolean
+      pid?: number
+      version?: string
+      dataDirId?: string
+    }
+    if (body.ok !== true || body.pid !== pid || !servesThisDataDir(body)) return null
     return { version: body.version ?? 'unknown' }
   } catch {
     return null

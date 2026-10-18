@@ -7,7 +7,7 @@ import type { PersistedSession } from '../src/store.js'
 import { clearInspireToken, credentialsFile, writeInspireToken } from '../src/credentials.js'
 import { DaemonWorld, FAKE_AGENT, waitFor } from './helpers/daemon.js'
 
-const world = new DaemonWorld(4510)
+const world = await DaemonWorld.create()
 after(() => world.dispose())
 
 interface State {

@@ -63,10 +63,9 @@ Usage:
 
 Environment:
   ${APP_NAME.toUpperCase()}_DATA_DIR       session state, daemon registry and log (default: ~/.${APP_NAME})
+      A separate data dir alone runs an isolated second instance: a daemon only
+      adopts a live one serving its own data dir, so instances can share a range.
   ${APP_NAME.toUpperCase()}_CONTROL_PORT   first port of the daemon's ten-port control range (default: ${DEFAULT_CONTROL_PORT})
-      Set both to run an isolated second instance: a starting daemon adopts any
-      live daemon inside its own control range, so a separate data dir alone
-      still lands you on the shared one.
   ${APP_NAME.toUpperCase()}_NO_UPDATE_CHECK=1  never ask the npm registry whether a newer version exists
   ${APP_NAME.toUpperCase()}_INSPIRE_URL    inspiration API base (default: ${DEFAULT_INSPIRE_URL})
 

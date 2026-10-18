@@ -4,9 +4,10 @@ import { existsSync, mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, test } from 'node:test'
+import type { PollResult } from '../src/protocol.js'
 import { CLI_SRC, DaemonWorld, waitFor } from './helpers/daemon.js'
 
-const world = new DaemonWorld(4540)
+const world = await DaemonWorld.create()
 after(() => world.dispose())
 
 // The login prompt only appears on a terminal, and node has no pty of its own.
@@ -87,8 +88,17 @@ test('an interrupted poll is no longer a connected agent and is handed nothing',
   await new Promise((resolve) => poll.once('exit', resolve))
   await waitFor(async () => (await world.state(port)).agentOnline === false, 'the agent to go offline', 3000)
 
-  await world.sendFeedback(port, 'bigger heading')
-  const state = (await world.state(port)) as { agentBusy?: boolean; agentQueued?: true }
+  await world.postFeedback(port, 'bigger heading')
+  const state = (await world.state(port)) as {
+    agentOnline: boolean
+    agentBusy: boolean
+    agentQueued?: true
+  }
+  assert.equal(state.agentOnline, false, 'the interrupted poll is not taken for an agent')
   assert.equal(state.agentBusy, false, 'no agent is working on it')
   assert.equal(state.agentQueued, true, 'it waits for the next poll')
+
+  const next = JSON.parse(await world.cli('poll', 'http://localhost:9995/')) as PollResult
+  assert.ok(next.type === 'feedback', `the next poll is handed the batch, got ${next.type}`)
+  assert.deepEqual(next.items.map((i) => i.comment), ['bigger heading'])
 })

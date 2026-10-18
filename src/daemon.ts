@@ -70,10 +70,12 @@ import { listSkills, skillPrefix, spendSkillMarkers } from './skills.js'
 import { SessionStore, listRestorableSessions, newId } from './store.js'
 import {
   clearRegistry,
+  dataDirId,
   findRunningDaemon,
   launchDaemon,
   probeDaemon,
   readRegistry,
+  servesThisDataDir,
   writeRegistry,
 } from './registry.js'
 import { installVersion, pruneInstalledVersions } from './installer.js'
@@ -2095,34 +2097,48 @@ class SessionRuntime {
   }
 }
 
-/** A daemon already holding the control range — from a run whose registry file
- *  was deleted or corrupted. Adopting it beats racing it for ports and leaving
- *  two daemons alive with one registry between them. */
-async function findLiveDaemonInRange(range: {
-  start: number
-  end: number
-}): Promise<{ port: number; pid: number } | null> {
+interface RangeDaemon {
+  port: number
+  pid: number
+  /** When it bound its control port; absent from builds before the stamp. */
+  boundAt?: bigint
+}
+
+/** The other live daemons of this data dir in the control range - from a run
+ *  whose registry file was deleted or corrupted, or a cold start racing this one.
+ *  Adopting one beats racing it for ports and leaving two daemons alive with one
+ *  registry between them. One serving another data dir is only a taken port. */
+async function ownDaemonsInRange(range: { start: number; end: number }): Promise<RangeDaemon[]> {
+  const found: RangeDaemon[] = []
   for (let port = range.start; port <= range.end; port++) {
     try {
       const res = await fetch(`http://127.0.0.1:${port}/control/health`, {
         signal: AbortSignal.timeout(400),
       })
       if (!res.ok) continue
-      const body = (await res.json()) as { service?: string; pid?: number }
-      if (body.service === APP_NAME && typeof body.pid === 'number') {
-        return { port, pid: body.pid }
+      const body = (await res.json()) as {
+        service?: string
+        pid?: number
+        dataDirId?: string
+        boundAt?: string
       }
+      if (body.service !== APP_NAME || typeof body.pid !== 'number') continue
+      if (body.pid === process.pid || !servesThisDataDir(body)) continue
+      const boundAt = body.boundAt === undefined ? undefined : BigInt(body.boundAt)
+      found.push({ port, pid: body.pid, boundAt })
     } catch {
       /* nothing listening, or not us */
     }
   }
-  return null
+  return found
 }
 
 /** Leaves `rival` serving. The registry is only written when it names nothing
  *  live: mid-handover it names the successor, which must keep it. */
 async function adopt(rival: { port: number; pid: number }): Promise<void> {
-  if (!(await findRunningDaemon())) writeRegistry({ ...rival, startedAt: Date.now() })
+  if (!(await findRunningDaemon())) {
+    writeRegistry({ port: rival.port, pid: rival.pid, startedAt: Date.now() })
+  }
   // eslint-disable-next-line no-console
   console.log(`adopted existing daemon on 127.0.0.1:${rival.port} (pid ${rival.pid})`)
 }
@@ -2172,7 +2188,7 @@ export interface DaemonOptions {
 export async function daemonMain(version: string, opts: DaemonOptions = {}): Promise<void> {
   const range = controlPortRange()
   if (opts.succeed === undefined) {
-    const adopted = await findLiveDaemonInRange(range)
+    const [adopted] = await ownDaemonsInRange(range)
     if (adopted) return adopt(adopted)
   }
 
@@ -2182,6 +2198,7 @@ export async function daemonMain(version: string, opts: DaemonOptions = {}): Pro
   }
 
   let stopping = false
+  let boundAt = 0n
 
   const updater = new Updater({
     current: version,
@@ -2225,7 +2242,14 @@ export async function daemonMain(version: string, opts: DaemonOptions = {}): Pro
     // A daemon on its way out must not look healthy, or a daemon starting up in
     // that window adopts it and exits — leaving no daemon at all.
     if (stopping) return res.status(503).json({ ok: false, stopping: true })
-    res.json({ ok: true, service: APP_NAME, version, pid: process.pid })
+    res.json({
+      ok: true,
+      service: APP_NAME,
+      version,
+      pid: process.pid,
+      dataDirId: dataDirId(),
+      boundAt: String(boundAt),
+    })
   })
 
   // Registered before sessions are restored, so a CLI that finds this daemon
@@ -2329,19 +2353,28 @@ export async function daemonMain(version: string, opts: DaemonOptions = {}): Pro
 
   const candidates = Array.from({ length: range.end - range.start + 1 }, (_, i) => range.start + i)
   const controlServer = await listenOn(control, [...candidates, 0])
+  boundAt = process.hrtime.bigint()
   const controlAddress = controlServer.address()
   const port = typeof controlAddress === 'object' && controlAddress ? controlAddress.port : 0
-  // Cold starts that raced past the scan above are ordered by the bind: each one
-  // found every lower port held, so the lowest daemon wins and the rest stand
-  // down before touching any state.
+  // Cold starts that raced past the scan above are ordered by when each bound:
+  // one stamped earlier was already listening when a later one looks, so the
+  // earliest wins and the rest stand down before touching any state. Port order
+  // is not enough once other data dirs share the range - a port one of theirs
+  // lets go of can go to a late start below a daemon that has already won.
+  // hrtime is the system's monotonic clock, so stamps compare across processes;
+  // identical processes woken together can read the same tick, which the port breaks.
   if (opts.succeed === undefined) {
-    const rival = await findLiveDaemonInRange({
-      start: range.start,
-      end: Math.min(port - 1, range.end),
-    })
-    if (rival) {
+    const before = (a: RangeDaemon, b: RangeDaemon) => {
+      const [x, y] = [a.boundAt ?? 0n, b.boundAt ?? 0n]
+      return x < y || (x === y && a.port < b.port)
+    }
+    const self = { port, pid: process.pid, boundAt }
+    const [earliest] = (await ownDaemonsInRange(range))
+      .filter((d) => before(d, self))
+      .sort((a, b) => (before(a, b) ? -1 : 1))
+    if (earliest) {
       controlServer.close()
-      return adopt(rival)
+      return adopt(earliest)
     }
   }
 

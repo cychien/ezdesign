@@ -4,7 +4,7 @@ import { connect } from 'node:net'
 import { after, test } from 'node:test'
 import { DaemonWorld, waitFor } from './helpers/daemon.js'
 
-const world = new DaemonWorld(4520)
+const world = await DaemonWorld.create()
 after(() => world.dispose())
 
 /** A dev server that answers a websocket upgrade and then holds the socket, the
