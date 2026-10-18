@@ -70,6 +70,7 @@ import { listSkills, skillPrefix, spendSkillMarkers } from './skills.js'
 import { SessionStore, listRestorableSessions, newId } from './store.js'
 import {
   clearRegistry,
+  findRunningDaemon,
   launchDaemon,
   probeDaemon,
   readRegistry,
@@ -2118,6 +2119,14 @@ async function findLiveDaemonInRange(range: {
   return null
 }
 
+/** Leaves `rival` serving. The registry is only written when it names nothing
+ *  live: mid-handover it names the successor, which must keep it. */
+async function adopt(rival: { port: number; pid: number }): Promise<void> {
+  if (!(await findRunningDaemon())) writeRegistry({ ...rival, startedAt: Date.now() })
+  // eslint-disable-next-line no-console
+  console.log(`adopted existing daemon on 127.0.0.1:${rival.port} (pid ${rival.pid})`)
+}
+
 const delay = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
 /** Resolves when `pid` is gone, or after `timeoutMs` if it never goes. */
@@ -2164,12 +2173,7 @@ export async function daemonMain(version: string, opts: DaemonOptions = {}): Pro
   const range = controlPortRange()
   if (opts.succeed === undefined) {
     const adopted = await findLiveDaemonInRange(range)
-    if (adopted) {
-      writeRegistry({ ...adopted, startedAt: Date.now() })
-      // eslint-disable-next-line no-console
-      console.log(`adopted existing daemon on 127.0.0.1:${adopted.port} (pid ${adopted.pid})`)
-      return
-    }
+    if (adopted) return adopt(adopted)
   }
 
   const sessions = new Map<string, SessionRuntime>()
@@ -2327,6 +2331,19 @@ export async function daemonMain(version: string, opts: DaemonOptions = {}): Pro
   const controlServer = await listenOn(control, [...candidates, 0])
   const controlAddress = controlServer.address()
   const port = typeof controlAddress === 'object' && controlAddress ? controlAddress.port : 0
+  // Cold starts that raced past the scan above are ordered by the bind: each one
+  // found every lower port held, so the lowest daemon wins and the rest stand
+  // down before touching any state.
+  if (opts.succeed === undefined) {
+    const rival = await findLiveDaemonInRange({
+      start: range.start,
+      end: Math.min(port - 1, range.end),
+    })
+    if (rival) {
+      controlServer.close()
+      return adopt(rival)
+    }
+  }
 
   writeRegistry({ port, pid: process.pid, startedAt: Date.now() })
   // Whatever a killed predecessor could not kill for itself. Before any session

@@ -54,7 +54,7 @@ export async function findRunningDaemon(): Promise<RunningDaemon | null> {
   if (!info) return null
   const probed = await probeDaemon(info.port, info.pid)
   if (probed) return { ...info, version: probed.version }
-  clearRegistry()
+  clearRegistry(info.pid)
   return null
 }
 
