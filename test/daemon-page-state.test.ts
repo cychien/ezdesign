@@ -11,7 +11,7 @@ import type { PageStorage, StorageState } from '../src/page-state.js'
 import { findChrome } from '../skills/ezdesign/scripts/page.mjs'
 import { DaemonWorld, FAKE_AGENT, waitFor } from './helpers/daemon.js'
 
-const world = new DaemonWorld(4640)
+const world = await DaemonWorld.create()
 const run = promisify(execFile)
 const PAGE_SCRIPT = join(
   dirname(dirname(fileURLToPath(import.meta.url))),

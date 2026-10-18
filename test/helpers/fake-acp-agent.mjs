@@ -304,6 +304,9 @@ const app = agent({ name: 'fake-acp-agent' })
     // A forked session is not live until it has been resumed.
     if (unresumedForks.has(sessionId)) throw new Error(`Session not found: ${sessionId}`)
     turned.add(sessionId)
+    // Registered before anything is awaited: a cancel can land before the turn parks.
+    const turn = new AbortController()
+    turns.set(sessionId, turn)
     const text = prompt.map((b) => (b.type === 'text' ? b.text : '')).join('')
     const say = (t) =>
       ctx.client.notify(methods.client.session.update, {
@@ -425,7 +428,7 @@ const app = agent({ name: 'fake-acp-agent' })
       // only way to hold a round in the state a user actually decides things in -
       // variants on the page, the agent still going - and it is the state the one
       // end a round's own turn never reports happens in: the review leaving.
-      if (text.includes('SLOW')) return await park(sessionId)
+      if (text.includes('SLOW')) return await park(turn.signal)
       return { stopReason: 'end_turn' }
     }
     // Ask permission for a tool - `Bash` unless `EZ_FAKE_PERMISSION_TOOL` names
@@ -470,15 +473,14 @@ const app = agent({ name: 'fake-acp-agent' })
     log.push(`prompt:${sessionId}`)
     await say(`${sessionId}:${text}`)
     if (!text.includes('SLOW')) return { stopReason: 'end_turn' }
-    return await park(sessionId)
+    return await park(turn.signal)
   })
 
-/** Hold the turn open until the client cancels it. */
-async function park(sessionId) {
-  const abort = new AbortController()
-  turns.set(sessionId, abort)
-  await new Promise((resolve) => abort.signal.addEventListener('abort', resolve, { once: true }))
-  turns.delete(sessionId)
+/** Hold the turn open until the client cancels it, if it has not already. */
+async function park(signal) {
+  if (!signal.aborted) {
+    await new Promise((resolve) => signal.addEventListener('abort', resolve, { once: true }))
+  }
   return { stopReason: 'cancelled' }
 }
 

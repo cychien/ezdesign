@@ -1,8 +1,10 @@
-import { type ChildProcess, spawn } from 'node:child_process'
+import { type ChildProcess, execFile, spawn } from 'node:child_process'
 import { mkdtempSync, readFileSync } from 'node:fs'
+import { type Server, createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { promisify } from 'node:util'
 
 const ROOT = dirname(dirname(dirname(fileURLToPath(import.meta.url))))
 export const CLI_SRC = join(ROOT, 'src', 'cli.ts')
@@ -27,15 +29,50 @@ export async function waitFor<T>(
   }
 }
 
+function bind(port: number): Promise<Server | null> {
+  return new Promise((resolve) => {
+    const server = createServer()
+    server.once('error', () => resolve(null))
+    server.listen(port, '127.0.0.1', () => resolve(server.unref()))
+  })
+}
+
+/** Ten free ports, held until a daemon needs them so that no other world - in
+ *  this run or a concurrent one - can pick them meanwhile. Drawn from well away
+ *  from the user's daemon, the dev and verify harnesses (all below 5000) and the
+ *  ephemeral ports sessions bind. */
+async function reserveControlBlock(): Promise<{ start: number; held: Server[] }> {
+  for (;;) {
+    const start = 20_000 + 10 * Math.floor(Math.random() * 1200)
+    const held: Server[] = []
+    for (let port = start; port < start + 10; port++) {
+      const server = await bind(port)
+      if (!server) break
+      held.push(server)
+    }
+    if (held.length === 10) return { start, held }
+    for (const server of held) server.close()
+  }
+}
+
 /** One isolated daemon world: its own data dir, control range and home, so a
  *  test never meets the developer's real daemon, registry lookups, or skill
- *  installs. Each world picks its range from `controlPort`, which callers keep
- *  distinct across test files. */
+ *  installs. */
 export class DaemonWorld {
   readonly dataDir = mkdtempSync(join(tmpdir(), 'ezdesign-daemon-'))
   readonly env: NodeJS.ProcessEnv
   readonly children = new Set<ChildProcess>()
+  private held: Server[] = []
 
+  /** A world on a control range of its own. */
+  static async create(): Promise<DaemonWorld> {
+    const { start, held } = await reserveControlBlock()
+    const world = new DaemonWorld(start)
+    world.held = held
+    return world
+  }
+
+  /** A world on `controlPort`'s range, for a test that shares one on purpose. */
   constructor(readonly controlPort: number) {
     this.env = {
       ...process.env,
@@ -49,6 +86,7 @@ export class DaemonWorld {
 
   /** Runs the daemon from source, the way the CLI would from `dist`. */
   spawnDaemon(extraArgs: string[] = []): ChildProcess {
+    this.release()
     const child = spawn(process.execPath, ['--import', 'tsx', CLI_SRC, '__daemon', ...extraArgs], {
       env: this.env,
       stdio: 'ignore',
@@ -78,14 +116,27 @@ export class DaemonWorld {
     }
   }
 
-  /** The daemon that currently owns the registry and answers healthy. */
+  /** The daemon that currently owns the registry and answers healthy, once it
+   *  has restored its sessions: it answers health before their ports are bound. */
   async liveDaemon(): Promise<{ port: number; pid: number }> {
-    return waitFor(async () => {
+    const live = await waitFor(async () => {
       const info = this.registry()
       if (!info) return null
       const h = await this.health(info.port)
       return h?.ok && h.pid === info.pid ? info : null
     }, 'a live daemon')
+    const sessions = await this.control(live.port, '/control/sessions')
+    if (!sessions.ok) throw new Error(`daemon on ${live.port} answered ${sessions.status}`)
+    return live
+  }
+
+  /** Runs the CLI from source with this world's environment. */
+  async cli(...args: string[]): Promise<string> {
+    const run = promisify(execFile)
+    const { stdout } = await run(process.execPath, ['--import', 'tsx', CLI_SRC, ...args], {
+      env: this.env,
+    })
+    return stdout
   }
 
   async control(port: number, path: string, init?: RequestInit): Promise<Response> {
@@ -116,17 +167,33 @@ export class DaemonWorld {
     return (await res.json()) as Record<string, unknown>
   }
 
-  /** Queue one annotation and send it, which is what puts a user entry - and
-   *  whatever the agent replies to it - in the thread. */
+  /** Queue one annotation and send it. Returns once the daemon holds the batch,
+   *  whether or not any agent is there to take it. */
+  async postFeedback(sessionPort: number, comment: string): Promise<void> {
+    const post = async (path: string, body: unknown) => {
+      const res = await fetch(`http://127.0.0.1:${sessionPort}/__ezdesign/api/${path}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      if (!res.ok) throw new Error(`POST ${path} failed: ${res.status} ${await res.text()}`)
+    }
+    await post('annotations', { kind: 'element', comment, anchor: { selector: 'div' } })
+    await post('send', { note: null })
+  }
+
+  /** Post feedback and wait for the agent's reply: a session is only resumable
+   *  once a turn on it has ended. */
   async sendFeedback(sessionPort: number, comment: string): Promise<void> {
-    const api = `http://127.0.0.1:${sessionPort}/__ezdesign/api`
-    const headers = { 'content-type': 'application/json' }
-    await fetch(`${api}/annotations`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({ kind: 'element', comment, anchor: { selector: 'div' } }),
-    })
-    await fetch(`${api}/send`, { method: 'POST', headers, body: JSON.stringify({ note: null }) })
+    const replies = async () => {
+      const { conversation } = (await this.state(sessionPort)) as {
+        conversation: { role: string }[]
+      }
+      return conversation.filter((e) => e.role === 'agent').length
+    }
+    const before = await replies()
+    await this.postFeedback(sessionPort, comment)
+    await waitFor(async () => (await replies()) > before, 'the agent to answer the feedback')
   }
 
   /** Stops the daemon on `port` and waits for its process to be gone, ports
@@ -145,7 +212,12 @@ export class DaemonWorld {
     }, 'daemon to exit')
   }
 
+  private release(): void {
+    for (const server of this.held.splice(0)) server.close()
+  }
+
   async dispose(): Promise<void> {
+    this.release()
     const info = this.registry()
     if (info) await this.stopDaemon(info.port).catch(() => {})
     for (const child of this.children) child.kill('SIGKILL')

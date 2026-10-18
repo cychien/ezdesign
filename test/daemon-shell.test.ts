@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import { after, test } from 'node:test'
 import { DaemonWorld } from './helpers/daemon.js'
 
-const world = new DaemonWorld(4530)
+const world = await DaemonWorld.create()
 
 let app: Server
 after(async () => {

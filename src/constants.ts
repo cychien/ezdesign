@@ -16,11 +16,10 @@ export const NO_UPDATE_CHECK_ENV = `${ENV_PREFIX}_NO_UPDATE_CHECK`
 
 export const DEFAULT_CONTROL_PORT = 4400
 const CONTROL_PORT_ENV = `${ENV_PREFIX}_CONTROL_PORT`
-/** A second daemon must never share the control range with the first:
- *  `daemonMain` adopts any live daemon it finds inside its own range, so a
- *  separate DATA_DIR alone does not isolate it. Falling back to the default on a
- *  bad value would silently undo that isolation, so an unusable value is fatal
- *  rather than ignored. */
+/** Only where the daemon looks for a free control port: daemons on different
+ *  data dirs share a range without adopting each other. A set value is still a
+ *  deliberate choice, so one that cannot make a bindable range is fatal rather
+ *  than quietly swapped for the default. */
 export function resolveControlPort(raw: string | undefined): number {
   if (raw === undefined || raw.trim() === '') return DEFAULT_CONTROL_PORT
   const port = Number(raw)
