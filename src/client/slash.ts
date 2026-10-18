@@ -46,6 +46,8 @@ export interface SlashController {
 const MAX_QUERY = 24
 const BREAK = /[\s ]/
 
+let menuCount = 0
+
 /** Where the caret's own text run turns into a command, if it does. `before` is
  *  that run up to the caret.
  *
@@ -103,6 +105,7 @@ export function attachSlashMenu(
 ): SlashController {
   const doc = editable.ownerDocument
   const view = doc.defaultView
+  const listId = `ez-slash-${++menuCount}`
 
   let menu: HTMLElement | null = null
   let trigger: Trigger | null = null
@@ -158,6 +161,7 @@ export function attachSlashMenu(
       item.toggleAttribute('data-active', i === active)
       item.setAttribute('aria-selected', String(i === active))
     })
+    editable.setAttribute('aria-activedescendant', `${listId}-${active}`)
   }
 
   function render(): void {
@@ -166,10 +170,13 @@ export function attachSlashMenu(
     const headEl = mk('div', 'ez-slash-head')
     headEl.textContent = title
     const list = mk('div', 'ez-slash-list')
+    list.id = listId
     list.setAttribute('role', 'listbox')
+    list.setAttribute('aria-label', title)
     menu.append(headEl, list)
     shown.forEach((command, i) => {
       const item = mk('div', 'ez-slash-item')
+      item.id = `${listId}-${i}`
       item.setAttribute('role', 'option')
       const label = mk('span', 'ez-slash-label')
       label.textContent = command.label
@@ -210,6 +217,7 @@ export function attachSlashMenu(
   function open(): void {
     menu = mk('div', 'ez-slash-menu')
     doc.body.appendChild(menu)
+    editable.setAttribute('aria-controls', listId)
     doc.addEventListener('selectionchange', onSelectionChange)
     editable.addEventListener('blur', onBlur)
   }
@@ -219,6 +227,8 @@ export function attachSlashMenu(
     menu.remove()
     menu = null
     trigger = null
+    editable.removeAttribute('aria-controls')
+    editable.removeAttribute('aria-activedescendant')
     doc.removeEventListener('selectionchange', onSelectionChange)
     editable.removeEventListener('blur', onBlur)
     return true
