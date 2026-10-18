@@ -992,7 +992,18 @@ function paintStrip(): void {
   const signature = JSON.stringify([currentChatId(), snapshot?.agentBusy ?? false, rounds])
   if (signature === stripDrawn) return
   stripDrawn = signature
+  const focused = document.activeElement
+  const chip = focused instanceof HTMLElement && strip.contains(focused) ? focused : null
+  const heldRound = chip?.closest<HTMLElement>('[data-round]')?.dataset.round
+  const heldChoice = chip?.dataset.choice
   strip.replaceChildren(...rounds.map((round) => roundPill(round)))
+  // Rebuilt whole, so the chip being chosen with the arrow keys has to be handed focus back.
+  if (heldRound === undefined || heldChoice === undefined) return
+  strip
+    .querySelector<HTMLElement>(
+      `[data-round="${CSS.escape(heldRound)}"] [data-choice="${CSS.escape(heldChoice)}"]`,
+    )
+    ?.focus()
 }
 
 /** Which conversation the review is reading, for the pills - a round's actions
@@ -1210,28 +1221,73 @@ function askOnStrip(
   go.focus()
 }
 
+/** A choose-one row's state, from one place: the class for the eye,
+ *  `aria-checked` for assistive tech, and the row's single tab stop - on the
+ *  checked option, or the first when none is. */
+function paintRadios(
+  radios: HTMLButtonElement[],
+  isOn: (radio: HTMLButtonElement) => boolean,
+): void {
+  const checked = radios.find(isOn)
+  for (const radio of radios) {
+    const on = radio === checked
+    radio.classList.toggle('ez-on', on)
+    radio.setAttribute('aria-checked', String(on))
+    radio.tabIndex = radio === (checked ?? radios[0]) ? 0 : -1
+  }
+}
+
+/** Arrows move the choice along a radio row, wrapping, and focus goes with it. */
+function radioKeys(
+  row: HTMLElement,
+  radios: HTMLButtonElement[],
+  choose: (radio: HTMLButtonElement) => void,
+): void {
+  row.addEventListener('keydown', (e) => {
+    const step =
+      e.key === 'ArrowRight' || e.key === 'ArrowDown'
+        ? 1
+        : e.key === 'ArrowLeft' || e.key === 'ArrowUp'
+          ? -1
+          : 0
+    const at = radios.indexOf(e.target as HTMLButtonElement)
+    if (!step || at < 0) return
+    e.preventDefault()
+    const next = radios[(at + step + radios.length) % radios.length]!
+    next.focus()
+    choose(next)
+  })
+}
+
 function roundPill(round: ExploreWire): HTMLElement {
   const pill = h('div', 'ez-strip-pill')
+  pill.dataset.round = round.id
   pill.title = round.direction ? `${round.label}：${round.direction}` : round.label
   pill.setAttribute('role', 'group')
   pill.setAttribute('aria-label', `探索 ${round.label}`)
   pill.append(icon(MagicWand01Icon as IconNode, 14))
 
   const chips = h('div', 'ez-strip-chips')
-  const original = h('button', `ez-strip-chip${round.selected === null ? ' ez-on' : ''}`, '原本')
-  original.title = '這個元素原本的樣子'
-  original.onclick = () => select(round, null)
-  chips.append(original)
-  for (const variant of round.variants) {
-    const on = variant.id === round.selected
-    const chip = h('button', `ez-strip-chip${on ? ' ez-on' : ''}`, variant.name)
+  chips.setAttribute('role', 'radiogroup')
+  chips.setAttribute('aria-label', '變體')
+  const chip = (choice: string | null, name: string, title: string): HTMLButtonElement => {
+    const btn = h('button', 'ez-strip-chip', name)
+    btn.setAttribute('role', 'radio')
+    btn.dataset.choice = choice ?? ''
+    btn.title = title
+    btn.onclick = () => select(round, choice)
+    return btn
+  }
+  const radios = [
+    chip(null, '原本', '這個元素原本的樣子'),
     // The note is a sentence about what this variant did, and on the pill it
     // would set the width that four variants have to share. It is the tooltip's
     // to carry, alongside the name in full - the chip clips that too.
-    chip.title = variant.note ? `${variant.name}：${variant.note}` : variant.name
-    chip.onclick = () => select(round, variant.id)
-    chips.append(chip)
-  }
+    ...round.variants.map((v) => chip(v.id, v.name, v.note ? `${v.name}：${v.note}` : v.name)),
+  ]
+  paintRadios(radios, (btn) => btn.dataset.choice === (round.selected ?? ''))
+  radioKeys(chips, radios, (btn) => select(round, btn.dataset.choice || null))
+  chips.append(...radios)
   if (round.status === 'generating') {
     chips.append(h('div', 'ez-strip-pending', round.variants.length ? '還在想…' : '正在產生…'))
   }
@@ -4254,10 +4310,10 @@ function acpAskEl(ask: AcpAskWire): HTMLElement {
 }
 
 /** One field of an ask, drawn for its kind. `values` is the card's answer so far;
- *  `changed` is told after every edit whether it was a pick or typing, `submit`
- *  is ⌘/Ctrl+Enter in a typed field - the composer's own chord for "this is
- *  done". A default is shown as the current value, never sent on its own: the
- *  user still confirms. */
+ *  `changed` is told after every edit whether it was a pick or one still in hand
+ *  (typing, or an arrow moving a choice), `submit` is ⌘/Ctrl+Enter in a typed
+ *  field - the composer's own chord for "this is done". A default is shown as
+ *  the current value, never sent on its own: the user still confirms. */
 function acpFieldEl(
   field: AcpAskField,
   values: Map<string, AcpAskAnswer>,
@@ -4277,6 +4333,18 @@ function acpFieldEl(
     btn.title = option.description ?? ''
     return btn
   }
+  const radioButton = (option: AcpAskOption): HTMLButtonElement => {
+    const btn = optionButton(option)
+    btn.setAttribute('role', 'radio')
+    btn.dataset.id = option.id
+    return btn
+  }
+  /** A choose-one field's radios, painted from what `values` holds for it. */
+  const paintPick = (radios: HTMLButtonElement[]): void =>
+    paintRadios(
+      radios,
+      (btn) => values.has(field.key) && btn.dataset.id === String(values.get(field.key)),
+    )
   const chord = (e: KeyboardEvent): void => {
     if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
       e.preventDefault()
@@ -4332,30 +4400,28 @@ function acpFieldEl(
   switch (field.kind) {
     case 'select': {
       const row = labelled(h('div', 'ez-acp-ask-options'), 'radiogroup')
+      const radios = field.options.map(radioButton)
       const clearPick = (): void => {
         values.delete(field.key)
-        for (const b of row.querySelectorAll('button')) b.classList.remove('ez-on')
+        paintPick(radios)
       }
       const group = withCustom(row, clearPick)
-      for (const option of field.options) {
-        const btn = optionButton(option)
-        if (option.id === field.default) {
-          values.set(field.key, option.id)
-          btn.classList.add('ez-on')
+      const pick = (btn: HTMLButtonElement, how: 'pick' | 'edit'): void => {
+        values.set(field.key, btn.dataset.id!)
+        paintPick(radios)
+        if (field.custom) {
+          const box = group.querySelector('textarea')
+          if (box) box.value = ''
+          values.delete(field.custom.key)
         }
-        btn.onclick = () => {
-          clearPick()
-          values.set(field.key, option.id)
-          btn.classList.add('ez-on')
-          if (field.custom) {
-            const box = group.querySelector('textarea')
-            if (box) box.value = ''
-            values.delete(field.custom.key)
-          }
-          changed('pick')
-        }
-        row.append(btn)
+        changed(how)
       }
+      for (const btn of radios) btn.onclick = () => pick(btn, 'pick')
+      // An arrow only moves the choice; Space or Enter is the pick that sends a card.
+      radioKeys(row, radios, (btn) => pick(btn, 'edit'))
+      if (field.options.some((o) => o.id === field.default)) values.set(field.key, field.default!)
+      paintPick(radios)
+      row.append(...radios)
       return group
     }
     case 'multiselect': {
@@ -4388,23 +4454,20 @@ function acpFieldEl(
     }
     case 'boolean': {
       const row = labelled(h('div', 'ez-acp-ask-options'), 'radiogroup')
-      for (const [value, name] of [
-        [true, '是'],
-        [false, '否'],
-      ] as const) {
-        const btn = optionButton({ id: String(value), name })
-        if (field.default === value) {
-          values.set(field.key, value)
-          btn.classList.add('ez-on')
-        }
-        btn.onclick = () => {
-          values.set(field.key, value)
-          for (const b of row.querySelectorAll('button')) b.classList.remove('ez-on')
-          btn.classList.add('ez-on')
-          changed('pick')
-        }
-        row.append(btn)
+      const radios = [
+        radioButton({ id: 'true', name: '是' }),
+        radioButton({ id: 'false', name: '否' }),
+      ]
+      const pick = (btn: HTMLButtonElement, how: 'pick' | 'edit'): void => {
+        values.set(field.key, btn.dataset.id === 'true')
+        paintPick(radios)
+        changed(how)
       }
+      for (const btn of radios) btn.onclick = () => pick(btn, 'pick')
+      radioKeys(row, radios, (btn) => pick(btn, 'edit'))
+      if (field.default !== undefined) values.set(field.key, field.default)
+      paintPick(radios)
+      row.append(...radios)
       return row
     }
     case 'number': {
