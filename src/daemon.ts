@@ -1447,7 +1447,8 @@ class SessionRuntime {
     }
   }
 
-  async waitForPoll(): Promise<PollResult | null> {
+  /** A poller that hangs up (`gone`) is no agent: no longer online, and no batch is handed to it. */
+  async waitForPoll(gone: AbortSignal): Promise<PollResult | null> {
     // The agent is back. Clear before `pollOutcome`, which re-arms both if another
     // batch is already queued.
     this.agentBusy = false
@@ -1458,13 +1459,16 @@ class SessionRuntime {
     return new Promise((resolve) => {
       const waiter = (r: PollResult | null) => {
         clearTimeout(timer)
+        gone.removeEventListener('abort', leave)
         resolve(r)
       }
-      const timer = setTimeout(() => {
+      const leave = () => {
         this.pollWaiters.delete(waiter)
+        waiter(null)
         this.broadcast()
-        resolve(null)
-      }, POLL_TIMEOUT_MS)
+      }
+      const timer = setTimeout(leave, POLL_TIMEOUT_MS)
+      gone.addEventListener('abort', leave, { once: true })
       this.pollWaiters.add(waiter)
       this.broadcast()
     })
@@ -1968,7 +1972,9 @@ class SessionRuntime {
         this.store.ack(ack)
         this.broadcast()
       }
-      const result = await this.waitForPoll()
+      const gone = new AbortController()
+      res.on('close', () => gone.abort())
+      const result = await this.waitForPoll(gone.signal)
       this.touch()
       if (!result) return res.json({ type: 'timeout' })
       res.json(result)
