@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { after, test } from 'node:test'
 import { DaemonWorld, FAKE_AGENT, waitFor } from './helpers/daemon.js'
 
-const world = new DaemonWorld(4490)
+const world = await DaemonWorld.create()
 after(() => world.dispose())
 
 interface ChatWire {

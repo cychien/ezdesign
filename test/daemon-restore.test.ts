@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import { after, test } from 'node:test'
 import { DaemonWorld, FAKE_AGENT, PKG_VERSION, waitFor } from './helpers/daemon.js'
 
-const world = new DaemonWorld(4440)
+const world = await DaemonWorld.create()
 after(() => world.dispose())
 
 // Nothing listens here; the proxy is never exercised, only the session machinery.
@@ -297,7 +297,7 @@ test('opening a session reports the agent it actually runs, flag or no flag', as
 // No turn survives the daemon, so a round cut off holding nothing is closed on restore, and its pill,
 // the way out of the branch, goes with it.
 test('a restore into a branch whose round was cut off holding nothing opens on the main line', async () => {
-  const world = new DaemonWorld(4620)
+  const world = await DaemonWorld.create()
   after(() => world.dispose())
   const acpIdle = (port: number) =>
     waitFor(async () => {

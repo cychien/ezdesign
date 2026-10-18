@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { after, test } from 'node:test'
 import { DaemonWorld, FAKE_AGENT, waitFor } from './helpers/daemon.js'
 
-const world = new DaemonWorld(4460)
+const world = await DaemonWorld.create()
 after(() => world.dispose())
 
 /** A project with two skills on disk. The daemon checks every name a batch sends
