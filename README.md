@@ -267,6 +267,7 @@ canvas scaled to 60% is still one you can read and type into.
 | `EZDESIGN_DATA_DIR` | `~/.ezdesign` | Session state, the daemon registry and log, versions installed by the in-shell update, and the update-check cache |
 | `EZDESIGN_CONTROL_PORT` | `4400` | First port of the ten-port range the daemon searches for its control server |
 | `EZDESIGN_NO_UPDATE_CHECK` | unset | Set to `1` and the daemon never asks the npm registry for the latest version, so the shell never offers an update |
+| `EZDESIGN_DESIGN_HARNESS` | unset (off) | Set to `1` in the environment the daemon starts from and the experimental 增強設計 design harness is available; unset, the shell has no switch and no agent is asked to use it |
 | `EZDESIGN_INSPIRE_URL` | `https://inspire.ezdesign.dev` | The inspiration database the `inspire` commands query |
 
 Set `EZDESIGN_DATA_DIR` to run a second, fully isolated instance: a starting daemon only adopts a
@@ -359,7 +360,10 @@ conversation stays in the thread's own picker with the agent that had it, and sw
 again, resumable by the agent that remembers it.
 
 The agent can design the way a designer works, through a five-step harness in the bundled skill:
-product, stack, design, components, make. It is opt-in, experimental - the switch says 實驗 - and a
+product, stack, design, components, make. It is off by default: set `EZDESIGN_DESIGN_HARNESS=1` in the
+environment the daemon starts from to enable it, and until then the shell has no switch, no agent is asked
+to use it, and the remembered choice for each project is kept untouched for when it is on. With
+the flag on it is opt-in, experimental - the switch says 實驗 - and a
 premium feature: the **增強設計** switch on its own line above the agent and the model, marked with a
 gold sparkle, turns it on, and the choice is remembered for the project - across sessions, a dev
 server that moved ports, `/new` and daemon restarts - except that it starts off when the project's

@@ -3,9 +3,14 @@
 
 import { existsSync } from 'node:fs'
 import { join, resolve } from 'node:path'
+import { DESIGN_HARNESS_ENV, envFlagOn } from './constants.js'
 
 export const PRODUCT_MD = 'PRODUCT.md'
 export const DESIGN_MD = 'DESIGN.md'
+
+export function designHarnessEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+  return envFlagOn(env[DESIGN_HARNESS_ENV])
+}
 
 export type TruthFile = 'product' | 'design'
 

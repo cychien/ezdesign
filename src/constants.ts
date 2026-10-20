@@ -13,6 +13,12 @@ export const DAEMON_LOG = join(DATA_DIR, 'daemon.log')
 export const VERSIONS_DIR = join(DATA_DIR, 'versions')
 export const UPDATE_CHECK_FILE = join(DATA_DIR, 'update-check.json')
 export const NO_UPDATE_CHECK_ENV = `${ENV_PREFIX}_NO_UPDATE_CHECK`
+export const DESIGN_HARNESS_ENV = `${ENV_PREFIX}_DESIGN_HARNESS`
+
+/** Unset, empty, `0` and `false` are off; anything else is on. */
+export function envFlagOn(raw: string | undefined): boolean {
+  return raw !== undefined && raw !== '' && raw !== '0' && raw.toLowerCase() !== 'false'
+}
 
 export const DEFAULT_CONTROL_PORT = 4400
 const CONTROL_PORT_ENV = `${ENV_PREFIX}_CONTROL_PORT`

@@ -2119,7 +2119,7 @@ async function toggleHarness(): Promise<void> {
 /** Not disabled while a request is in flight: that made the label blink on every switch. */
 function paintHarness(): void {
   const s = snapshot
-  harnessRow.hidden = !s?.acp
+  harnessRow.hidden = !s?.acp || s.designHarness === undefined
   harnessBtn.setAttribute('aria-checked', String(!!s?.designHarness))
   if (harnessPending) harnessBtn.setAttribute('aria-busy', 'true')
   else harnessBtn.removeAttribute('aria-busy')
