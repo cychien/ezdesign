@@ -122,6 +122,7 @@ test('CV-p3-protocol-table: receives agrees with the table for every shell-to-gu
     }
   }
   assert.equal(receives('canvas', 'ez:variant'), false)
-  assert.equal(receives('app', 'ez:snapshot'), false)
+  assert.equal(receives('app', 'ez:relay-done'), false)
+  assert.equal(receives('app', 'ez:snapshot'), true)
   assert.equal(receives('canvas', 'ez:set-mode'), true)
 })

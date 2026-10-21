@@ -44,6 +44,10 @@ export const targets = [
   },
   {
     group: 'client',
+    config: { ...browser, entryPoints: ['src/client/events-worker.ts'], outfile: 'dist/events-worker.js' },
+  },
+  {
+    group: 'client',
     config: { ...browser, entryPoints: ['src/client/overlay.css'], outfile: 'dist/overlay.css' },
   },
   {

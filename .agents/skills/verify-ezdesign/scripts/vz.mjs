@@ -642,7 +642,7 @@ async function cmdConsumer() {
   const info = JSON.parse(pack.stdout)[0]
   const files = info.files.map((f) => f.path)
   writeFileSync(join(out, 'tarball-files.txt'), files.join('\n') + '\n')
-  const required = ['dist/cli.mjs', 'dist/vite.mjs', 'dist/vite.d.ts', 'dist/shell.js', 'dist/shell.css', 'dist/overlay.js', 'dist/overlay.css', 'skills/ezdesign/SKILL.md', 'README.md', 'LICENSE', 'package.json']
+  const required = ['dist/cli.mjs', 'dist/vite.mjs', 'dist/vite.d.ts', 'dist/shell.js', 'dist/shell.css', 'dist/overlay.js', 'dist/overlay.css', 'dist/events-worker.js', 'skills/ezdesign/SKILL.md', 'README.md', 'LICENSE', 'package.json']
   const missing = required.filter((f) => !files.includes(f))
   const stray = files.filter((f) => /^(src|test|fixtures|scripts|\.agents|\.claude)\//.test(f))
   transcript.push(`# tarball ${info.filename} (${info.name}@${info.version}): ${files.length} files; missing: ${missing.join(', ') || 'none'}; stray: ${stray.join(', ') || 'none'}`, '')

@@ -101,9 +101,9 @@ export const GUEST_PROTOCOL = {
   'ez:variant': down(APP),
   'ez:variants-clear': down(APP),
   'ez:scroll-to': down(APP),
-  /** Relay: the guest's own annotations and the session state, pushed when that
-   *  subset changes - a canvas guest has no event stream of its own. */
-  'ez:snapshot': down(CANVAS),
+  /** The session state and annotations: a canvas guest gets its own subset,
+   *  an App preview all of them. Neither holds an event stream of its own. */
+  'ez:snapshot': down(BOTH),
   /** Relay: `{reqId, ok, body}` settling an `ez:relay`. */
   'ez:relay-done': down(CANVAS),
 
