@@ -79,6 +79,7 @@ export class DaemonWorld {
       EZDESIGN_DATA_DIR: this.dataDir,
       EZDESIGN_CONTROL_PORT: String(controlPort),
       EZDESIGN_NO_UPDATE_CHECK: '1',
+      EZDESIGN_DESIGN_HARNESS: '1',
       HOME: this.dataDir,
       USERPROFILE: this.dataDir,
     }

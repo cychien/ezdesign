@@ -34,6 +34,7 @@ import {
   type TruthFile,
   harnessReady,
   makeReading,
+  designHarnessEnabled,
   missingTruth,
   setupBrief,
   skillDir,
@@ -623,6 +624,7 @@ class SessionRuntime {
    *  dropped - see `deliverToAcp`. */
   private pendingExplore: string | null = null
   private designEffort: DesignEffort = 'medium'
+  private readonly designHarnessAllowed = designHarnessEnabled()
   /** What the user's browser signs the page in with, for the agent's own to open it the same way.
    *  Held in memory only, and handed out only for the token in the agent's environment. */
   private pageCookies: string | null = null
@@ -674,6 +676,7 @@ class SessionRuntime {
     const complete = !missingTruth(truthState(project, remembered)).length
     this.store.restoreDesignHarness(remembered && (complete || this.store.setupPending()))
     this.designEffort = rememberedDesignEffort(project) ?? 'medium'
+    if (!this.designHarnessAllowed) this.dropUndeliveredSetup()
     // Before the agent opens, so it opens on the main line rather than in the spent branch.
     if (this.store.spentBranch()) {
       this.store.switchChat(this.store.mainLineOf(this.store.currentChat.id))
@@ -758,8 +761,9 @@ class SessionRuntime {
         ? {
             acp: this.acp.snapshot(),
             chats: this.chatsWire(),
-            designHarness: this.store.designHarness,
-            designEffort: this.designEffort,
+            ...(this.designHarnessAllowed
+              ? { designHarness: this.store.designHarness, designEffort: this.designEffort }
+              : {}),
           }
         : {}),
       ...(update ? { update } : {}),
@@ -1032,6 +1036,22 @@ class SessionRuntime {
     return this.acp?.cancelTurn() ?? false
   }
 
+  /** The harness as the agent is told of it: the switch, and the flag that lets it exist. */
+  private get harnessOn(): boolean {
+    return this.designHarnessAllowed && this.store.designHarness
+  }
+
+  private dropUndeliveredSetup(): void {
+    for (const batchId of this.store.settleUndeliveredSetup()) {
+      this.store.appendConversation({
+        role: 'system',
+        text: HARNESS_SETUP_DROPPED,
+        ts: Date.now(),
+        batchId,
+      })
+    }
+  }
+
   /** Carry on in a fresh conversation.
    *
    *  The shell shows an empty thread afterwards, because that is what "new chat"
@@ -1043,14 +1063,7 @@ class SessionRuntime {
   setHarness(on: boolean, create: boolean): { missing: TruthFile[] } | null {
     if (!on) {
       this.store.setDesignHarness(false)
-      for (const batchId of this.store.settleUndeliveredSetup()) {
-        this.store.appendConversation({
-          role: 'system',
-          text: HARNESS_SETUP_DROPPED,
-          ts: Date.now(),
-          batchId,
-        })
-      }
+      this.dropUndeliveredSetup()
       this.broadcast()
       return null
     }
@@ -1166,7 +1179,7 @@ class SessionRuntime {
         ? { references: round.references.map((r) => ({ n: r.n, label: r.label })) }
         : {}),
     })
-    const truth = truthState(this.project, this.store.designHarness, this.store.harnessSeen())
+    const truth = truthState(this.project, this.harnessOn, this.store.harnessSeen())
     this.pendingExplore = explorePrompt(
       round,
       input.capture,
@@ -1389,7 +1402,7 @@ class SessionRuntime {
     // above needs none of this - `startExplore` opened the round generating.
     this.resumeRound()
     const chat = this.store.currentChat
-    const truth = truthState(this.project, this.store.designHarness, this.store.harnessSeen())
+    const truth = truthState(this.project, this.harnessOn, this.store.harnessSeen())
     const round = this.roundOf(chat.id)
     if (round && !outcome.setup) {
       this.acp.prompt(
@@ -1894,6 +1907,11 @@ class SessionRuntime {
       res.json({ chatId: this.store.currentChat.id, parentChatId: this.parentChatId() })
     })
 
+    api.post(['/harness', '/harness/effort'], (_req, res, next) =>
+      this.designHarnessAllowed
+        ? next()
+        : res.status(404).json({ error: 'the design harness is disabled' }),
+    )
     // SPIKE: clear the agent's context and carry on in a fresh session.
     api.post('/harness', (req, res) => {
       const on = req.body?.on

@@ -1,6 +1,12 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
-import { NO_UPDATE_CHECK_ENV, NPM_PACKAGE, UPDATE_CHECK_FILE, UPDATE_CHECK_TTL_MS } from './constants.js'
+import {
+  NO_UPDATE_CHECK_ENV,
+  NPM_PACKAGE,
+  UPDATE_CHECK_FILE,
+  UPDATE_CHECK_TTL_MS,
+  envFlagOn,
+} from './constants.js'
 
 interface ParsedVersion {
   nums: [number, number, number]
@@ -36,8 +42,7 @@ export function isNewer(candidate: string, current: string): boolean {
 }
 
 export function updateChecksDisabled(env: NodeJS.ProcessEnv = process.env): boolean {
-  const raw = env[NO_UPDATE_CHECK_ENV]
-  return raw !== undefined && raw !== '' && raw !== '0' && raw.toLowerCase() !== 'false'
+  return envFlagOn(env[NO_UPDATE_CHECK_ENV])
 }
 
 export const REGISTRY_LATEST_URL = `https://registry.npmjs.org/${NPM_PACKAGE}/latest`
