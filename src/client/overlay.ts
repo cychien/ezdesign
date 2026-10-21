@@ -301,7 +301,9 @@ function buildAnchor(
       height: Math.round(rect.height),
     },
     viewport: { width: window.innerWidth, height: window.innerHeight, preset: viewportPreset },
-    page: location.pathname,
+    // A canvas frame is one document with no page in the app: its `frame`,
+    // stamped by the shell, says where it is.
+    ...(link.kind === 'relay' ? {} : { page: location.pathname }),
   }
 }
 
@@ -1048,12 +1050,17 @@ function markerPosition(a: AnnotationWire): { top: number; left: number } | null
 function renderMarkers(): void {
   ui.markers.textContent = ''
   if (pick) return
-  const relevant = annotations.filter((a) => a.anchor.page === location.pathname && madeHere(a))
-  relevant.forEach((a, i) => {
+  // A relay overlay is handed only its own frame's annotations, page-less.
+  const relevant = annotations.filter(
+    (a) => (link.kind === 'relay' || a.anchor.page === location.pathname) && madeHere(a),
+  )
+  relevant.forEach((a) => {
     const at = markerPosition(a)
     if (!at) return
     const marker = el('div', 'ez-marker')
-    marker.textContent = String(i + 1)
+    // The queue's number, so a pin and its row in the sidebar say the same thing
+    // whatever page, device or frame the rest of the queue was made on.
+    marker.textContent = String(a.n ?? annotations.indexOf(a) + 1)
     marker.title = a.comment
     // Centred on its anchor, so an anchor on a viewport edge would leave half the
     // dot outside. Nudge it whole only while the anchor itself is on screen - an
@@ -1771,7 +1778,14 @@ function onScrollAttempt(e: Event): void {
   if (w && (w.metaKey || w.ctrlKey) && window.parent !== window) {
     e.preventDefault()
     const unit = w.deltaMode === 1 ? 16 : w.deltaMode === 2 ? window.innerHeight : 1
-    post({ type: 'ez:wheel', dx: w.deltaX * unit, dy: w.deltaY * unit })
+    // On a canvas board the modified wheel - a pinch arrives as ctrl+wheel - is a
+    // zoom around the pointer, so where the pointer is goes with it.
+    post({
+      type: 'ez:wheel',
+      dx: w.deltaX * unit,
+      dy: w.deltaY * unit,
+      ...(link.kind === 'relay' ? { zoom: true, at: { x: w.clientX, y: w.clientY } } : {}),
+    })
     return
   }
   // Never during a pick: reaching the element being pointed at is the entire
@@ -1924,6 +1938,12 @@ function linkTarget(e: MouseEvent): string | null {
  *  that is the shell's to make: it owns where the review goes, and the history
  *  entry for having gone there. */
 function onNavClick(e: MouseEvent): void {
+  if (link.kind === 'relay') {
+    // A canvas frame is one document: a link that would leave it goes nowhere.
+    const href = (e.target as Element | null)?.closest?.('a[href]')?.getAttribute('href')
+    if (href && !href.startsWith('#')) e.preventDefault()
+    return
+  }
   const to = linkTarget(e)
   if (!to) return
   e.preventDefault()

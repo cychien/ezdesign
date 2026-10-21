@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<title>Probe</title>
+<style>body { font: 13px/1.5 ui-monospace, monospace; margin: 16px; } h1 { font: 600 18px sans-serif; }</style>
+</head>
+<body>
+<h1>Isolation probe</h1>
+<form id="end" method="POST" target="sink"><input name="by" value="user"></form>
+<iframe name="sink" style="display:none"></iframe>
+<pre id="report">running…</pre>
+<script>
+  const api = `http://127.0.0.1:${location.port}/__ezdesign/api`
+  const out = [`origin ${location.origin}`]
+  const tryRead = (label, read) => { try { out.push(`${label} READ ${String(read())}`) } catch (e) { out.push(`${label} threw`) } }
+  tryRead('parent.localStorage', () => window.parent.localStorage.length)
+  tryRead('parent.document.title', () => window.parent.document.title)
+  try { localStorage.setItem('probe', 'ok'); out.push(`own localStorage ${localStorage.getItem('probe')}`) } catch (e) { out.push('own localStorage threw') }
+  Promise.all([
+    fetch(`${api}/send`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{"note":"from a frame"}' })
+      .then((r) => out.push(`send ${r.status}`), () => out.push('send blocked')),
+    fetch(`${api}/acp/answer`, { method: 'POST', mode: 'no-cors', body: 'x' })
+      .then((r) => out.push(`acp/answer ${r.type}`), () => out.push('acp/answer blocked')),
+  ]).then(() => {
+    const form = document.getElementById('end')
+    form.action = `${api}/end`
+    form.submit()
+    document.getElementById('report').textContent = out.join('\n')
+  })
+</script>
+</body>
+</html>

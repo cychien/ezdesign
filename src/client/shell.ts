@@ -33,6 +33,13 @@ import {
 import { attachify, directAttachments } from './attach.js'
 import { type AppGuest, FrameRegistry, type Guest, senderOf } from './frame-registry.js'
 import { type GuestKind, parseGuestMessage } from './guest-messages.js'
+import { type CanvasUi, installCanvas } from './canvas/index.js'
+import {
+  type CanvasEventWire,
+  type CanvasSnapshotWire,
+  SSE_CANVAS,
+  SSE_CANVAS_REMOVED,
+} from '../canvas/wire.js'
 import { confirmSkipped, rememberConfirm } from './confirm-skip.js'
 import { collectPageStorage } from './page-storage.js'
 import { type Usage, planName, usageNote, usageRows } from './usage-note.js'
@@ -97,6 +104,8 @@ interface AnnotationWire {
     text?: string
     page?: string
     viewport?: { width?: number; preset?: string }
+    /** Made inside a canvas frame; named by the frame's title in the queue. */
+    frame?: { canvasId: string; frameId: string }
   }
   /** Full records, not echoes: the queue holds the annotation itself, and the
    *  editor has to be able to hand every field back unchanged. */
@@ -148,6 +157,8 @@ interface SnapshotWire {
   endedBy?: 'user' | 'agent'
   /** The dev-server origin the previews show. Absent while no app is attached. */
   app?: string
+  /** Present only with `EZDESIGN_CANVAS` on: the tab strip is drawn from it. */
+  canvas?: CanvasSnapshotWire
   annotations: AnnotationWire[]
   conversation: ConversationWire[]
   agentOnline: boolean
@@ -274,6 +285,8 @@ const EDIT_ICON = 10
 const TICK_ICON = 14
 
 let snapshot: SnapshotWire | null = null
+/** The canvas tabs and boards, installed on the first snapshot that has any. */
+let canvasUi: CanvasUi | null = null
 /** The app the previews are of: `null` with none attached, `undefined` until the
  *  first snapshot says. The stage mounts on load without waiting for it, since
  *  nearly every review has an app, and is rebuilt only if that guess was wrong
@@ -760,6 +773,7 @@ function paintAnnotateMode(): void {
     btn.classList.toggle('ez-on', on)
     btn.setAttribute('aria-pressed', String(on))
   }
+  canvasUi?.setAnnotating(annotateMode)
 }
 
 const sideHead = h('div', 'ez-side-head')
@@ -1562,6 +1576,12 @@ window.addEventListener('popstate', (e) => {
  *  rather than from the opening path, and painted here rather than only in
  *  `render()`: a navigation is not a snapshot, so nothing else would repaint. */
 function paintPage(): void {
+  const canvasName = canvasUi?.activeName
+  if (canvasName) {
+    target.textContent = `canvas · ${canvasName}`
+    document.title = `ezdesign · ${canvasName}`
+    return
+  }
   if (stagedApp === null) {
     target.textContent = '沒有 app'
     document.title = 'ezdesign'
@@ -1738,7 +1758,7 @@ function stageApp(app: string | null): void {
   if (app === stagedApp) return
   const presumed = stagedApp === undefined
   stagedApp = app
-  deviceRow.hidden = app === null
+  deviceRow.hidden = app === null || (!!canvasUi && canvasUi.activeTab !== 'app')
   if (presumed && app !== null) return
   rebuildStage()
 }
@@ -1904,6 +1924,10 @@ const confirmActions = h('div', 'ez-notice-actions')
 confirmActions.append(confirmGo, confirmNo)
 const confirmCard = h('section', 'ez-notice ez-confirm')
 confirmCard.hidden = true
+confirmCard.dataset.testid = 'ez-confirm'
+confirmCard.setAttribute('role', 'dialog')
+confirmTitle.id = 'ez-confirm-title'
+confirmCard.setAttribute('aria-labelledby', confirmTitle.id)
 // The checkbox on its own line under the buttons, not beside them: it is a
 // footnote to the whole question rather than a third answer to it, and at this
 // width a row of three wraps anyway - into a checkbox floating off to the right,
@@ -3099,6 +3123,25 @@ async function api(path: string, init?: RequestInit): Promise<Response> {
   })
 }
 
+/** What the canvas feature may use of the shell, and nothing more. */
+function canvasPorts(): Parameters<typeof installCanvas>[0] {
+  return {
+    guests: frames,
+    stageWrap,
+    stage,
+    api,
+    onTabShown: (tab) => {
+      deviceRow.hidden = stagedApp === null || tab !== 'app'
+      if (tab === 'app') paintFrames()
+      paintPage()
+    },
+    escape: () => void abortPick('escape'),
+    confirm: (offer) => askConfirm({ key: 'canvas-delete', ...offer, skippable: false }),
+    notice: (text) => stripNotice(text),
+    annotateMode: () => annotateMode,
+  }
+}
+
 /** Not the button's disabled state: ⌘+Enter reaches `sendBatch` without it, and
  *  every repaint would otherwise clear it while the request is in flight - a
  *  second send would name the same files as the first. */
@@ -3848,7 +3891,11 @@ function paintQueue(annotations: AnnotationWire[]): void {
 
 function annotationLabel(a: AnnotationWire): string {
   const parts: string[] = []
-  if (a.anchor.source) parts.push(a.anchor.source)
+  // In a canvas frame the source is a long path into `.ezdesign/`: the frame's
+  // title and the line say the same thing in fewer characters.
+  const frame = a.anchor.frame && canvasUi?.frameTitle(a.anchor.frame)
+  if (frame) parts.push(`${frame}:${a.anchor.source?.split(':').pop() ?? ''}`.replace(/:$/, ''))
+  else if (a.anchor.source) parts.push(a.anchor.source)
   else if (a.anchor.components?.length) parts.push(`<${a.anchor.components[0]}>`)
   if (a.anchor.section) parts.push(a.anchor.section)
   if (a.anchor.text) parts.push(`"${a.anchor.text.slice(0, 32)}"`)
@@ -4101,6 +4148,8 @@ function render(): void {
   const s = snapshot
 
   stageApp(s.app ?? null)
+  if (s.canvas && !canvasUi) canvasUi = installCanvas(canvasPorts())
+  canvasUi?.render(s)
   paintPage()
 
   const ended = s.state === 'ended'
@@ -4551,6 +4600,7 @@ window.addEventListener('message', (e: MessageEvent) => {
   if (!guest) return
   const msg = parseGuestMessage(e.data, senderOf(guest))
   if (!msg) return
+  if (guest.kind === 'canvas' && canvasUi?.fromGuest(guest, msg)) return
   const from = guest.id
   switch (msg.type) {
     // A mod+wheel caught inside a preview: the page under the pointer stays put
@@ -4625,7 +4675,8 @@ window.addEventListener('message', (e: MessageEvent) => {
       })()
       return
     case 'ez:ready': {
-      dispatchNav({ t: 'loaded', url: msg.url, from })
+      // A canvas frame is one document: it has no page for the review to follow.
+      if (guest.kind === 'app') dispatchNav({ t: 'loaded', url: msg.url, from })
       // Straight to the frame, not through `sendMode`: this is a replay of state
       // the overlay lost, and `sendMode` calls off any pick that is still out -
       // which is exactly the pick this fresh overlay has to be handed back.
@@ -4697,15 +4748,25 @@ function escapeAnnotating(): void {
  *  did not consume - so a shortcut works whether focus is in the sidebar or out
  *  on the page, without the two documents keeping separate lists. */
 document.addEventListener('keydown', (e) => {
-  if (runShortcut(e, isTyping(e.target))) e.preventDefault()
+  const typing = isTyping(e.target)
+  if (runShortcut(e, typing)) e.preventDefault()
+  else if (!typing && canvasUi?.onKeyDown(e)) e.preventDefault()
 })
+document.addEventListener('keyup', (e) => canvasUi?.onKeyUp(e))
 
 /** The version of the daemon this page's scripts came from. The shell's assets
  *  are the daemon's, so a snapshot from another version means the port changed
  *  hands - a daemon restart onto a new build - and only a reload catches up. */
 let servedBy: string | null = null
 
-const events = new EventSource(`${API}/events`)
+const events = new EventSource(`${API}/events?shell=1`)
+// Named events carry whole canvases, to shells only; the snapshot never does.
+for (const name of [SSE_CANVAS, SSE_CANVAS_REMOVED]) {
+  events.addEventListener(name, (e) => {
+    canvasUi ??= installCanvas(canvasPorts())
+    canvasUi.onEvent(JSON.parse((e as MessageEvent<string>).data) as CanvasEventWire)
+  })
+}
 events.onmessage = (e) => {
   snapshot = JSON.parse(e.data) as SnapshotWire
   servedBy ??= snapshot.version

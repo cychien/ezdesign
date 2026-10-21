@@ -192,6 +192,42 @@ function sessionLife(origin, state, epoch) {
     : { app: { kind: 'attached', origin, attachedAt: epoch }, restoreOnStart: true, state }
 }
 
+/** The fixture's canvases, as the daemon's workspace writes them. Every dataset
+ *  starts from none, so a seed never inherits another's. */
+const FIXTURE_CANVASES = join(FIXTURE, '.ezdesign', 'canvases')
+
+function writeCanvases(canvases, epoch) {
+  rmSync(join(FIXTURE, '.ezdesign'), { recursive: true, force: true })
+  canvases.forEach((c, ci) => {
+    const id = hexId(`canvas|${ci}|${c.name}`)
+    const dir = join(FIXTURE_CANVASES, id)
+    mkdirSync(join(dir, 'frames'), { recursive: true })
+    const frames = c.grid
+      ? Array.from({ length: c.grid.count }, (_, i) => ({
+          title: `方向 ${i + 1}`,
+          file: c.grid.file,
+          n: i + 1,
+          x: (i % c.grid.columns) * (c.grid.width + c.grid.gap),
+          y: Math.floor(i / c.grid.columns) * (c.grid.height + c.grid.gap),
+          width: c.grid.width,
+          height: c.grid.height,
+        }))
+      : c.frames
+    const manifest = { schema: 1, id, name: c.name, createdAt: epoch + ci * 1000, frames: [] }
+    const rects = {}
+    frames.forEach((f, fi) => {
+      const frameId = hexId(`frame|${ci}|${fi}`)
+      const html = readFileSync(join(SKILL_DIR, 'datasets', f.file), 'utf8').replaceAll('$N', String(f.n ?? fi + 1))
+      writeFileSync(join(dir, 'frames', `${frameId}.html`), html)
+      const hash = createHash('sha1').update(html).digest('hex').slice(0, 12)
+      manifest.frames.push({ id: frameId, title: f.title, file: `frames/${frameId}.html`, hash, createdAt: epoch })
+      rects[frameId] = { x: f.x, y: f.y, width: f.width, height: f.height }
+    })
+    writeFileSync(join(dir, 'layout.json'), JSON.stringify({ schema: 1, rects }, null, 2))
+    writeFileSync(join(dir, 'canvas.json'), JSON.stringify(manifest, null, 2))
+  })
+}
+
 function loadDataset(name, state) {
   const file = join(SKILL_DIR, 'datasets', `${name}.json`)
   if (!existsSync(file)) die(`no dataset ${name} (have: ${datasets().join(', ')})`)
@@ -199,6 +235,7 @@ function loadDataset(name, state) {
   rmSync(state.dataDir, { recursive: true, force: true })
   mkdirSync(state.dataDir, { recursive: true })
   const epoch = Date.parse(spec.epoch ?? '2026-01-01T00:00:00Z')
+  writeCanvases(spec.canvases ?? [], epoch)
   let clock = epoch
   const tick = (ms = 45_000) => (clock += ms)
 
@@ -563,6 +600,7 @@ async function cmdDown() {
     if (existsSync(OPENED_LOG)) cpSync(OPENED_LOG, join(saved, 'opened.log'))
   }
   rmSync(RUN_DIR, { recursive: true, force: true })
+  rmSync(join(FIXTURE, '.ezdesign'), { recursive: true, force: true })
   say(leftovers.length ? `WARNING: still alive: ${leftovers.join(', ')}` : 'stopped vite and daemon; run dir removed')
   say(`logs kept in ${saved}`)
   if (leftovers.length) process.exit(1)

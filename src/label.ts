@@ -5,6 +5,7 @@ import type {
   Annotation,
   Attachment,
   ConversationItem,
+  FrameRef,
   Reference,
 } from './protocol.js'
 
@@ -13,6 +14,10 @@ import type {
 export interface AttachmentLocator {
   attachmentPath(a: Attachment): string
 }
+
+/** A canvas frame's and its canvas's names, for a label. Names change, so they
+ *  are looked up when the label is written rather than stored on the anchor. */
+export type FrameNames = (ref: FrameRef) => { canvas: string; frame: string } | null
 
 /** Absolute path, because the agent shares this machine and would rather open
  *  the file than be handed bytes. */
@@ -31,7 +36,12 @@ export function toAgentAttachments(
  *  anything it points at: file:line, then the component chain, then the section,
  *  then the text, then where the user was looking. `selector` is a fallback for
  *  when none of those landed, not a peer of them. */
-function anchorParts(anchor: Anchor, textMax: number, withViewport: boolean): string[] {
+function anchorParts(
+  anchor: Anchor,
+  textMax: number,
+  withViewport: boolean,
+  frames?: FrameNames,
+): string[] {
   const parts: string[] = []
   if (anchor.source) parts.push(anchor.source)
   if (anchor.components?.length) parts.push(`<${anchor.components.join(' ← ')}>`)
@@ -47,19 +57,29 @@ function anchorParts(anchor: Anchor, textMax: number, withViewport: boolean): st
     const { width, height, preset } = anchor.viewport
     parts.push(preset ? `@${preset} ${width}x${height}` : `@${width}x${height}`)
   }
+  // Says which document the rest is about: the source above is a line in the
+  // frame file, not in the app.
+  if (anchor.frame) {
+    const named = frames?.(anchor.frame)
+    parts.push(
+      named
+        ? `[canvas frame "${named.frame}" on canvas "${named.canvas}"]`
+        : `[canvas frame ${anchor.frame.canvasId}/${anchor.frame.frameId}]`,
+    )
+  }
   if (parts.length === 0 && anchor.selector) parts.push(anchor.selector)
   return parts
 }
 
 /** Agent-facing one-liner for a referenced element. No viewport: this is a
  *  summary sitting inside another label, and the full anchor travels beside it. */
-export function referenceLabel(reference: Reference): string {
-  return anchorParts(reference.anchor, 40, false).join(' · ') || reference.label
+export function referenceLabel(reference: Reference, frames?: FrameNames): string {
+  return anchorParts(reference.anchor, 40, false, frames).join(' · ') || reference.label
 }
 
 /** One-line, best-anchor-first summary the agent can act on without parsing the anchor. */
-export function toAgentItem(a: Annotation, files: AttachmentLocator): AgentItem {
-  const parts = anchorParts(a.anchor, a.kind === 'text' ? 60 : 40, true)
+export function toAgentItem(a: Annotation, files: AttachmentLocator, frames?: FrameNames): AgentItem {
+  const parts = anchorParts(a.anchor, a.kind === 'text' ? 60 : 40, true, frames)
   if (a.kind === 'page') parts.unshift(`[page ${a.anchor.page ?? ''}]`.trim())
   if (a.kind === 'point') {
     const rel = a.anchor.point?.rel
@@ -74,7 +94,7 @@ export function toAgentItem(a: Annotation, files: AttachmentLocator): AgentItem 
   // is what the agent reads first, and "look at that element" and "make it look
   // like this" are different asks about the same anchor.
   a.references?.forEach((r) =>
-    parts.push(`[ref ${r.n}: ${r.variant ? 'chosen variant · ' : ''}${referenceLabel(r)}]`),
+    parts.push(`[ref ${r.n}: ${r.variant ? 'chosen variant · ' : ''}${referenceLabel(r, frames)}]`),
   )
   // Numbered, not a bare list: the comment carries `[file n]` where the user put
   // it, and n is this array's position - so a comment about two files says which

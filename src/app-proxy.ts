@@ -20,6 +20,7 @@ import {
   responseInterceptor,
 } from 'http-proxy-middleware'
 import { URL_PREFIX } from './constants.js'
+import { isFrameHost } from './canvas/frame-document.js'
 import { injectOverlay, wantsHtml } from './inject.js'
 import type { AppAttachment, AttachedApp } from './store.js'
 
@@ -95,10 +96,10 @@ export class AppProxy {
     }
   }
 
-  /** `server.on('upgrade')`. Our own paths are never upgraded, nor is anything
-   *  while detached; the rest is tracked for `detach`. */
+  /** `server.on('upgrade')`. Our own paths are never upgraded, nor anything on
+   *  the frame host or while detached; the rest is tracked for `detach`. */
   upgrade(req: IncomingMessage, socket: Socket, head: Buffer): void {
-    if (req.url?.startsWith(URL_PREFIX) || this.current.kind === 'none') {
+    if (req.url?.startsWith(URL_PREFIX) || isFrameHost(req.headers.host) || this.current.kind === 'none') {
       socket.destroy()
       return
     }

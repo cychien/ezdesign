@@ -829,7 +829,8 @@ body.ez-arranging .ez-frame {
 .ez-shown[data-open] .ez-menu,
 .ez-config[data-open] .ez-menu,
 .ez-agent[data-open] .ez-menu,
-.ez-update-hint[data-open] .ez-menu {
+.ez-update-hint[data-open] .ez-menu,
+.ez-canvas-menu-wrap[data-open] .ez-menu {
   display: flex;
 }
 
@@ -3724,4 +3725,379 @@ body.ez-arranging .ez-frame {
     animation-name: ez-fade-in;
     animation-duration: var(--t-pop);
   }
+}
+
+/* ------------------------------------------------------------------ canvas */
+
+/* With canvases on, the stage area is a column: the tab strip, then whichever
+   of the App stage and the boards is showing. */
+.ez-stage-wrap.ez-tabbed {
+  flex-direction: column;
+}
+
+.ez-stage-wrap.ez-tabbed .ez-shown {
+  top: 52px;
+}
+
+/* The size picker belongs to the App's grid: gone with the stage. */
+.ez-stage[hidden],
+.ez-stage[hidden] ~ .ez-shown {
+  display: none;
+}
+
+.ez-tabs-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 42px;
+  flex-shrink: 0;
+  padding: 0 10px;
+  border-bottom: 1px solid var(--border);
+  background: var(--background);
+}
+
+.ez-tabs {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.ez-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 28px;
+  max-width: 220px;
+  padding: 0 4px 0 10px;
+  border-radius: 7px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--muted-foreground);
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+  flex-shrink: 0;
+}
+
+.ez-tab[data-tab='app'] {
+  padding-right: 10px;
+}
+
+.ez-tab:hover {
+  background: var(--muted);
+}
+
+.ez-tab[aria-selected='true'] {
+  background: var(--panel);
+  color: var(--foreground);
+  box-shadow:
+    0 0 0 1px var(--border),
+    0 1px 2px oklch(0% 0 0 / 0.04);
+}
+
+.ez-tab-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ez-tab-close {
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--ink-faint);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0;
+}
+
+.ez-tab:hover .ez-tab-close,
+.ez-tab[aria-selected='true'] .ez-tab-close,
+.ez-tab-close:focus-visible {
+  opacity: 1;
+}
+
+.ez-tab-close:hover {
+  background: var(--muted);
+  color: var(--foreground);
+}
+
+.ez-tab-rename {
+  width: 150px;
+  padding: 2px 5px;
+  border: 1px solid var(--ring);
+  border-radius: 5px;
+  font: inherit;
+  color: var(--foreground);
+  background: var(--panel);
+  outline: none;
+}
+
+.ez-tabs-tail {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.ez-tab-new,
+.ez-canvas-menu {
+  height: 28px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted-foreground);
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.ez-tab-new {
+  width: 28px;
+  font-size: 17px;
+  line-height: 1;
+}
+
+.ez-canvas-menu {
+  padding: 0 10px;
+  font-size: 12.5px;
+  font-weight: 500;
+}
+
+.ez-tab-new:hover,
+.ez-canvas-menu:hover,
+.ez-canvas-menu-wrap[data-open] .ez-canvas-menu {
+  background: var(--muted);
+  color: var(--foreground);
+}
+
+.ez-canvas-menu-wrap {
+  position: relative;
+}
+
+.ez-canvas-menu-list {
+  min-width: 260px;
+  z-index: 20;
+}
+
+.ez-canvas-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.ez-canvas-menu-open {
+  flex: 1;
+  min-width: 0;
+  justify-content: space-between;
+}
+
+.ez-canvas-menu-open .ez-menu-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ez-canvas-menu-item[data-archived] .ez-menu-name {
+  color: var(--muted-foreground);
+}
+
+.ez-canvas-menu-meta {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--ink-faint);
+}
+
+.ez-canvas-menu-delete {
+  flex-shrink: 0;
+  padding: 5px 8px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted-foreground);
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.ez-canvas-menu-delete:hover,
+.ez-canvas-menu-delete:focus-visible {
+  background: var(--muted);
+  color: var(--foreground);
+}
+
+.ez-canvas-menu-empty {
+  padding: 6px 8px;
+  font-size: 12px;
+  color: var(--muted-foreground);
+}
+
+/* One canvas: a viewport onto an infinite plane. Frames sit in world space on
+   the one transformed element, so a pan is a single compositor write. */
+.ez-board {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  /* Clip, not hidden: a hidden box can still be scrolled by focus landing in a
+     frame, which slides the world out from under the camera. */
+  overflow: clip;
+  background: var(--paper-sunken);
+  outline: none;
+  touch-action: none;
+}
+
+.ez-board[hidden] {
+  display: none;
+}
+
+.ez-board.ez-space {
+  cursor: grab;
+}
+
+.ez-board.ez-panning {
+  cursor: grabbing;
+}
+
+.ez-board-world {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform-origin: 0 0;
+}
+
+.ez-board.ez-moving .ez-board-world {
+  will-change: transform;
+}
+
+.ez-board-frame {
+  position: absolute;
+  left: 0;
+  top: 0;
+  background: #fff;
+  box-shadow:
+    0 0 0 calc(1px / var(--ez-zoom, 1)) var(--border),
+    0 calc(4px / var(--ez-zoom, 1)) calc(18px / var(--ez-zoom, 1)) oklch(0% 0 0 / 0.07);
+}
+
+.ez-board-frame.ez-live {
+  box-shadow: 0 0 0 calc(2px / var(--ez-zoom, 1)) var(--ink);
+}
+
+/* Named above the frame at a constant screen size, whatever the zoom. */
+.ez-board-frame-head {
+  position: absolute;
+  left: 0;
+  bottom: 100%;
+  display: flex;
+  align-items: baseline;
+  gap: calc(6px / var(--ez-zoom, 1));
+  max-width: 100%;
+  padding-bottom: calc(6px / var(--ez-zoom, 1));
+  font-size: calc(12px / var(--ez-zoom, 1));
+  line-height: 1.2;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+/* The title is what names the frame, so the size gives way first. */
+.ez-board-frame-title {
+  flex-shrink: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 500;
+  color: var(--foreground);
+}
+
+.ez-board-frame-size {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--ink-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The board owns the pointer unless the user is annotating, or has made one
+   frame live with a double-click; and never mid-gesture. */
+.ez-board-iframe {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: #fff;
+  pointer-events: none;
+}
+
+.ez-board.ez-annotating .ez-board-iframe,
+.ez-board-frame.ez-live .ez-board-iframe {
+  pointer-events: auto;
+}
+
+.ez-board.ez-moving .ez-board-iframe,
+.ez-board.ez-space .ez-board-iframe {
+  pointer-events: none;
+}
+
+.ez-board-empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  color: var(--muted-foreground);
+  pointer-events: none;
+}
+
+.ez-board-empty[hidden] {
+  display: none;
+}
+
+.ez-board-tools {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 9px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  box-shadow: 0 2px 8px oklch(0% 0 0 / 0.06);
+}
+
+.ez-board-tool {
+  height: 26px;
+  min-width: 26px;
+  padding: 0 8px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--foreground);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.ez-board-tool:hover {
+  background: var(--muted);
+}
+
+.ez-board-zoom {
+  min-width: 44px;
+  text-align: center;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted-foreground);
 }

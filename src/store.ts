@@ -3,6 +3,7 @@ import { mkdirSync, readFileSync, readdirSync, statSync, unlinkSync, writeFileSy
 import { join } from 'node:path'
 import { ATTACHMENT_GRACE_MS, SESSIONS_DIR } from './constants.js'
 import type { AcpConfigValue } from './acp-config.js'
+import type { Camera, CanvasId, ShellView, TabId, ViewStore } from './canvas/types.js'
 import type { Said } from './history.js'
 import { rememberDesignHarness } from './preferences.js'
 import type {
@@ -281,7 +282,7 @@ export function listRestorableSessions(): PersistedSession[] {
  * every mutation rewrites the file synchronously — queued feedback must survive
  * daemon restarts and crashes.
  */
-export class SessionStore {
+export class SessionStore implements ViewStore {
   readonly dir: string
 
   constructor(readonly project: string) {
@@ -320,6 +321,32 @@ export class SessionStore {
     const { restoreOnStart: was, ...rest } = this.session
     if (!!was === on) return
     this.writeJson('session.json', on ? { ...rest, restoreOnStart: true } : rest)
+  }
+
+  // -------------------------------------------------------------------- view
+
+  /** `view.json`, beside `session.json` rather than in it: what the viewer is
+   *  looking at, not what the review is, and a camera save should not rewrite
+   *  the record every other mutator rewrites. */
+  get view(): ShellView {
+    return this.readJson<ShellView>('view.json') ?? {}
+  }
+
+  setActiveTab(tab: TabId): void {
+    this.writeJson('view.json', { ...this.view, activeTab: tab })
+  }
+
+  setCamera(canvasId: CanvasId, camera: Camera): void {
+    const view = this.view
+    this.writeJson('view.json', { ...view, cameras: { ...view.cameras, [canvasId]: camera } })
+  }
+
+  /** A deleted canvas's camera has nothing left to look at. */
+  forgetCamera(canvasId: CanvasId): void {
+    const view = this.view
+    if (!view.cameras?.[canvasId]) return
+    const { [canvasId]: _gone, ...cameras } = view.cameras
+    this.writeJson('view.json', { ...view, cameras })
   }
 
   private readJson<T>(file: string): T | null {

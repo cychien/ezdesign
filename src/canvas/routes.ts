@@ -1,0 +1,198 @@
+/** The HTTP faces of canvases: the shell's routes on the session origin, and the
+ *  frame host that serves frame documents on their own origin.
+ *
+ *  Shell routes, relative to the api router (so behind `refuseCrossSite`):
+ *
+ *      GET    /canvases/:canvasId                 -> CanvasWire
+ *      POST   /canvases            {name?}        -> CanvasWire        (the tab strip's +)
+ *      PATCH  /canvases/:canvasId  {name}         -> CanvasWire
+ *      POST   /canvases/:canvasId/archive         -> {result: 'archived' | 'deleted'}
+ *      POST   /canvases/:canvasId/reopen          -> CanvasWire
+ *      DELETE /canvases/:canvasId                 -> {ok: true}        (archived only, else 409)
+ *      PUT    /view                ViewWire       -> {ok: true}
+ *
+ *  Errors are `{error, code}` with `statusOf(problem)`. Every route parses at the
+ *  boundary and makes one port call; the host gets only `UserCanvasPort` and the
+ *  reader, so no route can write a document.
+ *
+ *  Frame host (`Host: localhost:<port>`), see `frameHost`:
+ *
+ *      GET    /__ezdesign/frames/:canvasId/:frameId?rev=   -> the stamped document */
+
+import { type RequestHandler, type Response, Router } from 'express'
+import { URL_PREFIX } from '../constants.js'
+import { FRAME_ROUTE, isFrameHost } from './frame-document.js'
+import {
+  type CanvasProblem,
+  type Outcome,
+  ZOOM_MAX,
+  ZOOM_MIN,
+  asCanvasId,
+  asFrameId,
+  asTabId,
+} from './types.js'
+import type { ViewWire } from './wire.js'
+import type { CanvasReader, UserCanvasPort } from './workspace.js'
+
+export interface CanvasRouteHost {
+  readonly user: UserCanvasPort
+  readonly read: CanvasReader
+}
+
+/** The words a person (or the shell's notice) reads for a refusal. */
+export function problemText(problem: CanvasProblem): string {
+  switch (problem.code) {
+    case 'CANVAS_NOT_FOUND':
+      return `no canvas ${problem.canvasId}`
+    case 'CANVAS_ARCHIVED':
+      return `canvas ${problem.name} is closed`
+    case 'CANVAS_OPEN':
+      return `canvas ${problem.name} is open; close it before deleting it`
+    case 'FRAME_NOT_FOUND':
+      return `no frame ${problem.frameId} on canvas ${problem.canvasId}`
+    case 'FRAME_CONFLICT':
+      return `frame ${problem.frameId} changed since it was read`
+    case 'HTML_EMPTY':
+      return 'the frame html is empty'
+    case 'HTML_TOO_LARGE':
+      return `the frame html is ${problem.bytes} bytes; the limit is ${problem.limit}`
+    case 'NOT_A_DOCUMENT':
+      return 'the frame html is not a complete document'
+    case 'TOO_MANY_FRAMES':
+      return `a canvas holds at most ${problem.limit} frames`
+    case 'BAD_NAME':
+      return `a name is 1 to ${problem.max} characters`
+    case 'BAD_RECT':
+      return `bad frame geometry: ${problem.reason}`
+  }
+}
+
+export function statusOf(problem: CanvasProblem): 400 | 404 | 409 | 413 {
+  switch (problem.code) {
+    case 'CANVAS_NOT_FOUND':
+    case 'FRAME_NOT_FOUND':
+      return 404
+    case 'CANVAS_ARCHIVED':
+    case 'CANVAS_OPEN':
+    case 'FRAME_CONFLICT':
+      return 409
+    case 'HTML_TOO_LARGE':
+      return 413
+    case 'HTML_EMPTY':
+    case 'NOT_A_DOCUMENT':
+    case 'TOO_MANY_FRAMES':
+    case 'BAD_NAME':
+    case 'BAD_RECT':
+      return 400
+  }
+}
+
+function answer<T>(res: Response, outcome: Outcome<T>, body: (value: T) => unknown): void {
+  if (outcome.ok) {
+    res.json(body(outcome.value))
+    return
+  }
+  res.status(statusOf(outcome.problem)).json({ error: problemText(outcome.problem), code: outcome.problem.code })
+}
+
+const finite = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v)
+
+export function parseView(raw: unknown): ViewWire | null {
+  if (typeof raw !== 'object' || raw === null) return null
+  const { activeTab, camera } = raw as Record<string, unknown>
+  const view: ViewWire = {}
+  if (activeTab !== undefined) {
+    const tab = asTabId(activeTab)
+    if (!tab) return null
+    view.activeTab = tab
+  }
+  if (camera !== undefined) {
+    if (typeof camera !== 'object' || camera === null) return null
+    const { canvasId, camera: at } = camera as Record<string, unknown>
+    const id = asCanvasId(canvasId)
+    const { x, y, zoom } = (at ?? {}) as Record<string, unknown>
+    if (!id || !finite(x) || !finite(y) || !finite(zoom) || zoom < ZOOM_MIN || zoom > ZOOM_MAX) return null
+    view.camera = { canvasId: id, camera: { x, y, zoom } }
+  }
+  return view
+}
+
+export function canvasApiRouter(host: CanvasRouteHost): Router {
+  const api = Router()
+  const { user, read } = host
+
+  api.get('/canvases/:canvasId', (req, res) => {
+    const id = asCanvasId(req.params.canvasId)
+    const wire = id ? read.wire(id) : null
+    if (!wire) return res.status(404).json({ error: `no canvas ${req.params.canvasId}`, code: 'CANVAS_NOT_FOUND' })
+    res.json(wire)
+  })
+  api.post('/canvases', (req, res) => {
+    const name = (req.body as { name?: unknown } | undefined)?.name
+    if (name !== undefined && typeof name !== 'string') return res.status(400).json({ error: 'name must be text' })
+    answer(res, user.create(name), (wire) => wire)
+  })
+  api.patch('/canvases/:canvasId', (req, res) => {
+    const name = (req.body as { name?: unknown } | undefined)?.name
+    if (typeof name !== 'string') return res.status(400).json({ error: 'name must be text' })
+    answer(res, user.rename(req.params.canvasId, name), (wire) => wire)
+  })
+  api.post('/canvases/:canvasId/archive', (req, res) => {
+    answer(res, user.archive(req.params.canvasId), (result) => ({ result }))
+  })
+  api.post('/canvases/:canvasId/reopen', (req, res) => {
+    answer(res, user.reopen(req.params.canvasId), (wire) => wire)
+  })
+  api.delete('/canvases/:canvasId', (req, res) => {
+    answer(res, user.delete(req.params.canvasId), () => ({ ok: true }))
+  })
+  api.put('/view', (req, res) => {
+    const view = parseView(req.body)
+    if (!view) return res.status(400).json({ error: 'not a view' })
+    user.setView(view)
+    res.json({ ok: true })
+  })
+  return api
+}
+
+const FRAMES_PATH = `${URL_PREFIX}${FRAME_ROUTE}/`
+
+/** The first middleware of the session's app, and the whole frame-origin
+ *  policy in one place:
+ *
+ *  - on the frame host: `GET /__ezdesign/frames/:canvasId/:frameId` answers the
+ *    stamped document, cached `immutable` (the revision is in the url); a gone
+ *    frame is 404. Every other method and path on this host is 404 - no shell,
+ *    no api, no proxy - with a body that names the shell's real url.
+ *  - on any other host: a path under `/__ezdesign/frames` is 404, so a frame
+ *    document never runs on the shell's origin; everything else is `next()`.
+ *
+ *  `read` is null with canvases off: frame paths are 404 on every host. */
+export function frameHost(read: CanvasReader | null, shellOrigin: () => string): RequestHandler {
+  return (req, res, next) => {
+    const framePath = req.path.startsWith(FRAMES_PATH)
+    // Without canvases (the flag off) the host means nothing: only the path is closed.
+    if (!read || !isFrameHost(req.headers.host)) {
+      if (framePath) return void res.sendStatus(404)
+      return next()
+    }
+    const [canvasRaw, frameRaw, extra] = framePath ? req.path.slice(FRAMES_PATH.length).split('/') : []
+    const canvasId = asCanvasId(canvasRaw)
+    const frameId = asFrameId(frameRaw)
+    const doc = req.method === 'GET' && canvasId && frameId && extra === undefined ? read.frameDocument(canvasId, frameId) : null
+    if (!doc) {
+      res
+        .status(404)
+        .type('text/plain')
+        .send(`Not a canvas frame. The review shell is at ${shellOrigin()}${URL_PREFIX}/shell`)
+      return
+    }
+    res
+      .type('html')
+      .set({
+        'cache-control': req.query.rev === doc.hash ? 'public, max-age=31536000, immutable' : 'no-store',
+        'x-content-type-options': 'nosniff',
+      })
+      .send(doc.html)
+  }
+}

@@ -8,6 +8,11 @@ import type { Socket } from 'node:net'
 import type { SessionConfigOption } from '@agentclientprotocol/sdk'
 import express, { type ErrorRequestHandler, type Response, Router } from 'express'
 import { AppProxy } from './app-proxy.js'
+import { FRAME_HOST } from './canvas/frame-document.js'
+import { canvasApiRouter, frameHost } from './canvas/routes.js'
+import { type CanvasEventWire, SSE_CANVAS, SSE_CANVAS_REMOVED } from './canvas/wire.js'
+import { type CanvasChange, type CanvasWorkspace, openCanvasWorkspace } from './canvas/workspace.js'
+import type { CanvasSnapshotWire } from './canvas/wire.js'
 import { refuseCrossSite } from './origin-gate.js'
 import { type ProjectRuntime, SessionDirectory } from './session-directory.js'
 import { migrateLegacySessions } from './session-migrate.js'
@@ -169,6 +174,9 @@ interface SnapshotWire {
   endedBy?: SessionEndedBy
   /** The dev-server origin on the App tab. Absent until one is attached. */
   app?: string
+  /** Tabs and the active one. Absent when `EZDESIGN_CANVAS` is off, which is
+   *  how a shell knows to draw no tab strip. */
+  canvas?: CanvasSnapshotWire
   annotations: Annotation[]
   conversation: unknown[]
   agentOnline: boolean
@@ -618,6 +626,11 @@ function agentSwitchNote(command: string): string {
  *  keystroke is also not the kind of thing that arrives in floods; the note this
  *  sits beside is de-duplicated because a dev daemon restarts on every file save,
  *  which is a machine repeating itself, not a person changing their mind. */
+/** One named SSE event, for shell clients only. */
+function sseEvent(event: CanvasEventWire): string {
+  return `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`
+}
+
 function configChangeNote(option: SessionConfigOption, value: AcpConfigValue): string {
   const label = configLabel(option)
   if (typeof value === 'boolean') return `${label}已${value ? '開啟' : '關閉'}`
@@ -630,6 +643,9 @@ class SessionRuntime implements ProjectRuntime {
   /** The explore rounds this session is taking variants for, and the tool the
    *  agent sends them through. */
   readonly exploreMcp = new ExploreMcp()
+  /** The project's canvases. Null with `EZDESIGN_CANVAS` off, and every use is
+   *  behind that null, which is the whole flag. */
+  readonly canvases: CanvasWorkspace | null
   /** The ask for a round whose branch is still opening. Held rather than sent,
    *  because a prompt to a session that is not up yet is a prompt that is
    *  dropped - see `deliverToAcp`. */
@@ -646,6 +662,10 @@ class SessionRuntime implements ProjectRuntime {
   port = 0
   private server!: Server
   private sseClients = new Set<Response>()
+  /** The subset of `sseClients` that are review shells (`/events?shell=1`): the
+   *  ones canvas events go to. Overlays connect without it and are spared every
+   *  canvas. */
+  private readonly shellClients = new Set<Response>()
   private pollWaiters = new Set<(r: PollResult | null) => void>()
   /** Set when a batch is handed to the agent, cleared when it polls again.
    *  Acks can't drive this: the agent acks on receipt, before it does the work. */
@@ -681,6 +701,18 @@ class SessionRuntime implements ProjectRuntime {
     this.appProxy = new AppProxy(`${URL_PREFIX}/shell`, (req) => {
       this.pageCookies = req.headers.cookie ?? null
     })
+    this.canvases = canvasEnabled()
+      ? openCanvasWorkspace({
+          project,
+          view: this.store,
+          frameOrigin: () => `http://${FRAME_HOST}:${this.port}`,
+          overlay: () => ({ version: this.version, shellOrigin: this.shellOrigin }),
+          hasApp: () => this.app.kind === 'attached',
+          onChange: (change) => this.canvasChanged(change),
+          // eslint-disable-next-line no-console
+          log: (message) => console.error(message),
+        })
+      : null
     // Session start is the one moment no composer can be holding a fresh upload,
     // which is what makes an unreferenced attachment safe to judge by age alone.
     this.store.sweepAttachments()
@@ -717,6 +749,7 @@ class SessionRuntime implements ProjectRuntime {
     const closed = new Promise<void>((resolve) => this.server.close(() => resolve()))
     this.server.closeAllConnections()
     this.appProxy.detach()
+    this.canvases?.close()
     await closed
   }
 
@@ -746,6 +779,8 @@ class SessionRuntime implements ProjectRuntime {
     if (before.kind !== 'attached' || before.origin !== app.origin) this.forgetPageState()
     this.appProxy.attach(app)
     if (opts.userAttached) this.store.attachApp(app.origin, app.attachedAt)
+    // They ran `ezdesign <url>` to look at it.
+    this.canvases?.appChanged({ show: opts.userAttached, create: this.shellClients.size > 0 })
     this.broadcast()
   }
 
@@ -753,6 +788,7 @@ class SessionRuntime implements ProjectRuntime {
     this.appProxy.detach()
     this.store.detachApp()
     this.forgetPageState()
+    this.canvases?.appChanged({ show: false, create: this.shellClients.size > 0 })
     this.broadcast()
   }
 
@@ -813,6 +849,7 @@ class SessionRuntime implements ProjectRuntime {
       state: s.state,
       endedBy: s.endedBy,
       ...(this.app.kind === 'attached' ? { app: this.app.origin } : {}),
+      ...(this.canvases ? { canvas: this.canvases.read.snapshot(false) } : {}),
       annotations: this.store.annotations,
       conversation: this.store.visibleConversation,
       agentOnline:
@@ -863,6 +900,25 @@ class SessionRuntime implements ProjectRuntime {
   broadcast(): void {
     const data = `data: ${JSON.stringify(this.snapshot())}\n\n`
     for (const res of this.sseClients) res.write(data)
+  }
+
+  /** The workspace wrote, or a frame's file was found changed. Shell clients get
+   *  the one canvas that changed as a named event - the snapshot never carries
+   *  frames, so a streaming turn does not resend forty of them per token - and
+   *  everyone gets the snapshot, whose summaries and active tab moved with it. */
+  private canvasChanged(change: CanvasChange): void {
+    if (change.kind === 'updated') {
+      const canvas = this.canvases?.read.wire(change.canvasId)
+      if (canvas) this.toShells({ type: SSE_CANVAS, canvas })
+    } else if (change.kind === 'removed') {
+      this.toShells({ type: SSE_CANVAS_REMOVED, canvasId: change.canvasId })
+    }
+    this.broadcast()
+  }
+
+  private toShells(event: CanvasEventWire): void {
+    const data = sseEvent(event)
+    for (const res of this.shellClients) res.write(data)
   }
 
   /** Bring back the agent a previous daemon was driving.
@@ -1526,7 +1582,7 @@ class SessionRuntime implements ProjectRuntime {
       batchId: batch.batchId,
       ...(this.app.kind === 'attached' ? { url: this.app.origin } : {}),
       note: batch.note,
-      items: batch.items.map((a) => toAgentItem(a, this.store)),
+      items: batch.items.map((a) => toAgentItem(a, this.store, this.canvases?.read.names)),
       ...(attachments ? { attachments } : {}),
       ...(batch.references?.length ? { references: batch.references } : {}),
       ...(batch.setup ? { setup: true as const } : {}),
@@ -1598,6 +1654,12 @@ class SessionRuntime implements ProjectRuntime {
     // belongs to a session, so a url cannot reach across to another one's.
     api.post(MCP_ROUTE, this.exploreMcp.handler())
 
+    // The shell's end of canvases: tabs, archive and the view. The user's port
+    // only - no route here can write a frame document.
+    if (this.canvases) {
+      api.use(canvasApiRouter({ user: this.canvases.user, read: this.canvases.read }))
+    }
+
     api.get('/state', (_req, res) => res.json(this.snapshot()))
 
     api.post('/page-state', (req, res) => {
@@ -1626,12 +1688,26 @@ class SessionRuntime implements ProjectRuntime {
         connection: 'keep-alive',
       })
       res.flushHeaders()
+      const shell = req.query.shell === '1'
+      // A shell with nothing to show gets an empty canvas, created now rather
+      // than at start or restore: never a write into a project nobody is looking at.
+      if (shell) this.canvases?.shellConnected()
+      // Every open canvas in the first flush, in tab order and ahead of the
+      // snapshot, so a board opens with no fetch and the queue's first paint
+      // can already name the frames its annotations are in.
+      if (shell) {
+        this.shellClients.add(res)
+        for (const canvas of this.canvases?.read.openWires() ?? []) {
+          res.write(sseEvent({ type: SSE_CANVAS, canvas }))
+        }
+      }
       res.write(`data: ${JSON.stringify(this.snapshot())}\n\n`)
       this.sseClients.add(res)
       const heartbeat = setInterval(() => res.write(': hb\n\n'), 25_000)
       req.on('close', () => {
         clearInterval(heartbeat)
         this.sseClients.delete(res)
+        this.shellClients.delete(res)
       })
     })
 
@@ -1650,6 +1726,12 @@ class SessionRuntime implements ProjectRuntime {
       // comment is only required when nothing came with it.
       if (!comment && files.length === 0) {
         return res.status(400).json({ error: 'comment or attachment is required' })
+      }
+      // The shell stamped it from the window the comment came from, but the body
+      // crossed the wire: a frame that does not exist is refused, not stored.
+      const frame = (anchor as Anchor).frame
+      if (frame && !this.canvases?.read.hasFrame(frame)) {
+        return res.status(400).json({ error: 'unknown canvas frame' })
       }
       const annotation: Annotation = {
         id: newId(),
@@ -2134,19 +2216,33 @@ class SessionRuntime implements ProjectRuntime {
   async start(): Promise<number> {
     const app = express()
 
+    // One listener, two origins: `localhost:<port>` serves frame documents and
+    // nothing else, and frame documents are served nowhere else.
+    app.use(frameHost(this.canvases?.read ?? null, () => this.shellOrigin))
+
     const rk = Router()
     rk.get('/shell', (_req, res) => res.type('html').send(SHELL_HTML))
     // Never cached. These assets are the daemon's, and the daemon is replaceable
     // under an open shell - by a self-update, or by a `@latest` CLI run. The
     // reload that follows has to fetch the new code, and a heuristically cached
     // copy would leave the previous version's UI driving the new daemon.
+    // A canvas frame asks for `?v=<version>`: forty frames then fetch the overlay
+    // once, and a replaced daemon is a different url.
     for (const file of ['overlay.js', 'overlay.css', 'shell.js', 'shell.css']) {
       const type = file.endsWith('.css') ? 'text/css' : 'text/javascript'
-      rk.get(`/${file}`, (_req, res) =>
-        res.type(type).set('cache-control', 'no-store').send(asset(file)),
+      rk.get(`/${file}`, (req, res) =>
+        res
+          .type(type)
+          .set(
+            'cache-control',
+            req.query.v === this.version ? 'public, max-age=31536000, immutable' : 'no-store',
+          )
+          .send(asset(file)),
       )
     }
     rk.use('/api', this.apiRouter())
+    // Ours, whether or not anything answers it: never handed to the user's app.
+    rk.use((_req, res) => res.sendStatus(404))
     app.use(URL_PREFIX, rk)
 
     // Everything else is the user's app, through a proxy whose target can be
@@ -2163,6 +2259,8 @@ class SessionRuntime implements ProjectRuntime {
     const address = this.server.address()
     this.port = typeof address === 'object' && address ? address.port : 0
     this.store.setPort(this.port)
+    // After the bind: frame urls carry the port.
+    this.canvases?.start()
     return this.port
   }
 
@@ -2345,6 +2443,9 @@ export async function daemonMain(version: string, opts: DaemonOptions = {}): Pro
         ...(s.app.kind === 'attached' ? { app: s.app.origin } : {}),
         port: s.port,
         state: s.state,
+        ...(s.canvases
+          ? { canvases: s.canvases.read.inventory().canvases.filter((c) => !c.archived).length }
+          : {}),
       })),
     )
   })

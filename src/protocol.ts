@@ -24,6 +24,18 @@ export interface Anchor {
   viewport?: { width: number; height: number; preset?: string }
   /** page pathname the annotation was made on */
   page?: string
+  /** Set when the element lives inside a canvas frame rather than the app;
+   *  `source` is then a line of that frame's file. Absent on the App tab. The
+   *  shell writes it from the registered window the message came from, never
+   *  from the frame's own claim, and the daemon checks the frame exists. */
+  frame?: FrameRef
+}
+
+/** Which canvas frame an element was picked in. Ids, not paths: the file is
+ *  in `source`, and a frame's title can change while its id cannot. */
+export interface FrameRef {
+  canvasId: string
+  frameId: string
 }
 
 /** A file pasted into a comment box, stored under `<sessionDir>/attachments/`.

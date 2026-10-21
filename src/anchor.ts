@@ -107,7 +107,18 @@ export function sanitizeAnchor(raw: unknown): Anchor | null {
   if (r) out.rect = r
   const vp = viewport(v.viewport)
   if (vp) out.viewport = vp
+  const fr = frameRef(v.frame)
+  if (fr) out.frame = fr
   return out
+}
+
+/** Both ids or nothing: a half-named frame resolves to no file. */
+function frameRef(v: unknown): Anchor['frame'] {
+  if (typeof v !== 'object' || v === null) return undefined
+  const { canvasId, frameId } = v as Record<string, unknown>
+  const c = str(canvasId, 40)
+  const f = str(frameId, 40)
+  return c && f ? { canvasId: c, frameId: f } : undefined
 }
 
 /** Null marks a malformed field, which is a 400 - distinct from an absent one,

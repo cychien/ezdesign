@@ -161,6 +161,7 @@ interface SessionListing {
   app?: string
   port: number
   state: string
+  canvases?: number
 }
 
 async function openSessionsHint(daemonPort: number): Promise<string> {
@@ -351,6 +352,7 @@ async function cmdStatus(): Promise<void> {
   for (const s of sessions) {
     console.log(`session: ${s.project} → 127.0.0.1:${s.port} (${s.state})`)
     if (s.app) console.log(`         app: ${s.app}`)
+    if (s.canvases !== undefined) console.log(`         canvases: ${s.canvases} open`)
   }
 }
 
