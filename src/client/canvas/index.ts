@@ -8,8 +8,7 @@
  *  per named SSE event, `fromGuest` per parsed message from a canvas guest, and
  *  `onKeyDown` for keys its own table did not take.
  *
- *  Installed lazily on the first snapshot with a `canvas` field, so with
- *  `EZDESIGN_CANVAS` off nothing here runs. */
+ *  Installed on the first snapshot or canvas event, whichever comes first. */
 
 import type { BatchView, FrameRef } from '../../protocol.js'
 import { type CanvasId, type TabId, asCanvasId } from '../../canvas/types.js'
@@ -74,6 +73,9 @@ export interface CanvasUi {
   onKeyDown(e: KeyboardEvent): boolean
   onKeyUp(e: KeyboardEvent): void
   setAnnotating(mode: Mode): void
+  /** An `/element` pick is out: frames take the pointer so it can be answered
+   *  on any canvas, as the App's previews always can. */
+  setPicking(on: boolean): void
   readonly activeTab: TabId | null
   /** The name of the canvas on screen, null on the App tab. */
   readonly activeName: string | null
@@ -82,6 +84,9 @@ export interface CanvasUi {
   batchView(appPage: string): BatchView
   /** A frame's title, for the queue's labels. */
   frameTitle(ref: FrameRef): string | undefined
+  /** Show the tab a guest lives on: the App for an App preview, its canvas for
+   *  a canvas frame. How `/element` brings the user back to the composer. */
+  focusGuest(guestId: string): void
 }
 
 /** Everything the client asks the canvas routes for, as data. */
@@ -344,6 +349,10 @@ export function installCanvas(ports: ShellPorts): CanvasUi {
       for (const b of boards.values()) b.setAnnotating(mode)
     },
 
+    setPicking(on) {
+      ports.stageWrap.classList.toggle('ez-picking', on)
+    },
+
     get activeTab() {
       return shown
     },
@@ -354,6 +363,12 @@ export function installCanvas(ports: ShellPorts): CanvasUi {
 
     batchView(appPage) {
       return shown && shown !== 'app' ? { tab: 'canvas', canvasId: shown } : { tab: 'app', page: appPage }
+    },
+
+    focusGuest(guestId) {
+      const canvas = /^canvas:([0-9a-f]{12})\//.exec(guestId)?.[1]
+      const tab = canvas ? asCanvasId(canvas) : 'app'
+      if (tab && tab !== shown) select(tab)
     },
 
     frameTitle(ref) {

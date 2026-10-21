@@ -13,10 +13,9 @@ interface State {
   canvas?: { canvases: { id: string; name: string; frames: number }[]; activeTab: string | null; agentHasTools: boolean }
 }
 
-async function world(canvas: boolean) {
+async function world() {
   const w = await DaemonWorld.create()
   worlds.push(w)
-  if (canvas) w.env.EZDESIGN_CANVAS = '1'
   w.spawnDaemon()
   return { w, control: (await w.liveDaemon()).port }
 }
@@ -55,7 +54,7 @@ async function report(w: DaemonWorld, port: number) {
 }
 
 test('CV-agent-builds-canvas: the agent makes a canvas and fills it, and the tab follows', async () => {
-  const { w, control } = await world(true)
+  const { w, control } = await world()
   const dir = project(w)
   const port = await ready(w, control, dir)
   assert.equal(((await w.state(port)) as unknown as State).canvas?.agentHasTools, true)
@@ -83,8 +82,8 @@ test('CV-agent-builds-canvas: the agent makes a canvas and fills it, and the tab
   assert.ok(asked.every((l) => l.endsWith(':allow-once')), 'every canvas tool is granted without a card')
 })
 
-test('CV-tool-isolation and CV-p5-flag-off: only this session holds its canvas tools', async () => {
-  const { w, control } = await world(true)
+test('CV-tool-isolation and CV-flag-removed: every session gets its own canvas tools, and only it can use them', async () => {
+  const { w, control } = await world()
   const p = await ready(w, control, project(w))
   const q = await ready(w, control, project(w))
   const servers = async (port: number) => Object.values((await report(w, port)).mcpServers).flat()
@@ -109,16 +108,10 @@ test('CV-tool-isolation and CV-p5-flag-off: only this session holds its canvas t
   assert.equal(browser.status, 403)
   const before = ((await w.state(p)) as unknown as State).canvas!.canvases.length
   assert.equal(before, 0, 'nothing was created by any refused call')
-
-  const off = await world(false)
-  const r = await ready(off.w, off.control, project(off.w))
-  const offServers = Object.values((await report(off.w, r)).mcpServers).flat()
-  assert.ok(!offServers.some((s) => s.name === 'ezdesign-canvas'))
-  assert.equal((await api(r, '/mcp/canvas', {})).status, 404)
 })
 
 test('CV-external-edit and CV-p5-brief: a file edited outside reaches the shell, and turns say where the user is', async () => {
-  const { w, control } = await world(true)
+  const { w, control } = await world()
   const dir = project(w)
   const port = await ready(w, control, dir)
   await api(port, '/send', { note: '建立 design system', view: { tab: 'app', page: '/' } })
@@ -176,7 +169,7 @@ test('CV-external-edit and CV-p5-brief: a file edited outside reaches the shell,
 })
 
 test('CV-p6-agent-geometry: the agent cannot move a frame the user placed', async () => {
-  const { w, control } = await world(true)
+  const { w, control } = await world()
   const dir = project(w)
   const port = await ready(w, control, dir)
   await api(port, '/send', { note: '建立 design system', view: { tab: 'app', page: '/' } })

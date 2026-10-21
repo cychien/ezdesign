@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
+import { resolveDraftRef } from '../src/client/draft.js'
 import { ARM_TIMEOUT_MS, modLabel, reducePick } from '../src/client/pick.js'
 import type { PickEffect, PickEvent, PickState } from '../src/client/pick.js'
 import type { DraftNode, DraftWire, RefWire } from '../src/client/draft.js'
@@ -99,6 +100,7 @@ test('landing on another page navigates back, then restores', () => {
       phase: 'picking',
       armed: true,
       frame: null,
+      home: null,
       draft: draft('/pricing'),
       ref: null,
       page: '/docs',
@@ -212,6 +214,7 @@ test('an app that redirects away from home is chased twice, then given up on', (
       phase: 'returning',
       armed: true,
       frame: null,
+      home: null,
       draft: draft('/pricing'),
       ref: ref('b'),
       page: '/docs',
@@ -316,6 +319,7 @@ test('once a frame holds the pick, the others are not listened to', () => {
     phase: 'picking',
     armed: true,
     frame: 'mobile',
+    home: null,
     draft: null,
     ref: null,
     page: '/',
@@ -352,6 +356,7 @@ test('a ready from a frame that does not hold the pick changes nothing', () => {
     phase: 'returning',
     armed: true,
     frame: 'mobile',
+    home: null,
     draft: draft('/pricing'),
     ref: ref('b'),
     page: '/docs',
@@ -375,10 +380,65 @@ test('a pick from an overlay popup belongs to its own frame from the start', () 
 
 test('an abort reaches the frame holding the pick, not all of them', () => {
   const { effects } = run([
-    { t: 'armed', id: 'p1', host: 'popup', now: 0, frame: 'tablet' },
-    { t: 'abort', reason: 'mode' },
+    { t: 'arm', id: 'p1', host: 'note', now: 0 },
+    { t: 'picked', id: 'p1', ref: ref('x'), page: '/', frame: 'tablet' },
   ])
-  assert.deepEqual(effects[0], { do: 'abort-overlay', id: 'p1', frame: 'tablet' })
+  assert.deepEqual(dos(effects), ['insert-note', 'disarm-others', 'banner'])
+  const held = run([
+    { t: 'armed', id: 'p2', host: 'note', now: 0, frame: 'tablet' },
+    { t: 'draft', id: 'p2', draft: draft('/') },
+  ])
+  assert.deepEqual(reducePick({ ...held.state!, frame: 'tablet' }, { t: 'abort', reason: 'mode' }).effects[0], {
+    do: 'abort-overlay',
+    id: 'p2',
+    frame: 'tablet',
+  })
+})
+
+test('CV-p7-pick-reducer: a popup pick is out to every frame, and its abort reaches all of them', () => {
+  const { state, effects } = run([{ t: 'armed', id: 'p1', host: 'popup', now: 0, frame: 'single' }])
+  assert.equal(state?.home, 'single')
+  assert.equal(state?.frame, null)
+  assert.deepEqual(effects[0], { do: 'arm-others', id: 'p1', host: 'popup', except: 'single' })
+  assert.deepEqual(reducePick(state, { t: 'abort', reason: 'mode' }).effects[0], { do: 'abort-overlay', id: 'p1' })
+})
+
+test('CV-p7-pick-reducer: a canvas frame answering a popup pick sends the ref home and the tab back', () => {
+  const canvas = 'canvas:c1/f1'
+  const { state, effects } = run([
+    { t: 'armed', id: 'p1', host: 'popup', now: 0, frame: 'single' },
+    { t: 'draft', id: 'p1', draft: draft('/pricing') },
+    { t: 'draft', id: 'p1', draft: draft('/elsewhere'), frame: canvas },
+    { t: 'picked', id: 'p1', ref: ref('.ezdesign/canvases/c1/frames/f1.html:3'), page: '/__ezdesign/frames/c1/f1', frame: canvas },
+  ])
+  assert.equal(state, null)
+  const filled = { ...draft('/pricing'), body: resolveDraftRef(draft('/pricing').body, ref('.ezdesign/canvases/c1/frames/f1.html:3')) }
+  assert.deepEqual(effects, [
+    { do: 'focus', frame: 'single' },
+    { do: 'deliver', id: 'p1', ref: ref('.ezdesign/canvases/c1/frames/f1.html:3'), draft: filled, frame: 'single' },
+    { do: 'disarm-others', id: 'p1', keep: 'single' },
+    { do: 'banner', text: null },
+  ])
+  const again = reducePick(state, { t: 'picked', id: 'p1', ref: ref('x'), page: '/', frame: canvas })
+  assert.deepEqual(again, { state: null, effects: [] }, 'a second answer is ignored')
+})
+
+test('CV-p7-pick-reducer: the popup frame answering itself after a navigation still goes back as before', () => {
+  const { effects } = run([
+    { t: 'armed', id: 'p1', host: 'popup', now: 0, frame: 'single' },
+    { t: 'draft', id: 'p1', draft: draft('/pricing'), frame: 'single' },
+    { t: 'picked', id: 'p1', ref: ref('b'), page: '/docs', frame: 'single' },
+  ])
+  assert.deepEqual(effects[0], { do: 'navigate', page: '/pricing', frame: 'single' })
+})
+
+test('CV-p7-pick-reducer: calling a popup pick off from another frame hands the popup back at home', () => {
+  const { effects } = run([
+    { t: 'armed', id: 'p1', host: 'popup', now: 0, frame: 'single' },
+    { t: 'cancelled', id: 'p1', resumed: false, frame: 'canvas:c1/f1' },
+  ])
+  assert.deepEqual(dos(effects), ['focus', 'abort-overlay', 'disarm-others', 'banner'])
+  assert.deepEqual(effects[1], { do: 'abort-overlay', id: 'p1', frame: 'single' })
 })
 
 // Nothing has answered yet, so the re-armed frame is the one that reloaded and

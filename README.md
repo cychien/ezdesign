@@ -6,12 +6,15 @@ ezdesign turns any locally running dev server into an annotatable review surface
 agent iteration. The user marks up the **real page** - click an element, frame a region, select
 some text, leave a comment - and the feedback flows to a local coding agent (Claude Code, Codex,
 anything that can run a CLI) as structured items that resolve to **exact source locations**. The
-agent edits the code, HMR updates the page in place, the user reviews the next round.
+agent edits the code, HMR updates the page in place, the user reviews the next round. Beside the
+app, **canvases** hold HTML designs the agent draws, for exploring ideas before (or instead of)
+changing the real thing.
 
 ```
 $ npx -y @cychien/ezdesign@latest http://localhost:5173/pricing --agent claude  # managed ACP agent
 $ npx -y @cychien/ezdesign@latest http://localhost:5173/pricing                 # portable poll mode
 $ npx -y @cychien/ezdesign@latest poll                                          # agent waits for feedback
+$ npx -y @cychien/ezdesign@latest --agent claude                                # no dev server: canvases only
 ```
 
 - **Zero config.** A local daemon reverse-proxies your dev server and injects the annotation
@@ -24,6 +27,9 @@ $ npx -y @cychien/ezdesign@latest poll                                          
 - **Every screen at once.** Review on one device or lay all three out on a grid - desktop,
   iPad and iPhone side by side at their real viewports, scrolling together. An annotation stays on
   the screen it was made on, and reaches the agent tagged with the width it was made at.
+- **Canvases beside the app.** Tabs next to the App hold boards of frames - complete HTML pages
+  at real viewport widths that the agent adds, you arrange, and both of you annotate. `/element`
+  crosses tabs, so "build [ref 1] into the app" points at a frame from an App comment.
 - **Built for the loop.** In ACP mode, ezdesign owns the agent and keeps its live work, questions,
   and permission prompts in the review shell. Poll mode keeps the blocking structured-JSON contract
   for any external agent or automation. HMR keeps iterations in place; the review chrome lives
@@ -259,6 +265,55 @@ An annotation belongs to the screen it was made on: mark up the iPhone card and 
 there, not on all three. The agent gets `@mobile 390x844` in the anchor either way. Everything the
 overlay draws - the comment box, the element label, the pins - is drawn back up to full size, so a
 grid scaled to 60% is still one you can read and type into.
+
+## Canvases
+
+A canvas is an infinite board of frames. Each frame is one complete, self-contained HTML document -
+its own `<head>`, its own styles, scripts and CDN assets allowed - rendered in its own iframe at a
+real viewport width, so a 390 frame is a phone to its media queries however far the board is zoomed
+out. No CSS is shared between frames: exploration directions diverge, and that is the point.
+
+**Tabs.** The strip above the stage has an **App** tab while a dev server is attached, then one tab
+per open canvas. `+` makes a new one, a double-click on a tab renames it, and closing a tab
+archives the canvas: the tab goes, the files stay. **所有 canvas** lists every canvas, open and
+archived, and reopens or permanently deletes one (after asking). A session has one active tab:
+two shell windows follow each other, and every batch tells the agent which tab you sent it from.
+
+Run `ezdesign` with no url in a project without a dev server and the shell opens on that
+project's canvases - one empty `未命名 canvas` the first time. Run `ezdesign <url>` later and the
+App tab joins the same shell; the conversation carries on.
+
+**The board.** Drag the background or hold Space to pan, scroll to pan, pinch or Cmd/Ctrl+scroll to
+zoom around the pointer, `⇧1` (全部顯示) to fit everything, `⇧0` to go back to 100%. Click a frame to
+select it, Shift+click to add, `⌘A` for all; drag to move, with guides that snap to other frames'
+edges and centres; drag a handle to resize; `⌘D` duplicates, `⌫` deletes, arrows nudge (`⇧` for
+10). Every step undoes and redoes (`⌘Z`, `⌘⇧Z`). Double-click a frame to scroll it or click
+through its controls; Escape hands the pointer back. Positions, the open tabs, the active tab and
+each canvas's camera survive a reload and a daemon restart.
+
+**Annotating.** `元素` and `範圍` work inside frames as they do on the app, and an annotation in a
+frame reaches the agent as a line of that frame's file -
+`.ezdesign/canvases/<canvas>/frames/<frame>.html:14 · [canvas frame "Hero A" on canvas "首頁探索"]`.
+`/element` crosses tabs both ways: start it in an App comment, switch to a canvas, Cmd+click the
+frame you mean, and the comment comes back with the ref in it - or the reverse.
+
+**The agent.** An ACP agent gets the `ezdesign-canvas` tools - `list_canvases`, `create_canvas`,
+`read_canvas`, `reopen_canvas`, `add_frame`, `update_frame`, `remove_frame` - from its first turn,
+granted without asking. A canvas it creates becomes the active tab and its frames appear as each
+call returns. A frame's HTML is the agent's: it changes it through the tools or by editing the
+file, and the open shell reloads that frame either way. Where a frame sits and how big it is are
+yours; the tools refuse geometry on a frame that exists. Poll mode has no canvas tools.
+
+**On disk.** Canvases live in the project, in `.ezdesign/canvases/<canvas>/`: `canvas.json` (name,
+frames), `layout.json` (where each frame is) and `frames/<frame>.html`. ezdesign writes the two
+JSON files and never reads back an edit made to them by hand; frame files are yours to edit. It
+does not touch your `.gitignore`: committing canvases is your call.
+
+**Isolation.** Frame documents are agent-written pages running third-party scripts, so they are
+served from `http://localhost:<port>` while the shell stays on `http://127.0.0.1:<port>` - another
+site. A frame cannot read the shell's storage, script it, or call the session's api, and the
+overlay inside it reaches the review through the shell. Two shortcuts do not fire while focus is
+inside a frame: send (`⌘↵`) and stop (`⌘.`).
 
 ## Configuration
 

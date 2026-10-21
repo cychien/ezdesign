@@ -1,5 +1,5 @@
 {
-  "description": "Fixture session plus canvas isolation probe: one frame that, on load, tries the session api (fetch POST /send, no-cors POST /acp/answer, form POST /end), reads the shell's storage and DOM, and round-trips its own localStorage, then prints what happened. Needs EZDESIGN_CANVAS=1.",
+  "description": "Fixture session plus canvas isolation probe: one frame that, on load, tries the session api (fetch POST /send, no-cors POST /acp/answer, form POST /end), reads the shell's storage and DOM, and round-trips its own localStorage, then prints what happened.",
   "sessions": [],
   "canvases": [
     { "name": "isolation probe", "frames": [{ "title": "Probe", "file": "canvas-frames/probe.html", "x": 0, "y": 0, "width": 900, "height": 600 }] }

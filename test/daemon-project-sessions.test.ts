@@ -213,17 +213,10 @@ test('CV-p2-restore: a stop brings back what was live on the same ports; an idle
   assert.doesNotMatch(after.stdout, new RegExp(P))
 })
 
-test('CV-p2-noflag-no-url: an open without a url needs EZDESIGN_CANVAS', async () => {
+test('CV-flag-removed: an open without a url opens the project on its canvases', async () => {
   const world = await newWorld()
   const P = project(world, 'empty-start')
-
-  const refused = await world.run([], { cwd: P })
-  assert.notEqual(refused.code, 0)
-  assert.match(refused.stderr, /missing <url>/)
-  assert.equal(world.registry(), null, 'no daemon was started, so no session either')
-
   // From source the CLI cannot launch a daemon of its own, so one is waiting.
-  world.env.EZDESIGN_CANVAS = '1'
   world.spawnDaemon()
   await world.liveDaemon()
   const opened = await world.run([], { cwd: P })
@@ -234,5 +227,9 @@ test('CV-p2-noflag-no-url: an open without a url needs EZDESIGN_CANVAS', async (
   assert.equal(shellUrl.endsWith('/__ezdesign/shell'), true)
   assert.equal((await fetch(shellUrl)).status, 200)
   const port = Number(new URL(shellUrl).port)
-  assert.equal((await state(world, port)).app, undefined)
+  const state = (await world.state(port)) as unknown as State & { canvas: { canvases: unknown[] } }
+  assert.equal(state.app, undefined)
+  assert.deepEqual(state.canvas.canvases, [], 'the empty canvas waits for a shell to connect')
+  const help = await world.run(['--help'], { cwd: P })
+  assert.match(help.stdout, /ezdesign \[<url>\]/)
 })

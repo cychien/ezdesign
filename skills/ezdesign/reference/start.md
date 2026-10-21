@@ -28,7 +28,9 @@ the user did not provide an ACP command, ask them which ACP agent to use.
 
 ## Workflow
 
-1. Make sure the dev server is running. Never start a second instance when one is already up.
+1. Make sure the dev server is running. Never start a second instance when one is already up. If
+   the user only wants to explore designs on a canvas, there may be no dev server: run the command
+   below without the url and the review opens on the project's canvases.
 2. From the project root, run:
 
    ```sh

@@ -4,7 +4,7 @@ The `ezdesign` CLI is how a user starts a review and how an agent works it: it o
 
 ## Sub-features
 
-- `cli-help` `--help` prints usage and the environment table, exit 0. No args is an open with no url: `missing <url>` unless `EZDESIGN_CANVAS=1`.
+- `cli-help` `--help` prints usage and the environment table, exit 0. No args is an open with no url: the shell opens on the project's canvases.
 - `cli-version` `--version` prints `package.json`'s version.
 - `cli-open` `ezdesign <url>` from the project dir spawns the daemon on demand, prints `session: <project>`, `app: <origin>`, `shell:`, `next:`, and asks the OS to open the shell in a new browser window. Run again with another port, it keeps the session and moves the App to that port.
 - `cli-resolve` `poll`, `progress` and `end` find the session by the project they run from; a url given to them only adds a `note:` when it is not the attached app, and a project with no session fails with the open sessions listed.
@@ -29,7 +29,7 @@ Preconditions:
 - **Help and version.** Run `$T -- node $CLI --help` and `$T -- node $CLI --version`. Exit 0; the first starts `ezdesign - annotate your live dev app` and lists `EZDESIGN_DATA_DIR`, `EZDESIGN_CONTROL_PORT`, `EZDESIGN_NO_UPDATE_CHECK`, `EZDESIGN_INSPIRE_URL`; the second prints `0.7.0` (whatever `package.json` says).
 - **Status.** Run `node $CLI status`. `daemon: running (v<version>, pid <vz get daemonPid>, control port <vz get controlPort>)` and `session: <repo>/fixtures/playground → 127.0.0.1:NNNNN (active)` with `app: http://localhost:NNNN`.
 - **Open.** Run `node $CLI <origin>` from `fixtures/playground`. Exit 0, four lines (`session: <repo>/fixtures/playground`, `app:     <origin>`, `shell:`, `next:    run \`ezdesign poll\` in this project ...`), and `$V/vz.mjs get opened` gains `open --new -a google chrome --args --new-window <shell url>` (the shim caught the browser launch).
-- **Open errors.** `node $CLI` -> exit 1 `error: missing <url>`; `node $CLI poll ftp://x` -> exit 1 `error: invalid url: ftp://x`; `node $CLI http://localhost:1/` -> exit 1 `error: nothing is listening at http://localhost:1` and a `hint:`; `node $CLI poll` from the repo root -> exit 1 `error: no session for <repo>` and a hint listing `<repo>/fixtures/playground (<origin>)`.
+- **Open errors.** `node $CLI poll ftp://x` -> exit 1 `error: invalid url: ftp://x`; `node $CLI http://localhost:1/` -> exit 1 `error: nothing is listening at http://localhost:1` and a `hint:`; `node $CLI poll` from the repo root -> exit 1 `error: no session for <repo>` and a hint listing `<repo>/fixtures/playground (<origin>)`.
 - **Resolve.** From `fixtures/playground`, `node $CLI progress http://localhost:1 "x"` -> exit 0 with `note: http://localhost:1 is not this project's app (attached: <origin>); using the project session` on stderr.
 - **Env.** `EZDESIGN_CONTROL_PORT=80 node $CLI status` -> exit 1 `error: EZDESIGN_CONTROL_PORT must be an integer between 1024 and 65525, got "80"`.
 - **Login on a TTY.** Run `$T --expect 'inspiration token:' --send 'tok-123\n' -- node $CLI login`. Exit 0, `token saved to <data dir>/credentials.json`; `stat -f %Sp` on it is `-rw-------`; its content is `{"inspire":{"token":"tok-123"}}`. Then `node $CLI login </dev/null` -> exit 1 `error: no token given` with the `--token` hint; `node $CLI logout` -> `inspiration token removed`; `node $CLI inspire --query x` -> exit 2 `error: no inspiration token; run \`ezdesign login\` first`.

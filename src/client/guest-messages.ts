@@ -92,6 +92,8 @@ export const GUEST_PROTOCOL = {
   'ez:viewport': down(BOTH),
   'ez:pick': down(BOTH),
   'ez:pick-abort': down(BOTH),
+  /** `{pickId, ref, draft}`: another frame answered this frame's popup pick. */
+  'ez:pick-resolve': down(BOTH),
   'ez:restore': down(BOTH),
   'ez:hold': down(BOTH),
   'ez:can-explore': down(APP),

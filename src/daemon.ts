@@ -26,7 +26,6 @@ import {
   POLL_TIMEOUT_MS,
   UPDATE_CHECK_TTL_MS,
   URL_PREFIX,
-  canvasEnabled,
   controlPortRange,
 } from './constants.js'
 import { AcpAgent } from './acp-agent.js'
@@ -183,9 +182,8 @@ interface SnapshotWire {
   endedBy?: SessionEndedBy
   /** The dev-server origin on the App tab. Absent until one is attached. */
   app?: string
-  /** Tabs and the active one. Absent when `EZDESIGN_CANVAS` is off, which is
-   *  how a shell knows to draw no tab strip. */
-  canvas?: CanvasSnapshotWire
+  /** The tabs and the active one. */
+  canvas: CanvasSnapshotWire
   annotations: Annotation[]
   conversation: unknown[]
   agentOnline: boolean
@@ -656,13 +654,12 @@ class SessionRuntime implements ProjectRuntime {
   /** The explore rounds this session is taking variants for, and the tool the
    *  agent sends them through. */
   readonly exploreMcp = new ExploreMcp()
-  /** The project's canvases. Null with `EZDESIGN_CANVAS` off, and every use is
-   *  behind that null, which is the whole flag. */
-  readonly canvases: CanvasWorkspace | null
+  /** The project's canvases. */
+  readonly canvases: CanvasWorkspace
   /** The agent's canvas tools. Built here, before any agent attaches, because
    *  `mcpServers` is read once per ACP session open and a server added later is
    *  never seen. It gets the agent's port only. */
-  private readonly canvasMcp: CanvasMcp | null
+  private readonly canvasMcp: CanvasMcp
   /** Where the user was when they sent the batch being answered; see
    *  `activeSkills`. */
   private activeView: BatchView | undefined = undefined
@@ -721,19 +718,17 @@ class SessionRuntime implements ProjectRuntime {
     this.appProxy = new AppProxy(`${URL_PREFIX}/shell`, (req) => {
       this.pageCookies = req.headers.cookie ?? null
     })
-    this.canvases = canvasEnabled()
-      ? openCanvasWorkspace({
-          project,
-          view: this.store,
-          frameOrigin: () => `http://${FRAME_HOST}:${this.port}`,
-          overlay: () => ({ version: this.version, shellOrigin: this.shellOrigin }),
-          hasApp: () => this.app.kind === 'attached',
-          onChange: (change) => this.canvasChanged(change),
-          // eslint-disable-next-line no-console
-          log: (message) => console.error(message),
-        })
-      : null
-    this.canvasMcp = this.canvases ? new CanvasMcp(this.canvases.agent) : null
+    this.canvases = openCanvasWorkspace({
+      project,
+      view: this.store,
+      frameOrigin: () => `http://${FRAME_HOST}:${this.port}`,
+      overlay: () => ({ version: this.version, shellOrigin: this.shellOrigin }),
+      hasApp: () => this.app.kind === 'attached',
+      onChange: (change) => this.canvasChanged(change),
+      // eslint-disable-next-line no-console
+      log: (message) => console.error(message),
+    })
+    this.canvasMcp = new CanvasMcp(this.canvases.agent)
     // Session start is the one moment no composer can be holding a fresh upload,
     // which is what makes an unreferenced attachment safe to judge by age alone.
     this.store.sweepAttachments()
@@ -770,7 +765,7 @@ class SessionRuntime implements ProjectRuntime {
     const closed = new Promise<void>((resolve) => this.server.close(() => resolve()))
     this.server.closeAllConnections()
     this.appProxy.detach()
-    this.canvases?.close()
+    this.canvases.close()
     await closed
   }
 
@@ -801,7 +796,7 @@ class SessionRuntime implements ProjectRuntime {
     this.appProxy.attach(app)
     if (opts.userAttached) this.store.attachApp(app.origin, app.attachedAt)
     // They ran `ezdesign <url>` to look at it.
-    this.canvases?.appChanged({ show: opts.userAttached, create: this.shellClients.size > 0 })
+    this.canvases.appChanged({ show: opts.userAttached, create: this.shellClients.size > 0 })
     this.broadcast()
   }
 
@@ -809,7 +804,7 @@ class SessionRuntime implements ProjectRuntime {
     this.appProxy.detach()
     this.store.detachApp()
     this.forgetPageState()
-    this.canvases?.appChanged({ show: false, create: this.shellClients.size > 0 })
+    this.canvases.appChanged({ show: false, create: this.shellClients.size > 0 })
     this.broadcast()
   }
 
@@ -870,7 +865,7 @@ class SessionRuntime implements ProjectRuntime {
       state: s.state,
       endedBy: s.endedBy,
       ...(this.app.kind === 'attached' ? { app: this.app.origin } : {}),
-      ...(this.canvases ? { canvas: this.canvases.read.snapshot(this.agentHasCanvasTools) } : {}),
+      canvas: this.canvases.read.snapshot(this.agentHasCanvasTools),
       annotations: this.store.annotations,
       conversation: this.store.visibleConversation,
       agentOnline:
@@ -929,7 +924,7 @@ class SessionRuntime implements ProjectRuntime {
    *  everyone gets the snapshot, whose summaries and active tab moved with it. */
   private canvasChanged(change: CanvasChange): void {
     if (change.kind === 'updated') {
-      const canvas = this.canvases?.read.wire(change.canvasId)
+      const canvas = this.canvases.read.wire(change.canvasId)
       if (canvas) this.toShells({ type: SSE_CANVAS, canvas })
     } else if (change.kind === 'removed') {
       this.toShells({ type: SSE_CANVAS_REMOVED, canvasId: change.canvasId })
@@ -940,13 +935,12 @@ class SessionRuntime implements ProjectRuntime {
   /** Whether the attached agent can be handed the canvas tools: an ACP agent
    *  that takes HTTP MCP servers. A poll-mode agent cannot. */
   get agentHasCanvasTools(): boolean {
-    return !!this.canvasMcp && !!this.acp?.servesMcpHttp && this.acp.snapshot().state !== 'exited'
+    return !!this.acp?.servesMcpHttp && this.acp.snapshot().state !== 'exited'
   }
 
   /** The per-turn canvas brief: the view sealed on the batch being delivered,
    *  and the inventory as it is now. */
   private canvasLines(): string[] {
-    if (!this.canvases) return []
     return canvasBrief({
       inventory: this.canvases.read.inventory(),
       view: this.activeView,
@@ -1046,10 +1040,10 @@ class SessionRuntime implements ProjectRuntime {
       // The canvas server first and always: it is the one server an agent must
       // see from its first `session/new`, because nothing can add it later.
       mcpServers: () => [
-        ...(this.canvasMcp?.serverEntries(this.port) ?? []),
+        ...(this.canvasMcp.serverEntries(this.port) ?? []),
         ...this.exploreMcp.serverEntries(this.port),
       ],
-      ownTool: (name) => isExploreTool(name) || (!!this.canvasMcp && isCanvasTool(name)),
+      ownTool: (name) => isExploreTool(name) || isCanvasTool(name),
       env: {
         EZDESIGN_PAGE_STATE: `http://127.0.0.1:${this.port}${URL_PREFIX}/api/page-state`,
         EZDESIGN_PAGE_STATE_TOKEN: this.pageStateToken,
@@ -1628,7 +1622,7 @@ class SessionRuntime implements ProjectRuntime {
       batchId: batch.batchId,
       ...(this.app.kind === 'attached' ? { url: this.app.origin } : {}),
       note: batch.note,
-      items: batch.items.map((a) => toAgentItem(a, this.store, this.canvases?.read.names)),
+      items: batch.items.map((a) => toAgentItem(a, this.store, this.canvases.read.names)),
       ...(attachments ? { attachments } : {}),
       ...(batch.references?.length ? { references: batch.references } : {}),
       ...(batch.setup ? { setup: true as const } : {}),
@@ -1696,7 +1690,7 @@ class SessionRuntime implements ProjectRuntime {
     // Ahead of the shared parser, with its own: an oversize frame must come back
     // as the tool's refusal, not as the attachment handler's 413. Ahead of
     // `MCP_ROUTE` too, which would take `canvas` for an explore id.
-    if (this.canvasMcp) api.post(CANVAS_MCP_ROUTE, ...this.canvasMcp.handlers())
+    api.post(CANVAS_MCP_ROUTE, ...this.canvasMcp.handlers())
 
     api.use(express.json({ limit: '2mb' }))
 
@@ -1707,9 +1701,7 @@ class SessionRuntime implements ProjectRuntime {
 
     // The shell's end of canvases: tabs, archive and the view. The user's port
     // only - no route here can write a frame document.
-    if (this.canvases) {
-      api.use(canvasApiRouter({ user: this.canvases.user, read: this.canvases.read }))
-    }
+    api.use(canvasApiRouter({ user: this.canvases.user, read: this.canvases.read }))
 
     api.get('/state', (_req, res) => res.json(this.snapshot()))
 
@@ -1742,13 +1734,13 @@ class SessionRuntime implements ProjectRuntime {
       const shell = req.query.shell === '1'
       // A shell with nothing to show gets an empty canvas, created now rather
       // than at start or restore: never a write into a project nobody is looking at.
-      if (shell) this.canvases?.shellConnected()
+      if (shell) this.canvases.shellConnected()
       // Every open canvas in the first flush, in tab order and ahead of the
       // snapshot, so a board opens with no fetch and the queue's first paint
       // can already name the frames its annotations are in.
       if (shell) {
         this.shellClients.add(res)
-        for (const canvas of this.canvases?.read.openWires() ?? []) {
+        for (const canvas of this.canvases.read.openWires() ?? []) {
           res.write(sseEvent({ type: SSE_CANVAS, canvas }))
         }
       }
@@ -1781,7 +1773,7 @@ class SessionRuntime implements ProjectRuntime {
       // The shell stamped it from the window the comment came from, but the body
       // crossed the wire: a frame that does not exist is refused, not stored.
       const frame = (anchor as Anchor).frame
-      if (frame && !this.canvases?.read.hasFrame(frame)) {
+      if (frame && !this.canvases.read.hasFrame(frame)) {
         return res.status(400).json({ error: 'unknown canvas frame' })
       }
       const annotation: Annotation = {
@@ -2271,7 +2263,7 @@ class SessionRuntime implements ProjectRuntime {
 
     // One listener, two origins: `localhost:<port>` serves frame documents and
     // nothing else, and frame documents are served nowhere else.
-    app.use(frameHost(this.canvases?.read ?? null, () => this.shellOrigin))
+    app.use(frameHost(this.canvases.read, () => this.shellOrigin))
 
     const rk = Router()
     rk.get('/shell', (_req, res) => res.type('html').send(SHELL_HTML))
@@ -2313,7 +2305,7 @@ class SessionRuntime implements ProjectRuntime {
     this.port = typeof address === 'object' && address ? address.port : 0
     this.store.setPort(this.port)
     // After the bind: frame urls carry the port.
-    this.canvases?.start()
+    this.canvases.start()
     return this.port
   }
 
@@ -2496,23 +2488,20 @@ export async function daemonMain(version: string, opts: DaemonOptions = {}): Pro
         ...(s.app.kind === 'attached' ? { app: s.app.origin } : {}),
         port: s.port,
         state: s.state,
-        ...(s.canvases
-          ? { canvases: s.canvases.read.inventory().canvases.filter((c) => !c.archived).length }
-          : {}),
+        canvases: s.canvases.read.inventory().canvases.filter((c) => !c.archived).length,
       })),
     )
   })
 
   /** Open or resume the project's session; with `url`, attach that origin to
-   *  it. Body `{project, url?, reopen?, agent?}`. The url is optional only
-   *  while `EZDESIGN_CANVAS` is on. */
+   *  it. Body `{project, url?, reopen?, agent?}`. */
   control.post('/control/sessions', async (req, res) => {
     const { url, reopen, project, agent } = req.body ?? {}
     if (typeof project !== 'string' || !project) {
       return res.status(400).json({ error: 'missing project' })
     }
     let parsed: URL | null = null
-    if (url !== undefined || !canvasEnabled()) {
+    if (url !== undefined) {
       try {
         parsed = new URL(String(url))
       } catch {

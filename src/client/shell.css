@@ -226,33 +226,6 @@ button {
   display: none;
 }
 
-/* The stage of a review with no dev server: a short note where the app would be. */
-.ez-no-app {
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  padding: 24px;
-  text-align: center;
-}
-
-.ez-no-app[hidden] {
-  display: none;
-}
-
-.ez-no-app-title {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--foreground);
-}
-
-.ez-no-app-hint {
-  font-size: 12.5px;
-  color: var(--muted-foreground);
-}
-
 /* Arranged by hand, so shell.ts places every card itself: the grid becomes a
    plain coordinate plane, sized inline to the arrangement, and a card moving
    row never moves in the DOM - re-inserting an iframe reloads the page it is
@@ -4101,6 +4074,7 @@ body.ez-arranging .ez-frame {
 }
 
 .ez-board.ez-annotating .ez-board-iframe,
+.ez-picking .ez-board-iframe,
 .ez-board-frame.ez-live .ez-board-iframe {
   pointer-events: auto;
 }

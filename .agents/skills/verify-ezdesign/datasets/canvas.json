@@ -1,5 +1,5 @@
 {
-  "description": "Fixture session plus two canvases in fixtures/playground/.ezdesign/canvases: 首頁探索 (Hero A with <h1> on line 14 and three cards on lines 20-32, Hero B, Mobile) and 備用方向 (one frame). Needs EZDESIGN_CANVAS=1.",
+  "description": "Fixture session plus two canvases in fixtures/playground/.ezdesign/canvases: 首頁探索 (Hero A with <h1> on line 14 and three cards on lines 20-32, Hero B, Mobile) and 備用方向 (one frame).",
   "sessions": [],
   "canvases": [
     {

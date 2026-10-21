@@ -2014,6 +2014,7 @@ function boot(): void {
       host?: 'popup' | 'note'
       returnTo?: string
       draft?: DraftWire
+      ref?: RefWire
       held?: boolean
       exploreId?: string
       anchor?: AnchorWire
@@ -2060,6 +2061,13 @@ function boot(): void {
     }
     if (data?.type === 'ez:scroll-to' && typeof data.ratio === 'number') scrollToRatio(data.ratio)
     if (data?.type === 'ez:pick-abort') cancelPick('abort')
+    // Another frame - another device, or a canvas frame on another tab - answered
+    // the pick this popup is waiting on. A popup that did not survive the wait is
+    // rebuilt from the shell's copy, which already holds the answer.
+    if (data?.type === 'ez:pick-resolve' && data.pickId) {
+      if (pick?.id === data.pickId && pick.host === 'popup' && pick.suspended && data.ref) deliverPick(data.ref)
+      else if (data.draft) restoreDraft(data.draft)
+    }
     if (data?.type === 'ez:restore' && data.draft) restoreDraft(data.draft)
   })
 

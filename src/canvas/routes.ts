@@ -231,11 +231,10 @@ const FRAMES_PATH = `${URL_PREFIX}${FRAME_ROUTE}/`
  *    document never runs on the shell's origin; everything else is `next()`.
  *
  *  `read` is null with canvases off: frame paths are 404 on every host. */
-export function frameHost(read: CanvasReader | null, shellOrigin: () => string): RequestHandler {
+export function frameHost(read: CanvasReader, shellOrigin: () => string): RequestHandler {
   return (req, res, next) => {
     const framePath = req.path.startsWith(FRAMES_PATH)
-    // Without canvases (the flag off) the host means nothing: only the path is closed.
-    if (!read || !isFrameHost(req.headers.host)) {
+    if (!isFrameHost(req.headers.host)) {
       if (framePath) return void res.sendStatus(404)
       return next()
     }

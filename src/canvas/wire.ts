@@ -12,8 +12,7 @@
 
 import type { Camera, CanvasId, CanvasSummary, FrameId, Rect, TabId } from './types.js'
 
-/** Present on the snapshot only with `EZDESIGN_CANVAS=1`; a shell that sees no
- *  `canvas` field draws no tab strip and behaves as on main. */
+/** The snapshot's canvas part: the tab strip is drawn from it. */
 export interface CanvasSnapshotWire {
   /** Every canvas, archived included: the 所有 canvas menu lists both. */
   canvases: CanvasSummary[]

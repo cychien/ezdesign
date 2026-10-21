@@ -157,8 +157,8 @@ interface SnapshotWire {
   endedBy?: 'user' | 'agent'
   /** The dev-server origin the previews show. Absent while no app is attached. */
   app?: string
-  /** Present only with `EZDESIGN_CANVAS` on: the tab strip is drawn from it. */
-  canvas?: CanvasSnapshotWire
+  /** The tab strip is drawn from it. */
+  canvas: CanvasSnapshotWire
   annotations: AnnotationWire[]
   conversation: ConversationWire[]
   agentOnline: boolean
@@ -453,6 +453,9 @@ interface Shortcut {
    *  scripts can forward any key, so sending to the agent or stopping its turn
    *  is never theirs to press. */
   fromCanvas?: boolean
+  /** Only while the App tab is showing: it changes the App's previews, and doing
+   *  that unseen from a canvas would be a surprise waiting on the way back. */
+  appOnly?: boolean
 }
 
 /** Modifier-free letters and digits, because the browser has claimed most of the
@@ -487,12 +490,14 @@ const SHORTCUTS: Shortcut[] = [
     label: deviceLabel(d),
     match: plain(String(i + 1)),
     run: () => setDevice(d.id),
+    appOnly: true,
   })),
   {
     keys: '4',
     label: '所有尺寸排成一張畫布',
     match: plain('4'),
     run: () => setMulti(!multi),
+    appOnly: true,
   },
   {
     keys: 'N',
@@ -550,6 +555,7 @@ function runShortcut(e: KeyChord, typing: boolean, guest?: GuestKind): boolean {
   for (const s of SHORTCUTS) {
     if (typing && !s.whileTyping) continue
     if (guest === 'canvas' && !s.fromCanvas) continue
+    if (s.appOnly && canvasUi && canvasUi.activeTab !== 'app') continue
     if (!s.match(e)) continue
     s.run()
     return true
@@ -935,14 +941,7 @@ const stage = h('div', 'ez-stage')
  *  wider than the stage overflows in the one direction the stage can scroll to
  *  reach, instead of being centred half-way out of view. */
 const grid = h('div', 'ez-grid')
-/** In place of the previews while no dev server is attached to the review. */
-const noApp = h('div', 'ez-no-app')
-noApp.append(
-  h('div', 'ez-no-app-title', '還沒有連上 dev server'),
-  h('div', 'ez-no-app-hint', '在專案目錄執行 ezdesign <url>，app 就會出現在這裡'),
-)
-noApp.hidden = true
-stage.append(grid, noApp)
+stage.append(grid)
 
 /** The variant strip: what the agent produced, across the bottom of the stage.
  *
@@ -1771,7 +1770,6 @@ function rebuildStage(): void {
   grid.replaceChildren()
   frames.clearApps()
   const showing = stagedApp !== null
-  noApp.hidden = showing
   grid.hidden = !showing
   paintShown()
   if (!showing) {
@@ -2999,6 +2997,7 @@ function dispatchPick(e: PickEvent): void {
   const out = reducePick(pickState, e)
   pickState = out.state
   for (const effect of out.effects) applyPickEffect(effect)
+  canvasUi?.setPicking(pickState !== null)
   paintVeil()
   // One place for every way a pick can end without an answer - aborted, timed
   // out, called off from the page - so none of them can leave a placeholder
@@ -3035,6 +3034,15 @@ function applyPickEffect(effect: PickEffect): void {
           ...(effect.returnTo ? { returnTo: effect.returnTo } : {}),
         })
       }
+      return
+    case 'arm-others':
+      frames.postAll({ type: 'ez:pick', pickId: effect.id, host: effect.host }, effect.except)
+      return
+    case 'deliver':
+      frames.post(effect.frame, { type: 'ez:pick-resolve', pickId: effect.id, ref: effect.ref, draft: effect.draft })
+      return
+    case 'focus':
+      canvasUi?.focusGuest(effect.frame)
       return
     case 'abort-overlay':
       for (const f of pickFrames(effect.frame)) {
@@ -4149,8 +4157,8 @@ function render(): void {
   const s = snapshot
 
   stageApp(s.app ?? null)
-  if (s.canvas && !canvasUi) canvasUi = installCanvas(canvasPorts())
-  canvasUi?.render(s)
+  canvasUi ??= installCanvas(canvasPorts())
+  canvasUi.render(s)
   paintPage()
 
   const ended = s.state === 'ended'

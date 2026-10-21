@@ -37,10 +37,9 @@ function project(world: DaemonWorld, seeded: boolean): string {
   return dir
 }
 
-async function world(canvas: boolean): Promise<{ world: DaemonWorld; control: number }> {
+async function world(): Promise<{ world: DaemonWorld; control: number }> {
   const w = await DaemonWorld.create()
   worlds.push(w)
-  if (canvas) w.env.EZDESIGN_CANVAS = '1'
   w.spawnDaemon()
   return { world: w, control: (await w.liveDaemon()).port }
 }
@@ -69,19 +68,8 @@ async function firstFlush(port: number): Promise<string> {
   return text
 }
 
-test('CV-p4-flag-off: without the flag nothing of the canvas exists', async () => {
-  const { world: w, control } = await world(false)
-  const dir = project(w, true)
-  const { port } = await w.openSession(control, { url: 'http://127.0.0.1:9/', project: dir })
-  const state = await w.state(port)
-  assert.equal('canvas' in state, false)
-  assert.equal((await get(port, `localhost:${port}`, `/__ezdesign/frames/${CANVAS}/${FRAME}`)).status, 404)
-  assert.equal((await get(port, `127.0.0.1:${port}`, `/__ezdesign/frames/${CANVAS}/${FRAME}`)).status, 404)
-  assert.equal((await fetch(`http://127.0.0.1:${port}/__ezdesign/api/canvases/${CANVAS}`)).status, 404)
-})
-
 test('frames are served on the frame host only, stamped, with the relay overlay', async () => {
-  const { world: w, control } = await world(true)
+  const { world: w, control } = await world()
   const dir = project(w, true)
   const { port } = await w.openSession(control, { url: 'http://127.0.0.1:9/', project: dir })
   const flush = await firstFlush(port)
@@ -106,7 +94,7 @@ test('frames are served on the frame host only, stamped, with the relay overlay'
 })
 
 test('an annotation must name a frame that exists', async () => {
-  const { world: w, control } = await world(true)
+  const { world: w, control } = await world()
   const dir = project(w, true)
   const { port } = await w.openSession(control, { url: 'http://127.0.0.1:9/', project: dir })
   const post = (frame: unknown) =>
@@ -122,7 +110,7 @@ test('an annotation must name a frame that exists', async () => {
 })
 
 test('the shell routes run the lifecycle, and the empty start waits for a shell', async () => {
-  const { world: w, control } = await world(true)
+  const { world: w, control } = await world()
   const dir = project(w, false)
   const opened = await w.openSession(control, { project: dir })
   assert.equal(opened.shellUrl, `http://127.0.0.1:${opened.port}/__ezdesign/shell`)

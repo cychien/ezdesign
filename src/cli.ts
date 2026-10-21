@@ -8,7 +8,6 @@ import {
   POLL_RETRIES,
   URL_PREFIX,
   assertControlPortEnv,
-  canvasEnabled,
 } from './constants.js'
 import { agentCommand } from './agents.js'
 import {
@@ -40,9 +39,10 @@ const pkg = JSON.parse(readFileSync(join(dirname(cliEntry), '../package.json'), 
 const HELP = `${APP_NAME} - annotate your live dev app, feedback flows to your local agent
 
 Usage:
-  ${APP_NAME} <url> [--reopen] [--agent <name|command>]
-      open (or resume) this project's review session, with that dev server on
-      its App tab. A dev server that moved ports keeps the conversation.
+  ${APP_NAME} [<url>] [--reopen] [--agent <name|command>]
+      open (or resume) this project's review session. With <url>, that dev
+      server is on its App tab (a dev server that moved ports keeps the
+      conversation); without one, the shell opens on the project's canvases.
       --agent (SPIKE) drives the agent over ACP: the session spawns it, feedback
       goes straight to it, and its stream, questions and permission prompts all
       surface in the review shell - no terminal needed. Profiles: claude, gemini,
@@ -220,14 +220,14 @@ async function openShell(shellUrl: string): Promise<void> {
 
 
 /** `ezdesign [<url>]`. With a url the dev server is probed first; without one
- *  (only with `EZDESIGN_CANVAS=1`) nothing is probed and the shell opens with
- *  no App tab. Both go through the same control call. */
+ *  nothing is probed and the shell opens on the project's canvases. Both go
+ *  through the same control call. */
 async function cmdOpen(
   rawUrl: string | undefined,
   flags: Set<string>,
   agentArg: string | undefined,
 ): Promise<void> {
-  const target = rawUrl === undefined && canvasEnabled() ? null : parseTarget(rawUrl)
+  const target = rawUrl === undefined ? null : parseTarget(rawUrl)
   if (target) {
     try {
       await fetch(target.origin, { signal: AbortSignal.timeout(3000) })

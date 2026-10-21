@@ -17,19 +17,10 @@ export const VERSIONS_DIR = join(DATA_DIR, 'versions')
 export const UPDATE_CHECK_FILE = join(DATA_DIR, 'update-check.json')
 export const NO_UPDATE_CHECK_ENV = `${ENV_PREFIX}_NO_UPDATE_CHECK`
 export const DESIGN_HARNESS_ENV = `${ENV_PREFIX}_DESIGN_HARNESS`
-/** Canvas tabs, the no-url start and the agent's canvas tools. The
- *  project-keyed session is not behind it. */
-export const CANVAS_ENV = `${ENV_PREFIX}_CANVAS`
 
 /** Unset, empty, `0` and `false` are off; anything else is on. */
 export function envFlagOn(raw: string | undefined): boolean {
   return raw !== undefined && raw !== '' && raw !== '0' && raw.toLowerCase() !== 'false'
-}
-
-/** Read by the daemon per runtime and by the CLI per command. A running daemon
- *  keeps the value it was started with, as it does for the harness flag. */
-export function canvasEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
-  return envFlagOn(env[CANVAS_ENV])
 }
 
 export const DEFAULT_CONTROL_PORT = 4400
