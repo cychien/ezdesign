@@ -77,6 +77,7 @@ import {
   skillMarker,
   splitComment,
 } from './draft.js'
+import { subscribeEvents } from './event-stream.js'
 import { markdownEl } from './markdown.js'
 import { reduceNav } from './nav.js'
 import { threadOrder } from './thread.js'
@@ -238,6 +239,9 @@ const PREFIX = (() => {
   }
 })()
 const API = `${PREFIX}/api`
+/** The daemon version these assets came from, so a new build gets a new hub
+ *  rather than one still running the old build's code. */
+const BUILD = (document.currentScript as HTMLScriptElement | null)?.dataset.version ?? ''
 const shellAttachments = directAttachments(API)
 /** Hoisted: the shortcut table is built while this module is still initialising,
  *  so it cannot live down with the rest of the pick code. */
@@ -3124,6 +3128,14 @@ async function reportPageStorage(): Promise<void> {
   await api('/page-state', { method: 'POST', body: JSON.stringify(storage) }).catch(() => {})
 }
 
+/** App previews get the session from the shell rather than a stream of their
+ *  own: each stream holds one of the origin's six HTTP/1.1 connections. */
+function pushAppSnapshot(to?: string): void {
+  if (!snapshot) return
+  const message = { type: 'ez:snapshot', snapshot: { state: snapshot.state, annotations: snapshot.annotations } } as const
+  for (const guest of to ? [frames.app(to)] : frames.apps()) if (guest) frames.post(guest.id, message)
+}
+
 async function api(path: string, init?: RequestInit): Promise<Response> {
   return fetch(`${API}${path}`, {
     headers: { 'content-type': 'application/json' },
@@ -4685,7 +4697,10 @@ window.addEventListener('message', (e: MessageEvent) => {
       return
     case 'ez:ready': {
       // A canvas frame is one document: it has no page for the review to follow.
-      if (guest.kind === 'app') dispatchNav({ t: 'loaded', url: msg.url, from })
+      if (guest.kind === 'app') {
+        dispatchNav({ t: 'loaded', url: msg.url, from })
+        pushAppSnapshot(from)
+      }
       // Straight to the frame, not through `sendMode`: this is a replay of state
       // the overlay lost, and `sendMode` calls off any pick that is still out -
       // which is exactly the pick this fresh overlay has to be handed back.
@@ -4768,23 +4783,27 @@ document.addEventListener('keyup', (e) => canvasUi?.onKeyUp(e))
  *  hands - a daemon restart onto a new build - and only a reload catches up. */
 let servedBy: string | null = null
 
-const events = new EventSource(`${API}/events?shell=1`)
-// Named events carry whole canvases, to shells only; the snapshot never does.
-for (const name of [SSE_CANVAS, SSE_CANVAS_REMOVED]) {
-  events.addEventListener(name, (e) => {
-    canvasUi ??= installCanvas(canvasPorts())
-    canvasUi.onEvent(JSON.parse((e as MessageEvent<string>).data) as CanvasEventWire)
-  })
-}
-events.onmessage = (e) => {
-  snapshot = JSON.parse(e.data) as SnapshotWire
-  servedBy ??= snapshot.version
-  if (snapshot.version !== servedBy) {
-    location.reload()
-    return
-  }
-  version.textContent = `v${snapshot.version}`
-  render()
-}
+subscribeEvents({
+  url: `${API}/events?shell=1`,
+  workerUrl: `${PREFIX}/events-worker.js?v=${encodeURIComponent(BUILD)}`,
+  // Named events carry whole canvases, to shells only; the snapshot never does.
+  events: ['message', SSE_CANVAS, SSE_CANVAS_REMOVED],
+  onEvent: ({ type, data }) => {
+    if (type !== 'message') {
+      canvasUi ??= installCanvas(canvasPorts())
+      canvasUi.onEvent(JSON.parse(data) as CanvasEventWire)
+      return
+    }
+    snapshot = JSON.parse(data) as SnapshotWire
+    servedBy ??= snapshot.version
+    if (snapshot.version !== servedBy) {
+      location.reload()
+      return
+    }
+    version.textContent = `v${snapshot.version}`
+    pushAppSnapshot()
+    render()
+  },
+})
 
 paintPage()

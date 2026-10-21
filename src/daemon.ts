@@ -159,7 +159,7 @@ const SHELL_ICON = `data:image/svg+xml,${encodeURIComponent(
   `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="7" fill="#171717"/><text x="16" y="22" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="17" font-weight="600" letter-spacing="-0.5" fill="#fff">ez</text></svg>`,
 )}`
 
-const SHELL_HTML = `<!doctype html>
+const shellHtml = (version: string) => `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -170,7 +170,7 @@ const SHELL_HTML = `<!doctype html>
 </head>
 <body>
 <div id="ez-shell"></div>
-<script src="${URL_PREFIX}/shell.js"></script>
+<script src="${URL_PREFIX}/shell.js" data-version="${version}"></script>
 </body>
 </html>`
 
@@ -2266,14 +2266,14 @@ class SessionRuntime implements ProjectRuntime {
     app.use(frameHost(this.canvases.read, () => this.shellOrigin))
 
     const rk = Router()
-    rk.get('/shell', (_req, res) => res.type('html').send(SHELL_HTML))
+    rk.get('/shell', (_req, res) => res.type('html').send(shellHtml(this.version)))
     // Never cached. These assets are the daemon's, and the daemon is replaceable
     // under an open shell - by a self-update, or by a `@latest` CLI run. The
     // reload that follows has to fetch the new code, and a heuristically cached
     // copy would leave the previous version's UI driving the new daemon.
     // A canvas frame asks for `?v=<version>`: forty frames then fetch the overlay
     // once, and a replaced daemon is a different url.
-    for (const file of ['overlay.js', 'overlay.css', 'shell.js', 'shell.css']) {
+    for (const file of ['overlay.js', 'overlay.css', 'shell.js', 'shell.css', 'events-worker.js']) {
       const type = file.endsWith('.css') ? 'text/css' : 'text/javascript'
       rk.get(`/${file}`, (req, res) =>
         res

@@ -2,8 +2,8 @@
  *  shell's origin for, behind one interface.
  *
  *  - `direct`: an App preview, or an unframed page. Same origin as the api: it
- *    posts to `location.origin`, calls the api, and listens to its own
- *    `EventSource`.
+ *    posts to `location.origin` and calls the api. A preview gets snapshots from
+ *    the shell; only an unframed page listens to an `EventSource` of its own.
  *  - `relay`: a canvas frame on the frame host. It has no api it may call
  *    (`refuseCrossSite`) and no reason to hold forty event streams: every call
  *    goes to the shell by `postMessage`, addressed to the shell's origin, and
@@ -64,8 +64,17 @@ export function directLink(api: string): OverlayLink {
     },
     attachments: directAttachments(api),
     subscribe: (onSnapshot) => {
-      const events = new EventSource(`${api}/events`)
-      events.onmessage = (e) => onSnapshot(JSON.parse(e.data) as OverlaySnapshot)
+      if (window.parent === window) {
+        const events = new EventSource(`${api}/events`)
+        events.onmessage = (e) => onSnapshot(JSON.parse(e.data) as OverlaySnapshot)
+        return
+      }
+      window.addEventListener('message', (e: MessageEvent) => {
+        const data = e.data as { type?: string; snapshot?: OverlaySnapshot }
+        if (e.source === window.parent && e.origin === location.origin && data?.type === 'ez:snapshot' && data.snapshot) {
+          onSnapshot(data.snapshot)
+        }
+      })
     },
     fromShell: (e) => e.origin === location.origin,
   }
