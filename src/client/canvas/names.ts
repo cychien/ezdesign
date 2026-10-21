@@ -1,6 +1,6 @@
 /** The names the tab strip and the boards are found by: roles and accessible
  *  names for what a person can name, `data-testid` for what they cannot (a frame
- *  on the board). The DOM code reads them from here and the
+ *  on the board, a guide). The DOM code reads them from here and the
  *  verify-ezdesign feature notes quote them, so one list says what a test may
  *  rely on. */
 
@@ -26,8 +26,12 @@ export const TEST_IDS = {
   board: 'ez-board',
   /** the one transformed element */
   world: 'ez-board-world',
-  /** role=group, `data-frame-id` */
+  /** role=group, `data-frame-id`, `aria-selected` */
   frame: 'ez-board-frame',
+  /** `data-handle` = n|s|e|w|ne|nw|se|sw */
+  handle: 'ez-board-handle',
+  /** `data-axis` = x|y */
+  guide: 'ez-guide',
   /** the camera controls */
   tools: 'ez-board-tools',
   /** the zoom readout, text like `100%` */

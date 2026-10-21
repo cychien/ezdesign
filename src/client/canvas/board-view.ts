@@ -3,15 +3,18 @@
  *
  *      [ez-board] role=region data-canvas-id tabindex=0     the viewport
  *        [ez-board-world]                                   the one transformed element
- *          [ez-board-frame] role=group data-frame-id
- *            .ez-board-frame-head                           title and size
+ *          [ez-board-frame] role=group data-frame-id aria-selected
+ *            .ez-board-frame-head                           title and size; a drag handle
  *            iframe  src=FrameWire.src sandbox=FRAME_SANDBOX
+ *            [ez-board-handle] data-handle=n|s|e|w|ne|nw|se|sw   on a lone selection
+ *          [ez-guide] data-axis=x|y                         while aligned
  *      [ez-board-tools]  全部顯示 · 縮小 · [ez-board-zoom] 100% · 放大 · 重設縮放
  *
  *  What keeps forty frames smooth:
  *  - Pan and zoom write one `transform` on the world per animation frame from
  *    the camera; input handlers only update the camera and request that frame,
- *    and nothing reads layout - every rect is already in the model.
+ *    and nothing reads layout - every rect is already in the model. A frame
+ *    being dragged writes its own transform the same way.
  *  - Iframes take no pointer events while a gesture runs, and none outside
  *    annotate mode unless one frame is made live by a double-click, so the
  *    wheel and drags never hit-test into forty documents.
@@ -22,15 +25,30 @@
  *  - A changed `hash` reloads that one frame with `location.replace`, which
  *    leaves no history entry.
  *
+ *  Edits are applied at once and sent one request at a time; what is still in
+ *  flight is re-applied over every canvas the daemon pushes (`withPending`).
+ *
  *  One `BoardView` per canvas, built on first show and kept (hidden) while
  *  another tab is active, so a tab switch never reloads an iframe and a pick
  *  armed in a frame is still armed on return. */
 
-import type { Camera, FrameId, Size } from '../../canvas/types.js'
-import type { CanvasWire, FrameWire } from '../../canvas/wire.js'
+import { MIN_FRAME_SIZE, type Camera, type FrameId, type Rect, type Size, mintFrameId } from '../../canvas/types.js'
+import { boundsOf } from '../../canvas/place.js'
+import type { CanvasWire, FrameWire, LayoutOp } from '../../canvas/wire.js'
 import { type CanvasGuestPort, canvasGuestId } from '../frame-registry.js'
 import type { Mode } from '../guest-messages.js'
 import { fitAll, panned, worldToScreen, worldTransform, zoomedAround } from './camera.js'
+import { type Guide, type ResizeHandle, snapMove, snapResize } from './guides.js'
+import {
+  type BoardEdit,
+  EditHistory,
+  type EditStep,
+  planDuplicate,
+  planMove,
+  planRemove,
+  planResize,
+  withPending,
+} from './history.js'
 import { planMounts } from './mounting.js'
 import { LABELS, TEST_IDS } from './names.js'
 
@@ -41,6 +59,10 @@ export const FRAME_SANDBOX = 'allow-scripts allow-same-origin allow-forms allow-
 
 export interface BoardHost {
   guests: CanvasGuestPort
+  /** One request: `POST /ops` or `POST /frames`. Resolves with the canvas the
+   *  daemon answered, or null on refusal (the next pushed canvas, without the
+   *  edit pending, rolls it back). */
+  send(edit: BoardEdit): Promise<CanvasWire | null>
   /** Debounced after a gesture ends; persisted as the session's view. */
   saveCamera(camera: Camera): void
   /** Escape on the board, or a click on its empty background: stand down any
@@ -56,6 +78,10 @@ const LINE_PX = 16
 const ZOOM_STEP = 1.25
 /** How strongly a pinch or Mod+wheel zooms per pixel of delta. */
 const WHEEL_ZOOM = 0.0025
+/** How far the pointer has to travel, in screen pixels, before a press on a
+ *  frame becomes a drag rather than a click. */
+const DRAG_PX = 3
+const HANDLES: ResizeHandle[] = ['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw']
 
 interface Card {
   frame: FrameWire
@@ -64,6 +90,34 @@ interface Card {
   iframe: HTMLIFrameElement | null
 }
 
+type Gesture =
+  | { t: 'pan'; pointer: number; x: number; y: number; camera: Camera }
+  | {
+      t: 'move'
+      pointer: number
+      x: number
+      y: number
+      ids: ReadonlySet<FrameId>
+      started: boolean
+      dx: number
+      dy: number
+      /** A shift-press on a frame already selected leaves the selection alone
+       *  until the press turns out to be a click, which then deselects it. */
+      toggleOnClick: FrameId | null
+    }
+  | {
+      t: 'resize'
+      pointer: number
+      x: number
+      y: number
+      id: FrameId
+      handle: ResizeHandle
+      /** Where the frame was when the press began. */
+      rect: Rect
+      /** Where the pointer has it now, snapped. */
+      current: Rect
+    }
+
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, className: string, text?: string): HTMLElementTagNameMap[K] {
   const node = document.createElement(tag)
   node.className = className
@@ -71,18 +125,28 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, className: string, te
   return node
 }
 
+const sameRect = (a: Rect, b: Rect) => a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height
+
 export class BoardView {
   readonly el: HTMLElement
   private readonly world: HTMLElement
+  private readonly guides: HTMLElement
   private readonly empty: HTMLElement
   private readonly readout: HTMLElement
   private camera: Camera | null
   /** No saved camera and no gesture yet: the board keeps everything in view as
    *  frames arrive, so frames an agent adds one by one are all on screen. */
   private following: boolean
+  /** The frames as shown: the daemon's latest with pending edits on top. */
+  private frames: FrameWire[] = []
   private readonly cards = new Map<FrameId, Card>()
   private readonly mounted = new Set<FrameId>()
   private readonly loading = new Set<FrameId>()
+  private selection = new Set<FrameId>()
+  private readonly history = new EditHistory()
+  /** Applied here, not yet answered: re-applied over every canvas that arrives. */
+  private pending: BoardEdit[] = []
+  private sending = false
   private stage: Size = { width: 0, height: 0 }
   private shown = false
   private frameRequested = 0
@@ -91,7 +155,7 @@ export class BoardView {
   /** The zoom the frames were last told, so a pan sends them nothing. */
   private toldZoom = 0
   private paintedZoom = 0
-  private pan: { pointer: number; x: number; y: number; camera: Camera } | null = null
+  private gesture: Gesture | null = null
   private spaceHeld = false
   /** The frame a double-click made interactive, outside annotate mode. */
   private live: FrameId | null = null
@@ -112,6 +176,8 @@ export class BoardView {
     this.el.hidden = true
     this.world = el('div', 'ez-board-world')
     this.world.dataset.testid = TEST_IDS.world
+    this.guides = el('div', 'ez-guides')
+    this.world.append(this.guides)
     this.empty = el('div', 'ez-board-empty', '還沒有任何 frame')
 
     const tools = el('div', 'ez-board-tools')
@@ -139,8 +205,8 @@ export class BoardView {
     this.el.addEventListener('wheel', (e) => this.onBoardWheel(e), { passive: false })
     this.el.addEventListener('pointerdown', (e) => this.onPointerDown(e))
     this.el.addEventListener('pointermove', (e) => this.onPointerMove(e))
-    this.el.addEventListener('pointerup', (e) => this.endPan(e))
-    this.el.addEventListener('pointercancel', (e) => this.endPan(e))
+    this.el.addEventListener('pointerup', (e) => this.onPointerUp(e))
+    this.el.addEventListener('pointercancel', (e) => this.onPointerUp(e, true))
     this.el.addEventListener('dblclick', (e) => this.onDoubleClick(e))
     this.apply(canvas)
   }
@@ -149,29 +215,38 @@ export class BoardView {
     return this.canvas.name
   }
 
-  /** A canvas from the daemon (first flush, SSE event, an answer), diffed by
-   *  frame id: new cards are added in one fragment, moved ones get a new rect,
-   *  gone ones leave the registry, changed hashes reload. */
+  /** A canvas from the daemon (first flush, SSE event, an answer). */
   apply(canvas: CanvasWire): void {
     this.canvas = canvas
     this.el.setAttribute('aria-label', LABELS.board(canvas.name))
-    const next = new Map(canvas.frames.map((f) => [f.id, f]))
+    this.render()
+  }
+
+  /** Diffed by frame id over `withPending`: new cards are added in one fragment,
+   *  moved ones get a new rect, gone ones leave the registry, changed hashes
+   *  reload. The selection drops ids that no longer exist. */
+  private render(): void {
+    this.frames = withPending(this.canvas, this.pending)
+    const next = new Map(this.frames.map((f) => [f.id, f]))
     for (const [id, card] of this.cards) {
       if (next.has(id)) continue
       this.unmount(id)
       card.el.remove()
       this.cards.delete(id)
+      this.selection.delete(id)
       if (this.live === id) this.live = null
     }
     const fresh = document.createDocumentFragment()
-    canvas.frames.forEach((frame, z) => {
+    this.frames.forEach((frame, z) => {
       const card = this.cards.get(frame.id)
       if (!card) {
         const made = this.card(frame)
         this.cards.set(frame.id, made)
         fresh.appendChild(made.el)
       } else {
-        const reload = card.frame.hash !== frame.hash
+        // The src carries the revision and the frame's own id: a new document,
+        // or a duplicate's real copy replacing its source's stand-in.
+        const reload = card.frame.src !== frame.src
         card.frame = frame
         this.place(card)
         if (reload && card.iframe) {
@@ -181,8 +256,9 @@ export class BoardView {
       }
       this.cards.get(frame.id)!.el.style.zIndex = String(z + 1)
     })
-    this.world.appendChild(fresh)
-    this.empty.hidden = canvas.frames.length > 0
+    this.world.insertBefore(fresh, this.guides)
+    this.empty.hidden = this.frames.length > 0
+    this.paintSelection()
     if (!this.shown) return
     if (this.following) {
       this.camera = this.fitCamera()
@@ -229,10 +305,7 @@ export class BoardView {
 
   /** The frame a guest id names, when it is one of this board's. */
   frameOf(guestId: string): FrameWire | undefined {
-    for (const card of this.cards.values()) {
-      if (canvasGuestId({ canvasId: this.canvas.id, frameId: card.frame.id }) === guestId) return card.frame
-    }
-    return undefined
+    return this.frames.find((f) => canvasGuestId({ canvasId: this.canvas.id, frameId: f.id }) === guestId)
   }
 
   /** The registered guests of this board: its mounted frames. */
@@ -263,23 +336,49 @@ export class BoardView {
     this.setCamera(zoomedAround(this.camera, Math.exp(-e.dy * WHEEL_ZOOM), at))
   }
 
-  /** Board keys while the board has focus and no field does. True when consumed. */
+  /** Board keys while the board is showing and no field has focus. True when
+   *  consumed. */
   onKeyDown(e: KeyboardEvent): boolean {
-    if (e.code === 'Space' && !e.repeat) {
+    const mod = e.metaKey || e.ctrlKey
+    if (e.code === 'Space' && !e.repeat && !mod) {
       this.spaceHeld = true
       this.el.classList.add('ez-space')
       return true
     }
-    if (e.shiftKey && !e.metaKey && !e.ctrlKey && e.code === 'Digit1') {
+    if (e.shiftKey && !mod && e.code === 'Digit1') {
       this.fitAll()
       return true
     }
-    if (e.shiftKey && !e.metaKey && !e.ctrlKey && e.code === 'Digit0') {
+    if (e.shiftKey && !mod && e.code === 'Digit0') {
       this.resetZoom()
       return true
     }
-    if (e.key === 'Escape' && this.live) {
+    if (mod && e.code === 'KeyZ') {
+      this.undoRedo(e.shiftKey ? 'redo' : 'undo')
+      return true
+    }
+    if (mod && !e.shiftKey && e.code === 'KeyA') {
+      this.select(new Set(this.frames.map((f) => f.id)))
+      return true
+    }
+    if (mod && !e.shiftKey && e.code === 'KeyD') {
+      this.duplicateSelection()
+      return true
+    }
+    if (!mod && (e.key === 'Backspace' || e.key === 'Delete') && this.selection.size) {
+      this.commit(planRemove(this.selection))
+      this.select(new Set())
+      return true
+    }
+    const arrow = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[e.key]
+    if (arrow && !mod && this.selection.size) {
+      const step = e.shiftKey ? 10 : 1
+      this.commit(planMove(this.frames, this.selection, arrow[0]! * step, arrow[1]! * step, { nudge: true }))
+      return true
+    }
+    if (e.key === 'Escape' && (this.live || this.selection.size)) {
       this.setLive(null)
+      this.select(new Set())
       return true
     }
     return false
@@ -306,6 +405,87 @@ export class BoardView {
     this.zoomBy(1 / this.camera.zoom)
   }
 
+  // ------------------------------------------------------------------ edits
+
+  /** Apply locally, record in history, queue; send when the previous request
+   *  is answered. */
+  private commit(step: EditStep): void {
+    this.following = false
+    this.history.push(step, performance.now())
+    this.enqueue(step.apply)
+  }
+
+  private enqueue(edits: BoardEdit[]): void {
+    this.pending.push(...edits)
+    this.render()
+    void this.flush()
+  }
+
+  private async flush(): Promise<void> {
+    if (this.sending) return
+    this.sending = true
+    while (this.pending.length) {
+      const answer = await this.host.send(this.pending[0]!)
+      this.pending.shift()
+      if (answer) this.canvas = answer
+      this.render()
+    }
+    this.sending = false
+  }
+
+  private undoRedo(which: 'undo' | 'redo'): void {
+    const ops: LayoutOp[] | null = which === 'undo' ? this.history.undo() : this.history.redo()
+    if (ops) this.enqueue([{ t: 'ops', ops }])
+  }
+
+  private duplicateSelection(): void {
+    if (!this.selection.size) return
+    const step = planDuplicate(this.frames, this.selection, () => mintFrameId((b) => crypto.getRandomValues(b)))
+    this.commit(step)
+    this.select(new Set(step.copies))
+  }
+
+  private select(ids: Set<FrameId>): void {
+    this.selection = ids
+    this.paintSelection()
+  }
+
+  private paintSelection(): void {
+    const lone = this.selection.size === 1 ? [...this.selection][0] : undefined
+    for (const [id, card] of this.cards) {
+      card.el.setAttribute('aria-selected', String(this.selection.has(id)))
+      const handles = card.el.querySelectorAll('.ez-board-handle')
+      if (id === lone && handles.length === 0) {
+        for (const handle of HANDLES) {
+          const node = el('div', 'ez-board-handle')
+          node.dataset.testid = TEST_IDS.handle
+          node.dataset.handle = handle
+          card.el.append(node)
+        }
+      } else if (id !== lone) {
+        handles.forEach((h) => h.remove())
+      }
+    }
+  }
+
+  private paintGuides(guides: Guide[]): void {
+    this.guides.replaceChildren(
+      ...guides.map((g) => {
+        const line = el('div', 'ez-guide')
+        line.dataset.testid = TEST_IDS.guide
+        line.dataset.axis = g.axis
+        if (g.axis === 'x') {
+          line.style.transform = `translate(${g.at}px, ${g.from}px)`
+          line.style.height = `${g.to - g.from}px`
+        } else {
+          line.style.transform = `translate(${g.from}px, ${g.at}px)`
+          line.style.width = `${g.to - g.from}px`
+        }
+        return line
+      }),
+    )
+  }
+
   // ------------------------------------------------------------------ cards
 
   private card(frame: FrameWire): Card {
@@ -320,8 +500,8 @@ export class BoardView {
     return card
   }
 
-  private place(card: Card): void {
-    const { rect, title } = card.frame
+  private place(card: Card, rect: Rect = card.frame.rect): void {
+    const { title } = card.frame
     const label = LABELS.frame(title, rect.width, rect.height)
     card.el.setAttribute('aria-label', label)
     card.el.style.transform = `translate(${rect.x}px, ${rect.y}px)`
@@ -336,9 +516,9 @@ export class BoardView {
 
   private remount(): void {
     if (!this.camera || !this.shown || this.stage.width === 0) return
-    const pinned = new Set<FrameId>(this.live ? [this.live] : [])
+    const pinned = new Set<FrameId>([...(this.live ? [this.live] : []), ...this.selection])
     const plan = planMounts(
-      this.canvas.frames.map((f) => ({ id: f.id, rect: f.rect })),
+      this.frames.map((f) => ({ id: f.id, rect: f.rect })),
       this.camera,
       this.stage,
       { mounted: this.mounted, loading: this.loading, pinned },
@@ -359,7 +539,7 @@ export class BoardView {
       this.remount()
     })
     card.iframe = iframe
-    card.el.append(iframe)
+    card.el.insertBefore(iframe, card.head.nextSibling)
     this.mounted.add(id)
     this.loading.add(id)
     const place = { canvasId: this.canvas.id, frameId: id }
@@ -400,7 +580,7 @@ export class BoardView {
 
   private fitCamera(): Camera {
     return fitAll(
-      this.canvas.frames.map((f) => f.rect),
+      this.frames.map((f) => f.rect),
       this.stage.width ? this.stage : { width: 1200, height: 800 },
     )
   }
@@ -441,7 +621,7 @@ export class BoardView {
     })
   }
 
-  /** The one place the transform is written. */
+  /** The one place the world's transform is written. */
   private paintCamera(): void {
     const camera = this.camera
     if (!camera) return
@@ -471,34 +651,130 @@ export class BoardView {
     }
   }
 
-  /** The background, or anywhere with Space held, pans. */
+  /** The background, or anywhere with Space held, pans; a frame's head or body
+   *  selects and drags it; a handle resizes. */
   private onPointerDown(e: PointerEvent): void {
-    if (e.button !== 0 || !this.camera) return
+    if (e.button !== 0 || !this.camera || this.gesture) return
     const target = e.target as HTMLElement
     if (target.closest('.ez-board-tools')) return
-    const background = target === this.el || target === this.world || target === this.empty
-    if (!background && !this.spaceHeld) return
-    if (background && !this.spaceHeld) {
-      this.setLive(null)
-      this.host.escape()
+    // The user has the board now: frames that arrive no longer move the camera.
+    this.following = false
+    const start = (gesture: Gesture) => {
+      e.preventDefault()
+      this.el.focus({ preventScroll: true })
+      this.el.setPointerCapture(e.pointerId)
+      this.gesture = gesture
     }
-    e.preventDefault()
-    this.el.focus({ preventScroll: true })
-    this.el.setPointerCapture(e.pointerId)
-    this.pan = { pointer: e.pointerId, x: e.clientX, y: e.clientY, camera: this.camera }
-    this.el.classList.add('ez-panning')
+    if (this.spaceHeld) {
+      start({ t: 'pan', pointer: e.pointerId, x: e.clientX, y: e.clientY, camera: this.camera })
+      this.el.classList.add('ez-panning')
+      return
+    }
+    const handle = target.closest<HTMLElement>('.ez-board-handle')
+    const cardEl = target.closest<HTMLElement>('.ez-board-frame')
+    const id = cardEl?.dataset.frameId as FrameId | undefined
+    if (handle && id) {
+      const frame = this.frames.find((f) => f.id === id)!
+      start({
+        t: 'resize',
+        pointer: e.pointerId,
+        x: e.clientX,
+        y: e.clientY,
+        id,
+        handle: handle.dataset.handle as ResizeHandle,
+        rect: frame.rect,
+        current: frame.rect,
+      })
+      this.el.classList.add('ez-arranging')
+      return
+    }
+    if (id && id !== this.live) {
+      let toggleOnClick: FrameId | null = null
+      if (e.shiftKey) {
+        if (this.selection.has(id)) toggleOnClick = id
+        else this.select(new Set([...this.selection, id]))
+      } else if (!this.selection.has(id)) {
+        this.select(new Set([id]))
+      }
+      start({ t: 'move', pointer: e.pointerId, x: e.clientX, y: e.clientY, ids: new Set(this.selection), started: false, dx: 0, dy: 0, toggleOnClick })
+      return
+    }
+    if (!id) {
+      this.setLive(null)
+      this.select(new Set())
+      this.host.escape()
+      start({ t: 'pan', pointer: e.pointerId, x: e.clientX, y: e.clientY, camera: this.camera })
+      this.el.classList.add('ez-panning')
+    }
   }
 
   private onPointerMove(e: PointerEvent): void {
-    const pan = this.pan
-    if (!pan || e.pointerId !== pan.pointer) return
-    this.setCamera(panned(pan.camera, e.clientX - pan.x, e.clientY - pan.y))
+    const g = this.gesture
+    if (!g || e.pointerId !== g.pointer || !this.camera) return
+    const zoom = this.camera.zoom
+    if (g.t === 'pan') {
+      this.setCamera(panned(g.camera, e.clientX - g.x, e.clientY - g.y))
+      return
+    }
+    if (g.t === 'resize') {
+      const dx = (e.clientX - g.x) / zoom
+      const dy = (e.clientY - g.y) / zoom
+      const r = g.rect
+      const raw = {
+        x: g.handle.includes('w') ? r.x + dx : r.x,
+        y: g.handle.includes('n') ? r.y + dy : r.y,
+        width: g.handle.includes('e') ? r.width + dx : g.handle.includes('w') ? r.width - dx : r.width,
+        height: g.handle.includes('s') ? r.height + dy : g.handle.includes('n') ? r.height - dy : r.height,
+      }
+      const others = this.frames.filter((f) => f.id !== g.id).map((f) => f.rect)
+      const snapped = snapResize(raw, g.handle, others, zoom, MIN_FRAME_SIZE)
+      const rect = { x: Math.round(snapped.rect.x), y: Math.round(snapped.rect.y), width: Math.round(snapped.rect.width), height: Math.round(snapped.rect.height) }
+      this.place(this.cards.get(g.id)!, rect)
+      this.paintGuides(snapped.guides)
+      g.current = rect
+      return
+    }
+    if (!g.started) {
+      if (Math.hypot(e.clientX - g.x, e.clientY - g.y) < DRAG_PX) return
+      g.started = true
+      this.el.classList.add('ez-arranging')
+    }
+    const moving = this.frames.filter((f) => g.ids.has(f.id))
+    const box = boundsOf(moving.map((f) => f.rect))
+    if (!box) return
+    const raw = { ...box, x: box.x + (e.clientX - g.x) / zoom, y: box.y + (e.clientY - g.y) / zoom }
+    const others = this.frames.filter((f) => !g.ids.has(f.id)).map((f) => f.rect)
+    const snapped = snapMove(raw, others, zoom)
+    g.dx = Math.round(snapped.rect.x - box.x)
+    g.dy = Math.round(snapped.rect.y - box.y)
+    for (const f of moving) {
+      this.cards.get(f.id)!.el.style.transform = `translate(${f.rect.x + g.dx}px, ${f.rect.y + g.dy}px)`
+    }
+    this.paintGuides(snapped.guides)
   }
 
-  private endPan(e: PointerEvent): void {
-    if (!this.pan || e.pointerId !== this.pan.pointer) return
-    this.pan = null
-    this.el.classList.remove('ez-panning')
+  private onPointerUp(e: PointerEvent, cancelled = false): void {
+    const g = this.gesture
+    if (!g || e.pointerId !== g.pointer) return
+    this.gesture = null
+    this.el.classList.remove('ez-panning', 'ez-arranging')
+    this.paintGuides([])
+    if (g.t === 'resize') {
+      const card = this.cards.get(g.id)!
+      if (cancelled || sameRect(g.current, g.rect)) this.place(card)
+      else this.commit(planResize(card.frame, g.current))
+      return
+    }
+    if (g.t !== 'move') return
+    if (!g.started) {
+      if (g.toggleOnClick) this.select(new Set([...this.selection].filter((id) => id !== g.toggleOnClick)))
+      return
+    }
+    if (cancelled || (g.dx === 0 && g.dy === 0)) {
+      this.render()
+      return
+    }
+    this.commit(planMove(this.frames, g.ids, g.dx, g.dy))
   }
 
   /** A double-click on a frame hands it the pointer, to scroll it or try its

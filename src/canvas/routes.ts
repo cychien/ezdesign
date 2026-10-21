@@ -9,6 +9,8 @@
  *      POST   /canvases/:canvasId/archive         -> {result: 'archived' | 'deleted'}
  *      POST   /canvases/:canvasId/reopen          -> CanvasWire
  *      DELETE /canvases/:canvasId                 -> {ok: true}        (archived only, else 409)
+ *      POST   /canvases/:canvasId/ops  LayoutStepWire -> CanvasWire
+ *      POST   /canvases/:canvasId/frames DuplicateWire -> CanvasWire
  *      PUT    /view                ViewWire       -> {ok: true}
  *
  *  Errors are `{error, code}` with `statusOf(problem)`. Every route parses at the
@@ -24,14 +26,16 @@ import { URL_PREFIX } from '../constants.js'
 import { FRAME_ROUTE, isFrameHost } from './frame-document.js'
 import {
   type CanvasProblem,
+  type FrameId,
   type Outcome,
+  type Rect,
   ZOOM_MAX,
   ZOOM_MIN,
   asCanvasId,
   asFrameId,
   asTabId,
 } from './types.js'
-import type { ViewWire } from './wire.js'
+import type { DuplicateWire, LayoutOp, LayoutStepWire, OpId, ViewWire } from './wire.js'
 import type { CanvasReader, UserCanvasPort } from './workspace.js'
 
 export interface CanvasRouteHost {
@@ -117,6 +121,55 @@ export function parseView(raw: unknown): ViewWire | null {
   return view
 }
 
+function rect(raw: unknown): Rect | null {
+  if (typeof raw !== 'object' || raw === null) return null
+  const { x, y, width, height } = raw as Record<string, unknown>
+  return finite(x) && finite(y) && finite(width) && finite(height) ? { x, y, width, height } : null
+}
+
+function frameIds(raw: unknown): FrameId[] | null {
+  if (!Array.isArray(raw)) return null
+  const ids = raw.map(asFrameId)
+  return ids.every((id): id is FrameId => id !== null) ? ids : null
+}
+
+/** A step off the wire, or null for a malformed one (400). Ids through
+ *  `asFrameId`, rects checked finite here and normalized by the workspace. */
+export function parseLayoutStep(raw: unknown): LayoutStepWire | null {
+  if (typeof raw !== 'object' || raw === null) return null
+  const { opId, ops } = raw as Record<string, unknown>
+  if (typeof opId !== 'string' || !/^[\w-]{1,64}$/.test(opId) || !Array.isArray(ops) || ops.length > 512) return null
+  const parsed: LayoutOp[] = []
+  for (const op of ops as Record<string, unknown>[]) {
+    if (op?.t === 'place' && Array.isArray(op.frames)) {
+      const frames = (op.frames as Record<string, unknown>[]).map((f) => {
+        const id = asFrameId(f?.id)
+        const r = rect(f?.rect)
+        return id && r ? { id, rect: r } : null
+      })
+      if (frames.some((f) => f === null)) return null
+      parsed.push({ t: 'place', frames: frames as { id: FrameId; rect: Rect }[] })
+    } else if (op?.t === 'remove' || op?.t === 'restore') {
+      const ids = frameIds(op.ids)
+      if (!ids) return null
+      parsed.push({ t: op.t, ids })
+    } else {
+      return null
+    }
+  }
+  return { opId: opId as OpId, ops: parsed }
+}
+
+export function parseDuplicate(raw: unknown): DuplicateWire | null {
+  if (typeof raw !== 'object' || raw === null) return null
+  const { from, id, rect: at } = raw as Record<string, unknown>
+  const source = asFrameId(from)
+  const copy = asFrameId(id)
+  const r = at === undefined ? undefined : rect(at)
+  if (!source || !copy || r === null) return null
+  return { from: source, id: copy, ...(r ? { rect: r } : {}) }
+}
+
 export function canvasApiRouter(host: CanvasRouteHost): Router {
   const api = Router()
   const { user, read } = host
@@ -145,6 +198,16 @@ export function canvasApiRouter(host: CanvasRouteHost): Router {
   })
   api.delete('/canvases/:canvasId', (req, res) => {
     answer(res, user.delete(req.params.canvasId), () => ({ ok: true }))
+  })
+  api.post('/canvases/:canvasId/ops', (req, res) => {
+    const step = parseLayoutStep(req.body)
+    if (!step) return res.status(400).json({ error: 'not a layout step' })
+    answer(res, user.applyLayoutOps(req.params.canvasId, step), (wire) => wire)
+  })
+  api.post('/canvases/:canvasId/frames', (req, res) => {
+    const input = parseDuplicate(req.body)
+    if (!input) return res.status(400).json({ error: 'not a duplicate' })
+    answer(res, user.duplicate(req.params.canvasId, input), (wire) => wire)
   })
   api.put('/view', (req, res) => {
     const view = parseView(req.body)

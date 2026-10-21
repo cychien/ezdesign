@@ -41,7 +41,7 @@ import {
 import { join } from 'node:path'
 import type { FrameRef } from '../protocol.js'
 import { type FrameOverlayConfig, checkFrameHtml, frameUrl, renderFrameDocument } from './frame-document.js'
-import { autoPlace, defaultHeightFor, normalizeRect } from './place.js'
+import { autoPlace, defaultHeightFor, normalizeRect, placeBeside } from './place.js'
 import { FrameFileWatcher } from './watch.js'
 import {
   CANVASES_DIR,
@@ -64,7 +64,7 @@ import {
   asCanvasId,
   asFrameId,
 } from './types.js'
-import type { CanvasSnapshotWire, CanvasWire, ViewWire } from './wire.js'
+import type { CanvasSnapshotWire, CanvasWire, DuplicateWire, LayoutStepWire, ViewWire } from './wire.js'
 
 /** The tab strip's `+` and the empty start: one name, numbered past those taken. */
 export const UNTITLED = '未命名 canvas'
@@ -119,6 +119,14 @@ export interface UserCanvasPort {
   /** Permanent, archived canvases only (`CANVAS_OPEN` otherwise): the whole
    *  directory, and its saved camera. The shell confirms first; this does not. */
   delete(canvasId: string): Outcome<void>
+  /** One undo step from the board. Ops naming frames that are gone are skipped;
+   *  a step whose `opId` was applied recently is answered with the canvas as
+   *  it is. */
+  applyLayoutOps(canvasId: string, step: LayoutStepWire): Outcome<CanvasWire>
+  /** A copy of a frame's document as a new frame, with the client's id, so a
+   *  retried request creates nothing twice. The user's path never carries HTML:
+   *  the copy's bytes are read from the source's file. */
+  duplicate(canvasId: string, input: DuplicateWire): Outcome<CanvasWire>
   setView(view: ViewWire): void
 }
 
@@ -230,7 +238,13 @@ interface LayoutFile {
 interface Held {
   manifest: ManifestFile
   layout: LayoutFile
+  /** `opId`s applied recently, newest last, at most `RECENT_OPS`. In memory
+   *  only: a replay across a daemon restart re-applies absolute ops, which
+   *  lands the same. */
+  recentOps: string[]
 }
+
+const RECENT_OPS = 64
 
 const UNNAMED_FILE_GRACE_MS = 60 * 60_000
 const DELETED_KEEP_MS = 7 * 24 * 60 * 60_000
@@ -312,6 +326,8 @@ class Workspace {
       archive: (canvasId) => this.archive(canvasId),
       reopen: (canvasId) => this.reopen(canvasId),
       delete: (canvasId) => this.delete(canvasId),
+      applyLayoutOps: (canvasId, step) => this.applyLayoutOps(canvasId, step),
+      duplicate: (canvasId, input) => this.duplicate(canvasId, input),
       setView: (view) => this.setView(view),
     }
   }
@@ -361,6 +377,7 @@ class Workspace {
       const held: Held = {
         manifest,
         layout: layout?.schema === 1 && layout.rects ? layout : { schema: 1, rects: {} },
+        recentOps: [],
       }
       this.canvases.set(id, held)
       this.rehash(held)
@@ -611,6 +628,7 @@ class Workspace {
     const held: Held = {
       manifest: { schema: 1, id, name: name ?? this.untitledName(), createdAt: this.now(), frames: [] },
       layout: { schema: 1, rects: {} },
+      recentOps: [],
     }
     this.writeLayout(held)
     this.writeManifest(held)
@@ -712,6 +730,83 @@ class Workspace {
     }
     this.remove(held)
     return ok(undefined)
+  }
+
+  // ----------------------------------------------------------- board edits
+
+  private applyLayoutOps(canvasId: string, step: LayoutStepWire): Outcome<CanvasWire> {
+    const writable = this.writable(canvasId)
+    if (!writable.ok) return writable
+    const held = writable.value
+    const id = held.manifest.id
+    if (held.recentOps.includes(step.opId)) return ok(this.wire(id)!)
+    let movedRects = false
+    let movedFrames = false
+    const live = (frameId: FrameId) => held.manifest.frames.find((f) => f.id === frameId && f.deletedAt === undefined)
+    for (const op of step.ops) {
+      if (op.t === 'place') {
+        for (const { id: frameId, rect } of op.frames) {
+          if (!live(frameId)) continue
+          const next = normalizeRect(rect)
+          const was = held.layout.rects[frameId]
+          if (was && was.x === next.x && was.y === next.y && was.width === next.width && was.height === next.height) continue
+          held.layout.rects[frameId] = next
+          movedRects = true
+        }
+      } else if (op.t === 'remove') {
+        for (const frameId of op.ids) {
+          const frame = live(frameId)
+          if (!frame) continue
+          frame.deletedAt = this.now()
+          movedFrames = true
+        }
+      } else {
+        for (const frameId of op.ids) {
+          const frame = held.manifest.frames.find((f) => f.id === frameId && f.deletedAt !== undefined)
+          if (!frame || !existsSync(join(this.dir(id), frame.file))) continue
+          delete frame.deletedAt
+          movedFrames = true
+        }
+      }
+    }
+    if (movedRects) this.writeLayout(held)
+    if (movedFrames) this.writeManifest(held)
+    held.recentOps = [...held.recentOps, step.opId].slice(-RECENT_OPS)
+    if (movedRects || movedFrames) this.opts.onChange({ kind: 'updated', canvasId: id })
+    return ok(this.wire(id)!)
+  }
+
+  private duplicate(canvasId: string, input: DuplicateWire): Outcome<CanvasWire> {
+    const writable = this.writable(canvasId)
+    if (!writable.ok) return writable
+    const held = writable.value
+    const id = held.manifest.id
+    if (held.manifest.frames.some((f) => f.id === input.id)) return ok(this.wire(id)!)
+    const source = this.liveFrame(id, input.from)
+    if (!source) return { ok: false, problem: { code: 'FRAME_NOT_FOUND', canvasId: id, frameId: input.from } }
+    const live = held.manifest.frames.filter((f) => f.deletedAt === undefined)
+    if (live.length >= MAX_FRAMES_PER_CANVAS) {
+      return { ok: false, problem: { code: 'TOO_MANY_FRAMES', limit: MAX_FRAMES_PER_CANVAS } }
+    }
+    let bytes: Buffer
+    try {
+      bytes = readFileSync(join(this.dir(id), source.file))
+    } catch {
+      return { ok: false, problem: { code: 'FRAME_NOT_FOUND', canvasId: id, frameId: input.from } }
+    }
+    const sourceRect = held.layout.rects[source.id] ?? NO_RECT
+    const rect = normalizeRect(
+      input.rect ?? { ...placeBeside(sourceRect, live.map((f) => held.layout.rects[f.id] ?? NO_RECT)), width: sourceRect.width, height: sourceRect.height },
+    )
+    const file = `frames/${input.id}.html`
+    writeAtomic(join(this.dir(id), file), bytes.toString('utf8'))
+    held.layout.rects[input.id] = rect
+    this.writeLayout(held)
+    const title = cleanName(`${source.title} 副本`, MAX_FRAME_TITLE) ?? source.title
+    held.manifest.frames.push({ id: input.id, title, file, hash: sha1(bytes), createdAt: this.now() })
+    this.writeManifest(held)
+    this.opts.onChange({ kind: 'updated', canvasId: id })
+    return ok(this.wire(id)!)
   }
 
   // ------------------------------------------------------------ agent edits

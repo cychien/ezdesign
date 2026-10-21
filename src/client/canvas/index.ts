@@ -13,7 +13,15 @@
 
 import type { BatchView, FrameRef } from '../../protocol.js'
 import { type CanvasId, type TabId, asCanvasId } from '../../canvas/types.js'
-import type { CanvasEventWire, CanvasSnapshotWire, CanvasWire, ViewWire } from '../../canvas/wire.js'
+import type {
+  CanvasEventWire,
+  CanvasSnapshotWire,
+  CanvasWire,
+  DuplicateWire,
+  LayoutStepWire,
+  OpId,
+  ViewWire,
+} from '../../canvas/wire.js'
 import type { CanvasGuest, CanvasGuestPort } from '../frame-registry.js'
 import type { GuestMessage, Mode, RelayOp } from '../guest-messages.js'
 import type { OverlaySnapshot } from '../overlay-link.js'
@@ -84,6 +92,8 @@ export type CanvasRequest =
   | { do: 'archive'; canvasId: CanvasId }
   | { do: 'reopen'; canvasId: CanvasId }
   | { do: 'delete'; canvasId: CanvasId }
+  | { do: 'ops'; canvasId: CanvasId; step: LayoutStepWire }
+  | { do: 'duplicate'; canvasId: CanvasId; input: DuplicateWire }
   | { do: 'view'; view: ViewWire }
 
 /** The one place the canvas urls are spelled on the client. Resolves with the
@@ -103,6 +113,10 @@ export async function canvasRequest(api: ShellPorts['api'], request: CanvasReque
         return ['POST', `/canvases/${request.canvasId}/reopen`, {}]
       case 'delete':
         return ['DELETE', `/canvases/${request.canvasId}`]
+      case 'ops':
+        return ['POST', `/canvases/${request.canvasId}/ops`, request.step]
+      case 'duplicate':
+        return ['POST', `/canvases/${request.canvasId}/frames`, request.input]
       case 'view':
         return ['PUT', '/view', request.view]
     }
@@ -130,6 +144,10 @@ async function relayCall(api: ShellPorts['api'], op: RelayOp): Promise<Response>
       return api(`/attachments/${encodeURIComponent(op.id)}`, { method: 'DELETE' })
   }
 }
+
+/** One per request: the daemon remembers recent ones, so a replay is a no-op. */
+const newOpId = (): OpId =>
+  Array.from(crypto.getRandomValues(new Uint8Array(8)), (b) => b.toString(16).padStart(2, '0')).join('') as OpId
 
 export function installCanvas(ports: ShellPorts): CanvasUi {
   const boards = new Map<CanvasId, BoardView>()
@@ -174,6 +192,12 @@ export function installCanvas(ports: ShellPorts): CanvasUi {
     if (!doc) return null
     const made = new BoardView(doc, {
       guests: ports.guests,
+      send: async (edit) =>
+        (await request(
+          edit.t === 'ops'
+            ? { do: 'ops', canvasId: id, step: { opId: newOpId(), ops: edit.ops } }
+            : { do: 'duplicate', canvasId: id, input: edit.input },
+        )) as CanvasWire | null,
       saveCamera: (camera) => void request({ do: 'view', view: { camera: { canvasId: id, camera } } }),
       escape: ports.escape,
     })
@@ -304,7 +328,12 @@ export function installCanvas(ports: ShellPorts): CanvasUi {
     },
 
     onKeyDown(e) {
-      return activeBoard()?.onKeyDown(e) ?? false
+      const board = activeBoard()
+      // Only while the board, or nothing, has focus: Backspace on a focused
+      // sidebar control must not delete the selected frames.
+      const focus = document.activeElement
+      if (!board || (focus && focus !== document.body && !board.el.contains(focus))) return false
+      return board.onKeyDown(e)
     },
 
     onKeyUp(e) {

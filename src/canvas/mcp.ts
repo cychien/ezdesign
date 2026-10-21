@@ -313,7 +313,9 @@ export class CanvasMcp {
         const spec = CANVAS_TOOLS[name]
         server.registerTool(
           name,
-          { description: spec.description, inputSchema: spec.input },
+          // Strict, so `x` or `width` on an existing frame is refused rather than
+          // silently ignored: geometry after creation is the user's.
+          { description: spec.description, inputSchema: z.object(spec.input).strict() },
           (args: unknown) => runCanvasTool(this.port, name, args as never),
         )
       }

@@ -174,3 +174,42 @@ test('CV-external-edit and CV-p5-brief: a file edited outside reaches the shell,
   for (const text of [onCanvas, onApp]) assert.ok(text.includes('Never edit canvas.json or layout.json.'))
   assert.equal((await api(port, '/send', { note: 'x', view: { tab: 'nowhere' } })).status, 400)
 })
+
+test('CV-p6-agent-geometry: the agent cannot move a frame the user placed', async () => {
+  const { w, control } = await world(true)
+  const dir = project(w)
+  const port = await ready(w, control, dir)
+  await api(port, '/send', { note: '建立 design system', view: { tab: 'app', page: '/' } })
+  const canvas = await waitFor(async () => {
+    const s = (await w.state(port)) as unknown as State
+    return s.canvas?.canvases.find((c) => c.frames === 3)
+  }, 'the canvas', 15_000)
+  await waitFor(async () => ((await w.state(port)) as unknown as State).acp?.state === 'idle', 'the turn to end')
+  const wire = (await (await fetch(`http://127.0.0.1:${port}/__ezdesign/api/canvases/${canvas.id}`)).json()) as { frames: { id: string; rect: { width: number; height: number } }[] }
+  const first = wire.frames[0]!
+  const moved = await api(port, `/canvases/${canvas.id}/ops`, {
+    opId: 'user-move',
+    ops: [{ t: 'place', frames: [{ id: first.id, rect: { x: 900, y: 0, width: first.rect.width, height: first.rect.height } }] }],
+  })
+  assert.equal(moved.status, 200)
+
+  const server = Object.values((await report(w, port)).mcpServers).flat().find((s) => s.name === 'ezdesign-canvas')!
+  const call = async (name: string, args: unknown) => {
+    const res = await fetch(server.url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream', authorization: server.headers[0]!.value },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } }),
+    })
+    return (await res.json()) as { result?: { isError?: boolean; content: { text: string }[]; structuredContent?: { frames: { frameId: string; x: number; y: number }[] } } }
+  }
+  const updated = await call('update_frame', { canvasId: canvas.id, frameId: first.id, html: '<!doctype html><html><body>new</body></html>' })
+  assert.notEqual(updated.result?.isError, true)
+  const sneaky = await call('update_frame', { canvasId: canvas.id, frameId: first.id, x: 0 })
+  assert.equal(sneaky.result?.isError, true)
+  assert.match(sneaky.result!.content[0]!.text, /x/)
+  const read = await call('read_canvas', { canvasId: canvas.id })
+  const listed = read.result!.structuredContent!.frames.find((f) => f.frameId === first.id)!
+  assert.deepEqual([listed.x, listed.y], [900, 0])
+  const layout = JSON.parse(readFileSync(join(dir, '.ezdesign', 'canvases', canvas.id, 'layout.json'), 'utf8'))
+  assert.deepEqual([layout.rects[first.id].x, layout.rects[first.id].y], [900, 0])
+})

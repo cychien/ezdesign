@@ -69,3 +69,10 @@ export function autoPlace(existing: readonly Rect[], size: Size): Point {
   if (right.x + size.width <= bounds.x + ROW_LIMIT) return right
   return { x: bounds.x, y: bounds.y + bounds.height + GAP }
 }
+
+/** The user's duplicate: right beside its source when free, else `autoPlace`. */
+export function placeBeside(source: Rect, existing: readonly Rect[]): Point {
+  const beside = { x: source.x + source.width + GAP, y: source.y }
+  const rect = { ...beside, width: source.width, height: source.height }
+  return existing.some((r) => overlaps(rect, r)) ? autoPlace(existing, source) : beside
+}

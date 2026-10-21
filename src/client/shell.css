@@ -3992,7 +3992,8 @@ body.ez-arranging .ez-frame {
   box-shadow: 0 0 0 calc(2px / var(--ez-zoom, 1)) var(--ink);
 }
 
-/* Named above the frame at a constant screen size, whatever the zoom. */
+/* Named above the frame at a constant screen size, whatever the zoom; the
+   handle a frame is dragged by while its page has the pointer. */
 .ez-board-frame-head {
   position: absolute;
   left: 0;
@@ -4005,7 +4006,69 @@ body.ez-arranging .ez-frame {
   font-size: calc(12px / var(--ez-zoom, 1));
   line-height: 1.2;
   white-space: nowrap;
+  cursor: default;
+  user-select: none;
+}
+
+.ez-board-frame[aria-selected='true'] {
+  box-shadow:
+    0 0 0 calc(2px / var(--ez-zoom, 1)) var(--ink),
+    0 calc(4px / var(--ez-zoom, 1)) calc(18px / var(--ez-zoom, 1)) oklch(0% 0 0 / 0.07);
+}
+
+.ez-board-frame[aria-selected='true'] .ez-board-frame-title {
+  color: var(--ink);
+}
+
+/* Square grips on the selection's corners and edges, a constant screen size. */
+.ez-board-handle {
+  position: absolute;
+  width: calc(10px / var(--ez-zoom, 1));
+  height: calc(10px / var(--ez-zoom, 1));
+  margin: calc(-5px / var(--ez-zoom, 1)) 0 0 calc(-5px / var(--ez-zoom, 1));
+  background: #fff;
+  border: calc(1.5px / var(--ez-zoom, 1)) solid var(--ink);
+  border-radius: calc(2px / var(--ez-zoom, 1));
+  z-index: 1;
+}
+
+.ez-board-handle[data-handle='nw'] { left: 0; top: 0; cursor: nwse-resize; }
+.ez-board-handle[data-handle='n'] { left: 50%; top: 0; cursor: ns-resize; }
+.ez-board-handle[data-handle='ne'] { left: 100%; top: 0; cursor: nesw-resize; }
+.ez-board-handle[data-handle='e'] { left: 100%; top: 50%; cursor: ew-resize; }
+.ez-board-handle[data-handle='se'] { left: 100%; top: 100%; cursor: nwse-resize; }
+.ez-board-handle[data-handle='s'] { left: 50%; top: 100%; cursor: ns-resize; }
+.ez-board-handle[data-handle='sw'] { left: 0; top: 100%; cursor: nesw-resize; }
+.ez-board-handle[data-handle='w'] { left: 0; top: 50%; cursor: ew-resize; }
+
+.ez-guides {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 100000;
   pointer-events: none;
+}
+
+/* Ink, not --mark: that orange means "feedback is attached here". */
+.ez-guide {
+  position: absolute;
+  left: 0;
+  top: 0;
+  background: var(--ink);
+}
+
+.ez-guide[data-axis='x'] {
+  width: calc(1px / var(--ez-zoom, 1));
+}
+
+.ez-guide[data-axis='y'] {
+  height: calc(1px / var(--ez-zoom, 1));
+}
+
+.ez-board.ez-arranging,
+.ez-board.ez-arranging .ez-board-frame {
+  cursor: grabbing;
+  user-select: none;
 }
 
 /* The title is what names the frame, so the size gives way first. */
@@ -4043,7 +4106,8 @@ body.ez-arranging .ez-frame {
 }
 
 .ez-board.ez-moving .ez-board-iframe,
-.ez-board.ez-space .ez-board-iframe {
+.ez-board.ez-space .ez-board-iframe,
+.ez-board.ez-arranging .ez-board-iframe {
   pointer-events: none;
 }
 
