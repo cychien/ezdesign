@@ -4022,12 +4022,14 @@ body.ez-arranging .ez-frame {
   pointer-events: none;
 }
 
-/* Ink, not --mark: that orange means "feedback is attached here". */
+/* Ink, not --mark: that orange means "feedback is attached here". The halo
+   keeps it visible where it crosses a dark frame. */
 .ez-guide {
   position: absolute;
   left: 0;
   top: 0;
   background: var(--ink);
+  box-shadow: 0 0 0 calc(1px / var(--ez-zoom, 1)) oklch(100% 0 0 / 0.85);
 }
 
 .ez-guide[data-axis='x'] {

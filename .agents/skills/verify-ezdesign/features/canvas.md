@@ -33,11 +33,12 @@ Recipes:
 - **Isolation.** On `canvas-probe`, open `tab "isolation probe"`; the frame's text reads `origin http://localhost:<port>`, `parent.localStorage threw`, `parent.document.title threw`, `own localStorage ok`, `send blocked`, `acp/answer opaque`, and `/api/state` is unchanged.
 - **Empty start.** From an empty directory with a `package.json`: `eval "$($V/vz.mjs env)"; node $PWD/dist/cli.mjs` there, then open the printed shell url. No `.ezdesign/` exists until the shell connects.
 - **Cross-tab `/element`.** Run `$V/cross-tab.mjs "$($V/vz.mjs get shellUrl)" $E` with `poll` waiting in `fixtures/playground`. It comments on the App's hero with `/element` answered by Cmd+click in Hero A, then on Hero A with `/element` answered on the App, and sends. `log.txt` holds both annotations; the polled labels carry `[ref 1: .ezdesign/canvases/.../frames/...html:14 · ... [canvas frame "Hero A" on canvas "首頁探索"]]` and `[ref 1: src/sections/Nav.tsx:28 ...]`.
+- **Resize.** Run `$V/frame-resize.mjs "$($V/vz.mjs get shellUrl)" $E $PWD/fixtures/playground` on a fresh `canvas` seed. It drags Hero A's `se`, `nw`, `s` and `e` handles (the last after zooming in) and undoes all four; every line of `log.txt` checks the board and `layout.json`, and `04-snap-guide.png` shows the guide to Mobile's bottom edge.
 - **Perf.** On `canvas40`, time the `40 frames` tab click to every visible iframe's `load`, and record rAF deltas over a 5 s wheel pan and Ctrl+wheel zoom at fit-all.
 
 ## Gotchas
 
 - chrome-devtools-axi clicks and drags at an element's unscaled position, so inside a board zoomed away from 100% a click lands on the wrong frame. Reset to 100% and pan the frame into view with a synthetic wheel (`eval` dispatching `WheelEvent` on `.ez-board:not([hidden])`), widening the window with `resize` when a frame is wider than the board.
-- A pick inside a canvas frame needs Cmd held on a cross-origin document, which chrome-devtools-axi cannot do: use `cross-tab.mjs`, which starts its own headless Chrome and sends CDP mouse events with modifiers.
+- A pick inside a canvas frame needs Cmd held on a cross-origin document, and a resize handle has no ref and needs a raw pointer drag; chrome-devtools-axi can do neither. `cross-tab.mjs` and `frame-resize.mjs` start their own headless Chrome through `cdp.mjs` and send CDP input instead.
 - Requests a frame makes run in its own renderer process and do not appear in `chrome-devtools-axi network`; prove a refusal by the frame's own report and an unchanged `/api/state`.
 - Boards stay mounted while hidden, so switching tabs never reloads a frame; only the first show of a canvas loads its iframes.
