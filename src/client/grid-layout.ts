@@ -1,15 +1,15 @@
-/** The canvas arranged by hand: rows of device ids the user dragged into
+/** The grid arranged by hand: rows of device ids the user dragged into
  *  shape, and the rules for hit-testing a drag against them.
  *
  *  A card cannot stop just anywhere. It lands top-aligned in an existing row,
- *  or it becomes a row of its own - free positions would make the canvas a
+ *  or it becomes a row of its own - free positions would make the grid a
  *  window manager, and what is being compared here are sizes, not places. */
 
 import {
-  CANVAS_DEVICES,
-  CANVAS_GAP,
-  canvasLimit,
-  canvasRows,
+  GRID_DEVICES,
+  GRID_GAP,
+  gridLimit,
+  gridRows,
   rowWidth,
   type Device,
 } from './devices.js'
@@ -45,7 +45,7 @@ export interface CardPlace {
   y: number
 }
 
-export interface CanvasPlan {
+export interface GridPlan {
   cards: CardPlace[]
   width: number
   height: number
@@ -54,17 +54,17 @@ export interface CanvasPlan {
 /** The spacing the geometry is drawn with: between cards in a row, between
  *  rows, and the label above every screen. One bundle, because every function
  *  below needs all of it and the numbers only mean anything together. */
-export interface CanvasMetrics {
+export interface GridMetrics {
   gap: number
   rowGap: number
   head: number
 }
 
-/** What a canvas shows before anyone has dragged it: the packing the automatic
+/** What a grid shows before anyone has dragged it: the packing the automatic
  *  layout always used, narrowest first, paired where the fixed limit allows. */
 export function defaultLayout(devices: Device[]): Layout {
-  const limit = canvasLimit(CANVAS_DEVICES, CANVAS_GAP)
-  return canvasRows(devices, CANVAS_GAP, limit).map((row) => row.map((d) => d.id))
+  const limit = gridLimit(GRID_DEVICES, GRID_GAP)
+  return gridRows(devices, GRID_GAP, limit).map((row) => row.map((d) => d.id))
 }
 
 /** A stored arrangement, believed only as far as it goes: unknown ids and
@@ -89,7 +89,7 @@ export function sanitizeLayout(raw: unknown, known: string[]): Layout | null {
 
 /** A size turned on joins as its own row at the bottom rather than being
  *  packed in: the arrangement is the user's, and a toggle must not shuffle it.
- *  The last size on cannot be turned off - an empty canvas is not a view of
+ *  The last size on cannot be turned off - an empty grid is not a view of
  *  anything - and the unchanged reference says the toggle was refused. */
 export function toggleDevice(layout: Layout, id: string): Layout {
   const on = layout.some((row) => row.includes(id))
@@ -107,7 +107,7 @@ interface RowGeometry {
 
 /** Rows are as tall as their tallest card plus the label above it; cards in a
  *  row share their top edge. */
-function rowGeometry(rows: Device[][], m: CanvasMetrics): RowGeometry {
+function rowGeometry(rows: Device[][], m: GridMetrics): RowGeometry {
   const heights = rows.map((row) => m.head + Math.max(...row.map((d) => d.height)))
   const tops: number[] = []
   let y = 0
@@ -123,8 +123,8 @@ function rowGeometry(rows: Device[][], m: CanvasMetrics): RowGeometry {
   }
 }
 
-/** Where every card sits, and how much canvas the arrangement needs. */
-export function planCanvas(rows: Device[][], m: CanvasMetrics): CanvasPlan {
+/** Where every card sits, and how much grid the arrangement needs. */
+export function planGrid(rows: Device[][], m: GridMetrics): GridPlan {
   const geo = rowGeometry(rows, m)
   const cards: CardPlace[] = []
   rows.forEach((row, i) => {
@@ -137,7 +137,7 @@ export function planCanvas(rows: Device[][], m: CanvasMetrics): CanvasPlan {
   return { cards, width: geo.width, height: geo.height }
 }
 
-/** The seam above row k - the top and bottom edges of the canvas for the
+/** The seam above row k - the top and bottom edges of the grid for the
  *  outermost two, the middle of the gap between the rows for the rest. */
 function seamY(geo: RowGeometry, rowGap: number, k: number): number {
   if (k === 0) return geo.tops[0] ?? 0
@@ -162,13 +162,13 @@ function columnCard(row: Device[], gap: number, x: number): ColumnHit {
   return { device: row[0]!, x: 0 }
 }
 
-/** What a pointer at `point` (canvas pixels) is asking for. Within `snap` of a
+/** What a pointer at `point` (grid pixels) is asking for. Within `snap` of a
  *  seam it is a new row there - the gap alone would be a needle to thread with
  *  a card in hand - otherwise it is a slot in the row it is over, split at the
  *  cards' centers. */
 export function dropTarget(
   rows: Device[][],
-  m: CanvasMetrics,
+  m: GridMetrics,
   point: Point,
   snap: number,
 ): DropTarget {
@@ -237,7 +237,7 @@ function sameLayout(a: Layout, b: Layout): boolean {
  *  at. */
 export function indicatorRect(
   rows: Device[][],
-  m: CanvasMetrics,
+  m: GridMetrics,
   target: DropTarget,
   point: Point,
 ): Rect {

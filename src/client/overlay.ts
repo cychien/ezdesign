@@ -1626,7 +1626,7 @@ function onMouseDown(e: MouseEvent): void {
     return
   }
   if (mode === 'off') return
-  // One annotation is composed at a time across the whole canvas: a popup open
+  // One annotation is composed at a time across the whole grid: a popup open
   // here or in any other frame means this press starts no second one - and does
   // not reach the page either, the way an armed mode's gestures never do.
   if (ui.popup || held) {
@@ -1773,7 +1773,7 @@ function isTyping(target: EventTarget | null): boolean {
  *  teardown mid-scroll would strand those styles on their page. Our own chrome
  *  is exempt so a long comment can still be scrolled inside the field. */
 function onScrollAttempt(e: Event): void {
-  // Mod+wheel is the canvas's, wherever the pointer happens to be: the shell
+  // Mod+wheel is the grid's, wherever the pointer happens to be: the shell
   // cannot hear a wheel that lands on this document, so the page's own scroll
   // is cancelled here and the deltas are handed up to move the stage instead.
   // Only while framed - in a plain tab there is no stage to hand them to.

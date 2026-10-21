@@ -5,12 +5,12 @@ import {
   defaultLayout,
   dropTarget,
   indicatorRect,
-  planCanvas,
+  planGrid,
   sanitizeLayout,
   toggleDevice,
-} from '../src/client/canvas-layout.js'
-import type { Layout } from '../src/client/canvas-layout.js'
-import { CANVAS_DEVICES, DESKTOP, MOBILE, TABLET } from '../src/client/devices.js'
+} from '../src/client/grid-layout.js'
+import type { Layout } from '../src/client/grid-layout.js'
+import { GRID_DEVICES, DESKTOP, MOBILE, TABLET } from '../src/client/devices.js'
 
 const M = { gap: 14, rowGap: 26, head: 19 }
 const SNAP = 30
@@ -21,13 +21,13 @@ const SNAP = 30
 const rows = () => [[MOBILE, TABLET], [DESKTOP]]
 const layout = (): Layout => [['mobile', 'tablet'], ['desktop']]
 
-test('an untouched canvas starts on the automatic packing', () => {
+test('an untouched grid starts on the automatic packing', () => {
   assert.deepEqual(defaultLayout([MOBILE, TABLET, DESKTOP]), [['mobile', 'tablet'], ['desktop']])
 })
 
 // ------------------------------------------------------------------ storage
 
-const KNOWN = CANVAS_DEVICES.map((d) => d.id)
+const KNOWN = GRID_DEVICES.map((d) => d.id)
 
 test('a stored arrangement is believed as far as it goes', () => {
   assert.deepEqual(sanitizeLayout([['desktop'], ['mobile', 'tablet']], KNOWN), [
@@ -72,7 +72,7 @@ test('the last size on cannot be turned off', () => {
 // ------------------------------------------------------------------ geometry
 
 test('cards share their row top and rows stack with the row gap between', () => {
-  const plan = planCanvas(rows(), M)
+  const plan = planGrid(rows(), M)
   assert.deepEqual(plan.cards, [
     { id: 'mobile', x: 0, y: 0 },
     { id: 'tablet', x: 389, y: 0 },
@@ -80,14 +80,14 @@ test('cards share their row top and rows stack with the row gap between', () => 
   ])
 })
 
-test('the canvas is as wide as its widest row and as tall as the stack', () => {
-  const plan = planCanvas(rows(), M)
+test('the grid is as wide as its widest row and as tall as the stack', () => {
+  const plan = planGrid(rows(), M)
   assert.equal(plan.width, 1501)
   assert.equal(plan.height, 785 + M.head + DESKTOP.height)
 })
 
-test('an empty arrangement needs no canvas', () => {
-  assert.deepEqual(planCanvas([], M), { cards: [], width: 0, height: 0 })
+test('an empty arrangement needs no grid', () => {
+  assert.deepEqual(planGrid([], M), { cards: [], width: 0, height: 0 })
 })
 
 // ------------------------------------------------------------------ hit-testing
@@ -114,7 +114,7 @@ test('the seam between rows is a new row, and it is wider than the gap it sits i
   assert.deepEqual(hit(100, 772 + SNAP), { kind: 'row', at: 1 })
 })
 
-test('the canvas edges are seams too, above everything and below it', () => {
+test('the grid edges are seams too, above everything and below it', () => {
   assert.deepEqual(hit(100, 4), { kind: 'row', at: 0 })
   assert.deepEqual(hit(100, -80), { kind: 'row', at: 0 })
   assert.deepEqual(hit(100, 1592 - 4), { kind: 'row', at: 2 })

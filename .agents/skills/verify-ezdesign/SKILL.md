@@ -107,7 +107,7 @@ Run axi from a neutral directory (or give `screenshot` absolute paths): relative
 | `textbox "整體想法或補充說明，輸入 / 用指令（選填）"` / key `n` | the batch note box |
 | `button "送出給 agent"` / `Meta+Enter` | send the queue as one batch |
 | `"Agent 未連線"` / `"Agent 已連線"` / `status "Agent 修改中"` | agent state: no poller / a `poll` is waiting / a batch is out |
-| `button "電腦"`, `button "換一個尺寸"`, `button "全部尺寸"` / keys `1` `2` `3` `4` | device size, size menu, all-sizes canvas |
+| `button "電腦"`, `button "換一個尺寸"`, `button "全部尺寸"` / keys `1` `2` `3` `4` | device size, size menu, all-sizes grid |
 | `button "快捷鍵"` | shortcut panel |
 
 Plain keys (`e`, `r`, `n`, `1`-`4`) are ignored while a text field has focus; press `Escape` first.

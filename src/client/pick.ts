@@ -252,7 +252,7 @@ export function reducePick(state: PickState | null, e: PickEvent): Result {
 
     case 'ready': {
       if (!state) return { state, effects: [] }
-      // Every frame on a canvas reports in after a navigation, and only the one
+      // Every frame on a grid reports in after a navigation, and only the one
       // the pick is out to has anything to say about it.
       if (elsewhere(state, e.frame)) return { state, effects: [] }
       const here = { ...state, page: e.page }

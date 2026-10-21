@@ -21,7 +21,7 @@ $ npx -y @cychien/ezdesign@latest poll http://localhost:5173/                   
   guessing which part of the page you meant. Paste or drop a screenshot into any comment and the
   agent gets a path to it; `/element` points a comment at a second element, so "make this match
   that one" arrives as a `file:line` too.
-- **Every screen at once.** Review on one device or lay all three out on a canvas - desktop,
+- **Every screen at once.** Review on one device or lay all three out on a grid - desktop,
   iPad and iPhone side by side at their real viewports, scrolling together. An annotation stays on
   the screen it was made on, and reaches the agent tagged with the width it was made at.
 - **Built for the loop.** In ACP mode, ezdesign owns the agent and keeps its live work, questions,
@@ -103,7 +103,7 @@ Two modes, and the toolbar shows which one is armed. Both leave the page live un
   which is what tells two instances of the same component apart. This is the mode for "this whole
   block", "these four cards", "the spacing through here".
 
-One comment is composed at a time - across every preview on the canvas, not just the one you are
+One comment is composed at a time - across every preview on the grid, not just the one you are
 in - so a box drawn in one screen cannot open a second comment box behind the one you are writing.
 
 ## The comment box
@@ -220,36 +220,36 @@ half of what a responsive review is looking at:
 | `3` | 電腦 | 1440×788 - a 1440×900 laptop screen, less the menu bar and the browser's own |
 
 The sizes are the **page area** a browser leaves on that device, not the screen it leaves it on -
-so a card on the canvas stops showing the page exactly where the real thing stops showing it. On
+so a card on the grid stops showing the page exactly where the real thing stops showing it. On
 its own a size takes only its width from the table and the height from your screen: one preview
-gets the whole stage to show the page in, and the canvas is where the fold is what you are
+gets the whole stage to show the page in, and the grid is where the fold is what you are
 checking.
 
 The names are shelves, not machines - a 手機 row naming a handset would claim a precision the
 row does not have, when phone widths run from 360 up past 430. The sizes are still taken from
 real machines; the comments in `devices.ts` say which.
 
-**`4` lays them out on one canvas** - phone and tablet side by side, the desktop on the row below.
+**`4` lays them out on one grid** - phone and tablet side by side, the desktop on the row below.
 The control in the stage's top corner picks which sizes are on it: the three above, plus a portrait
 tablet (834×1018) that is off by default.
 
-The canvas is drawn at **true size**, always. A 375 card is 375 pixels whether it is standing alone
+The grid is drawn at **true size**, always. A 375 card is 375 pixels whether it is standing alone
 or with three others beside it - a scaled 375 is not 375 to a media query, and a page measured at a
 size nobody browses at is not a measurement. Turning a size off does not resize or rearrange the
 ones that are left. What does not fit is what the dragging is for.
 
-Every card is the device it names, at its own height. What keeps the canvas short enough to work
+Every card is the device it names, at its own height. What keeps the grid short enough to work
 on is the two-row layout, not a cap on the cards - a card cut to a shared height would be lying
 about where the fold falls, which is half of what the preview is for.
 
-**Drag a card by its label to rearrange the canvas.** A card cannot stop just anywhere: it lands
+**Drag a card by its label to rearrange the grid.** A card cannot stop just anywhere: it lands
 top-aligned in an existing row, or on a row of its own, and a line marks where it would go -
 upright between two cards, flat between two rows. The arrangement is remembered, and a size turned
 on later joins as its own row at the bottom rather than reshuffling what you laid out.
 
-**Drag the background to move the canvas.** The frames are the app: a press inside one belongs to
-the page, so the backdrop and the gaps are what the canvas is panned by. That is also why the
-canvas does not have to fit - what is off the edge is a drag away.
+**Drag the background to move the grid.** The frames are the app: a press inside one belongs to
+the page, so the backdrop and the gaps are what the grid is panned by. That is also why the
+grid does not have to fit - what is off the edge is a drag away.
 
 Scrolling inside any one preview scrolls the others to the same point in the page, and navigating
 one - a link, back, forward - takes all of them: annotations are filtered by path, and three
@@ -258,7 +258,7 @@ previews on three pages is three separate reviews.
 An annotation belongs to the screen it was made on: mark up the iPhone card and the pin lives
 there, not on all three. The agent gets `@mobile 390x844` in the anchor either way. Everything the
 overlay draws - the comment box, the element label, the pins - is drawn back up to full size, so a
-canvas scaled to 60% is still one you can read and type into.
+grid scaled to 60% is still one you can read and type into.
 
 ## Configuration
 

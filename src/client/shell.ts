@@ -37,13 +37,13 @@ import { type Usage, planName, usageNote, usageRows } from './usage-note.js'
 import type { SlashCommand } from './slash.js'
 import type { Device, Size } from './devices.js'
 import {
-  CANVAS_GAP,
-  CANVAS_ROW_GAP,
-  CANVAS_DEFAULT,
-  CANVAS_DEVICES,
+  GRID_GAP,
+  GRID_ROW_GAP,
+  GRID_DEFAULT,
+  GRID_DEVICES,
   DESKTOP,
   DEVICES,
-  CANVAS_ZOOM,
+  GRID_ZOOM,
   deviceById,
   deviceLabel,
   fitWidth,
@@ -53,11 +53,11 @@ import {
   defaultLayout,
   dropTarget,
   indicatorRect,
-  planCanvas,
+  planGrid,
   sanitizeLayout,
   toggleDevice,
-} from './canvas-layout.js'
-import type { CanvasMetrics, Layout } from './canvas-layout.js'
+} from './grid-layout.js'
+import type { GridMetrics, Layout } from './grid-layout.js'
 import type { AnchorWire, DraftWire, NumberedRef, RefWire } from './draft.js'
 import {
   bodyFromComment,
@@ -272,26 +272,26 @@ const TICK_ICON = 14
 let snapshot: SnapshotWire | null = null
 let annotateMode: Mode = 'off'
 let deviceId = DESKTOP.id
-/** Every device on one canvas instead of one at a time. */
+/** Every device on one grid instead of one at a time. */
 let multi = false
-/** Which sizes the canvas shows and where each one sits: rows of device ids,
+/** Which sizes the grid shows and where each one sits: rows of device ids,
  *  top to bottom. Dragged into shape by the user, so it is state of its own
  *  rather than something the sizes imply. */
-let layout: Layout = defaultLayout(CANVAS_DEVICES.filter((d) => CANVAS_DEFAULT.includes(d.id)))
+let layout: Layout = defaultLayout(GRID_DEVICES.filter((d) => GRID_DEFAULT.includes(d.id)))
 
-/** Never empty - the canvas has to be a canvas of something - and in the
- *  table's own order for the picker; where they sit on the canvas is `layout`'s
+/** Never empty - the grid has to be a grid of something - and in the
+ *  table's own order for the picker; where they sit on the grid is `layout`'s
  *  to say. */
 function shownDevices(): Device[] {
-  const on = CANVAS_DEVICES.filter((d) => layout.some((row) => row.includes(d.id)))
-  return on.length ? on : [CANVAS_DEVICES[0]!]
+  const on = GRID_DEVICES.filter((d) => layout.some((row) => row.includes(d.id)))
+  return on.length ? on : [GRID_DEVICES[0]!]
 }
 
-/** Unlike `deviceById`, drawn from everything the canvas can show - the
+/** Unlike `deviceById`, drawn from everything the grid can show - the
  *  portrait tablet is not in the single-view table. */
-const canvasDevice = (id: string): Device => CANVAS_DEVICES.find((d) => d.id === id) ?? DESKTOP
+const gridDevice = (id: string): Device => GRID_DEVICES.find((d) => d.id === id) ?? DESKTOP
 
-const canvasLayout = (): Device[][] => layout.map((row) => row.map(canvasDevice))
+const gridLayout = (): Device[][] => layout.map((row) => row.map(gridDevice))
 
 const VIEW_KEY = 'ezdesign:view'
 
@@ -309,13 +309,13 @@ function loadView(): void {
     multi = Boolean(stored?.multi)
     const arranged = sanitizeLayout(
       stored?.layout,
-      CANVAS_DEVICES.map((d) => d.id),
+      GRID_DEVICES.map((d) => d.id),
     )
     if (arranged) layout = arranged
-    // Sessions from before the canvas could be arranged stored only which
+    // Sessions from before the grid could be arranged stored only which
     // sizes were on; they start on the default packing of those sizes.
     else if (Array.isArray(stored?.shown)) {
-      const kept = CANVAS_DEVICES.filter((d) => (stored.shown as unknown[]).includes(d.id))
+      const kept = GRID_DEVICES.filter((d) => (stored.shown as unknown[]).includes(d.id))
       if (kept.length) layout = defaultLayout(kept)
     }
   } catch {}
@@ -661,7 +661,7 @@ function openDeviceMenu(): void {
 }
 
 // Opening the menu decides nothing - looking at the sizes on offer is not
-// choosing one. Picking a row is, and `setDevice` leaves the canvas whichever
+// choosing one. Picking a row is, and `setDevice` leaves the grid whichever
 // row it is, so the size already named still gets you back.
 deviceCaret.onclick = () => {
   if (deviceMenuOpen) closeDeviceMenu()
@@ -892,21 +892,21 @@ function paintUpdate(s: SnapshotWire): void {
 }
 
 /** The stage and what floats over it. The picker cannot live inside the stage:
- *  that scrolls, and a control that scrolls away with the canvas is one you have
+ *  that scrolls, and a control that scrolls away with the grid is one you have
  *  to drag back to before you can use it. */
 const stageWrap = h('div', 'ez-stage-wrap')
 const stage = h('div', 'ez-stage')
 /** What the frames sit on, and what the stage scrolls. Its own element rather
- *  than the stage itself: it is sized to its contents and centred, so a canvas
+ *  than the stage itself: it is sized to its contents and centred, so a grid
  *  wider than the stage overflows in the one direction the stage can scroll to
  *  reach, instead of being centred half-way out of view. */
-const canvas = h('div', 'ez-canvas')
-stage.appendChild(canvas)
+const grid = h('div', 'ez-grid')
+stage.appendChild(grid)
 
 /** The variant strip: what the agent produced, across the bottom of the stage.
  *
  *  Across the stage rather than in the sidebar because it is about the *page* -
- *  every preview on the canvas shows the selected variant at once, and the thing
+ *  every preview on the grid shows the selected variant at once, and the thing
  *  you are comparing is what you are looking at, not what you are reading.
  *
  *  One pill per live round, stacked. Every round's choice is standing on the
@@ -1332,9 +1332,9 @@ function roundPill(round: ExploreWire): HTMLElement {
   return pill
 }
 
-/** Which sizes the canvas shows. Its own control, in the corner of the thing it
- *  changes rather than up in the header: what is on the canvas is a property of
- *  the canvas, and the header is already carrying the one question of whether to
+/** Which sizes the grid shows. Its own control, in the corner of the thing it
+ *  changes rather than up in the header: what is on the grid is a property of
+ *  the grid, and the header is already carrying the one question of whether to
  *  be on it at all. */
 const shownBtn = h('button', 'ez-shown-btn')
 shownBtn.append(icon(Grid02Icon as IconNode, 14))
@@ -1347,7 +1347,7 @@ const shownMenu = h('div', 'ez-menu ez-menu-right')
 shownMenu.setAttribute('role', 'menu')
 shownMenu.setAttribute('aria-label', '畫布上的尺寸')
 
-const shownItems = CANVAS_DEVICES.map((d) => {
+const shownItems = GRID_DEVICES.map((d) => {
   const item = h('button', 'ez-menu-item')
   item.setAttribute('role', 'menuitemcheckbox')
   item.dataset.device = d.id
@@ -1375,7 +1375,7 @@ function paintShown(): void {
     const checked = on.some((d) => d.id === item.dataset.device)
     item.setAttribute('aria-checked', String(checked))
     item.classList.toggle('ez-on', checked)
-    // The last one on cannot be turned off: an empty canvas is not a view of
+    // The last one on cannot be turned off: an empty grid is not a view of
     // anything, and the way back from one is not obvious.
     item.toggleAttribute('disabled', checked && on.length === 1)
   }
@@ -1399,19 +1399,19 @@ function toggleShown(id: string): void {
     frames.delete(id)
     if (popupFrame === id) setPopupFrame(null)
   } else {
-    const device = canvasDevice(id)
+    const device = gridDevice(id)
     // Assembled off the document and dressed before it joins: an absolutely
-    // positioned card with no left/top yet sits at the canvas origin, and a
+    // positioned card with no left/top yet sits at the grid origin, and a
     // paint slipping in there would flash a blank frame over the first card.
     const holder = document.createDocumentFragment()
     const frame = mountFrame(id, device, holder)
-    const placed = planCanvas(canvasLayout(), canvasMetrics()).cards.find((c) => c.id === id)
+    const placed = planGrid(gridLayout(), gridMetrics()).cards.find((c) => c.id === id)
     if (placed) {
       frame.card.style.left = `${placed.x}px`
       frame.card.style.top = `${placed.y}px`
     }
-    paintFrame(frame, device, device.height, CANVAS_ZOOM, false)
-    canvas.appendChild(holder)
+    paintFrame(frame, device, device.height, GRID_ZOOM, false)
+    grid.appendChild(holder)
   }
   settleFrames()
 }
@@ -1442,7 +1442,7 @@ shownWrap.addEventListener('keydown', (e) => {
  *  of its own. */
 interface Frame {
   id: string
-  /** Label and screen together - what the canvas lays out as one item. */
+  /** Label and screen together - what the grid lays out as one item. */
   card: HTMLElement
   head: HTMLElement
   /** Laid out at the scaled size, so the stage lays frames out in the space
@@ -1461,7 +1461,7 @@ const SINGLE = 'single'
 const frames = new Map<string, Frame>()
 
 /** The frame with an annotation popup open, if any. One annotation is composed
- *  at a time across the whole canvas: while it is open every other frame is
+ *  at a time across the whole grid: while it is open every other frame is
  *  held - no highlight, no selection bubble, no second popup. */
 let popupFrame: string | null = null
 
@@ -1635,16 +1635,16 @@ function paintFrame(
 
 function paintFrames(): void {
   if (multi) {
-    const plan = planCanvas(canvasLayout(), canvasMetrics())
-    canvas.style.width = `${plan.width}px`
-    canvas.style.height = `${plan.height}px`
+    const plan = planGrid(gridLayout(), gridMetrics())
+    grid.style.width = `${plan.width}px`
+    grid.style.height = `${plan.height}px`
     for (const placed of plan.cards) {
       const frame = frames.get(placed.id)
       if (!frame) continue
       frame.card.style.left = `${placed.x}px`
       frame.card.style.top = `${placed.y}px`
-      const d = canvasDevice(placed.id)
-      paintFrame(frame, d, d.height, CANVAS_ZOOM, false)
+      const d = gridDevice(placed.id)
+      paintFrame(frame, d, d.height, GRID_ZOOM, false)
     }
     return
   }
@@ -1653,9 +1653,9 @@ function paintFrames(): void {
   const device = deviceById(deviceId)
   const fluid = Boolean(device.fluid)
   // The single desktop view has no card to centre - it is the stage - so the
-  // canvas gets out of the way and hands the whole box to the frame.
-  canvas.style.width = fluid ? '100%' : ''
-  canvas.style.height = fluid ? '100%' : ''
+  // grid gets out of the way and hands the whole box to the frame.
+  grid.style.width = fluid ? '100%' : ''
+  grid.style.height = fluid ? '100%' : ''
   const box = stageBox()
   const zoom = fluid ? 1 : fitWidth(device.width, box.width)
   // The stage's height, in the frame's own pixels: one size on its own gets the
@@ -1665,17 +1665,17 @@ function paintFrames(): void {
 
 /** A repaint the cards glide through instead of jumping to.
  *
- *  Measured in screen coordinates, not the canvas's own: the repaint can shrink
- *  the canvas, and a stage scrolled near its end then clamps, shifting every
+ *  Measured in screen coordinates, not the grid's own: the repaint can shrink
+ *  the grid, and a stage scrolled near its end then clamps, shifting every
  *  card on screen at once. Transitioning left/top would start the glide from
- *  where the card used to be in the canvas, not where the user last saw it -
+ *  where the card used to be in the grid, not where the user last saw it -
  *  so each card is measured before and after, pinned back on its old screen
  *  position with a transform, and released. The timer restarts with each call
  *  so an early one cannot cut a later glide short. */
 let settleTimer = 0
 function settleFrames(): void {
   clearTimeout(settleTimer)
-  canvas.removeAttribute('data-settle')
+  grid.removeAttribute('data-settle')
   const before = new Map<string, DOMRect>()
   for (const f of frames.values()) before.set(f.id, f.card.getBoundingClientRect())
   for (const f of frames.values()) f.card.style.transform = ''
@@ -1694,10 +1694,10 @@ function settleFrames(): void {
   if (!moved.length) return
   // The reflow between pinning and releasing, so the glide has a start to run
   // from rather than both writes collapsing into one.
-  void canvas.offsetWidth
-  canvas.setAttribute('data-settle', '')
+  void grid.offsetWidth
+  grid.setAttribute('data-settle', '')
   for (const f of moved) f.card.style.transform = ''
-  settleTimer = window.setTimeout(() => canvas.removeAttribute('data-settle'), 240)
+  settleTimer = window.setTimeout(() => grid.removeAttribute('data-settle'), 240)
 }
 
 /** `ez-framed` is device chrome on show - a card with an edge, and room around
@@ -1713,15 +1713,15 @@ function paintStageClasses(): void {
 function rebuildStage(): void {
   abortPick('mode')
   popupFrame = null
-  canvas.replaceChildren()
+  grid.replaceChildren()
   frames.clear()
   if (multi) {
-    for (const row of canvasLayout()) {
-      for (const d of row) mountFrame(d.id, d, canvas)
+    for (const row of gridLayout()) {
+      for (const d of row) mountFrame(d.id, d, grid)
     }
   } else {
     const device = deviceById(deviceId)
-    mountFrame(SINGLE, device, canvas)
+    mountFrame(SINGLE, device, grid)
   }
   paintFrames()
 }
@@ -2575,7 +2575,7 @@ root.append(stageWrap, sidebar)
 
 /** Dragged by its background, because the frames are the app under review: a
  *  press inside one is the page's own and never reaches this document at all.
- *  What is left - the backdrop, the gaps, the card labels - is the canvas, and
+ *  What is left - the backdrop, the gaps, the card labels - is the grid, and
  *  dragging any of it moves the view.
  *
  *  Scroll position rather than a transform of its own: the wheel, the trackpad
@@ -2591,7 +2591,7 @@ stage.addEventListener('pointerdown', (e) => {
   const startLeft = stage.scrollLeft
   const startTop = stage.scrollTop
   // Capture, so the drag survives the pointer crossing a frame - which is most
-  // of the canvas, and which would otherwise swallow every move.
+  // of the grid, and which would otherwise swallow every move.
   stage.setPointerCapture(e.pointerId)
   document.body.classList.add('ez-panning')
   const move = (ev: PointerEvent) => {
@@ -2624,8 +2624,8 @@ function cardHead(): number {
   return 19
 }
 
-function canvasMetrics(): CanvasMetrics {
-  return { gap: CANVAS_GAP, rowGap: CANVAS_ROW_GAP, head: cardHead() }
+function gridMetrics(): GridMetrics {
+  return { gap: GRID_GAP, rowGap: GRID_ROW_GAP, head: cardHead() }
 }
 
 /** Where a dragged card would land: an upright bar in the gap between two
@@ -2640,7 +2640,7 @@ const DRAG_SLOP = 4
  *  the row beside it. Wider than the gap itself, which would be a needle to
  *  thread with a card in hand. */
 const ROW_SNAP = 30
-/** The stage scrolls itself while a drag leans on its edge: the canvas is
+/** The stage scrolls itself while a drag leans on its edge: the grid is
  *  routinely taller than the window, and the far rows have to be reachable
  *  without putting the card down to scroll. The speed ramps with how far into
  *  the band the pointer is, so the scroll eases in instead of lurching. */
@@ -2648,7 +2648,7 @@ const PAN_EDGE = 44
 const PAN_SPEED = 18
 
 /** Cards are dragged by their labels - a press inside the screen belongs to
- *  the page - and land in the slots the canvas offers: top-aligned in a row,
+ *  the page - and land in the slots the grid offers: top-aligned in a row,
  *  or as a row of their own. The card is moved with a transform and the drop
  *  only rewrites `layout`, so the iframe is never re-mounted and the page
  *  inside keeps whatever it was doing. */
@@ -2675,11 +2675,11 @@ function beginCardDrag(e: PointerEvent, frame: Frame): void {
 
   // Everything the per-frame work needs, read once at lift: nothing here can
   // change under a drag, and reading it back out of the DOM sixty times a
-  // second buys nothing but reflows. The canvas's client position is the one
+  // second buys nothing but reflows. The grid's client position is the one
   // thing that does move - by exactly what the stage scrolls - so it is
   // carried forward from the scroll offsets instead of remeasured.
-  const rows = canvasLayout()
-  const metrics = canvasMetrics()
+  const rows = gridLayout()
+  const metrics = gridMetrics()
   let homeX = 0
   let homeY = 0
   let originX = 0
@@ -2735,7 +2735,7 @@ function beginCardDrag(e: PointerEvent, frame: Frame): void {
     if (dx) stage.scrollLeft += dx
     if (dy) stage.scrollTop += dy
     // Every frame, not just after a move: edge-scrolling and the wheel both
-    // slide the canvas under a pointer that is standing still.
+    // slide the grid under a pointer that is standing still.
     follow()
     raf = requestAnimationFrame(tick)
   }
@@ -2753,7 +2753,7 @@ function beginCardDrag(e: PointerEvent, frame: Frame): void {
     dragging = true
     homeX = frame.card.offsetLeft
     homeY = frame.card.offsetTop
-    const origin = canvas.getBoundingClientRect()
+    const origin = grid.getBoundingClientRect()
     originX = origin.left
     originY = origin.top
     scrollX = stage.scrollLeft
@@ -2761,7 +2761,7 @@ function beginCardDrag(e: PointerEvent, frame: Frame): void {
     stageEdge = stage.getBoundingClientRect()
     document.body.classList.add('ez-arranging')
     frame.card.classList.add('ez-card-drag')
-    canvas.appendChild(dropHint)
+    grid.appendChild(dropHint)
     document.addEventListener('keydown', onKey, true)
     raf = requestAnimationFrame(tick)
   }
@@ -3019,7 +3019,7 @@ setInterval(() => {
 
 function setDevice(id: string): void {
   if (!multi && id === deviceId) return
-  // Only leaving the canvas replaces the frame. Switching device inside single
+  // Only leaving the grid replaces the frame. Switching device inside single
   // view resizes the one that is there, which is what keeps whatever the app is
   // part-way through - a form, a menu, a route - alive across the switch.
   const remount = multi
@@ -4528,13 +4528,13 @@ window.addEventListener('message', (e: MessageEvent) => {
     open?: boolean
   }
   // A mod+wheel caught inside a preview: the page under the pointer stays put
-  // and the stage moves instead - panning the canvas without having to aim for
+  // and the stage moves instead - panning the grid without having to aim for
   // the gaps between the frames.
   if (data?.type === 'ez:wheel') {
     stage.scrollLeft += data.dx ?? 0
     stage.scrollTop += data.dy ?? 0
   }
-  // Where one preview is scrolled to is where all of them should be: the canvas
+  // Where one preview is scrolled to is where all of them should be: the grid
   // exists to compare the same part of the page at three widths, and three
   // frames scrolled apart is three unrelated screenshots.
   // While an annotation popup is open, only its own frame may lead: anything
