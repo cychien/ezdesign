@@ -620,13 +620,20 @@ class Workspace {
     for (let n = 2; ; n++) if (!taken.has(`${UNTITLED} ${n}`)) return `${UNTITLED} ${n}`
   }
 
+  /** Tab order is `createdAt`, so two canvases made in one millisecond must
+   *  not tie: the tie-break is a random id. */
+  private nextCreatedAt(): number {
+    const latest = Math.max(-Infinity, ...[...this.canvases.values()].map((h) => h.manifest.createdAt))
+    return Math.max(this.now(), latest + 1)
+  }
+
   private createCanvas(name?: string): Held {
     let id: CanvasId
     do id = randomBytes(6).toString('hex') as CanvasId
     while (this.canvases.has(id) || existsSync(this.dir(id)))
     mkdirSync(join(this.dir(id), 'frames'), { recursive: true })
     const held: Held = {
-      manifest: { schema: 1, id, name: name ?? this.untitledName(), createdAt: this.now(), frames: [] },
+      manifest: { schema: 1, id, name: name ?? this.untitledName(), createdAt: this.nextCreatedAt(), frames: [] },
       layout: { schema: 1, rects: {} },
       recentOps: [],
     }

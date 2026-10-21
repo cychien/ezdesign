@@ -126,6 +126,16 @@ test('CV-tab-persist: the lifecycle leaves exactly the expected files', () => {
   assert.equal(second.name, '二')
 })
 
+test('canvases made in one millisecond keep the order they were made in', () => {
+  const { workspace } = setup({ now: () => 1_000 })
+  const names = ['一', '二', '三', '四', '五', '六']
+  for (const name of names) unwrap(workspace.user.create(name))
+  assert.deepEqual(
+    workspace.read.inventory().canvases.map((c) => c.name),
+    names,
+  )
+})
+
 test('a restore writes nothing; the first shell to connect gets an empty canvas', () => {
   const { workspace, tree, view } = setup()
   assert.deepEqual(tree(), [])
