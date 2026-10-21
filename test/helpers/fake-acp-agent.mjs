@@ -346,6 +346,7 @@ const app = agent({ name: 'fake-acp-agent' })
           log,
           forkedFrom: Object.fromEntries(forkedFrom),
           mcpBySession: Object.fromEntries([...mcpBySession].map(([k, v]) => [k, v.names])),
+          mcpServers: Object.fromEntries([...mcpBySession].map(([k, v]) => [k, v.servers])),
         }),
       )
       return { stopReason: 'end_turn' }
@@ -459,6 +460,44 @@ const app = agent({ name: 'fake-acp-agent' })
         requestedSchema,
       })
       await say(JSON.stringify(response))
+      return { stopReason: 'end_turn' }
+    }
+    // A turn that builds a canvas through the canvas tools it was handed, the way
+    // a real agent does: permission for each tool, then the call, a pause between
+    // frames so a watcher sees them arrive one by one. Replies with every result.
+    if (text.includes('建立 design system')) {
+      prompts.push({ sessionId, text })
+      const server = (mcpBySession.get(sessionId)?.servers ?? []).find((s) => s.name === 'ezdesign-canvas')
+      if (!server) {
+        await say('no canvas server was offered')
+        return { stopReason: 'end_turn' }
+      }
+      let id = 0
+      await mcpCall(server, 'initialize', {
+        protocolVersion: '2025-06-18',
+        capabilities: {},
+        clientInfo: { name: 'fake-acp-agent', version: '1' },
+      }, ++id)
+      const results = []
+      const call = async (name, args) => {
+        const picked = await askPermission(ctx, sessionId, `mcp__ezdesign-canvas__${name}`)
+        if (picked !== 'allow-once' && picked !== 'allow-always') throw new Error(`not allowed: ${picked}`)
+        const { body } = await mcpCall(server, 'tools/call', { name, arguments: args }, ++id)
+        const result = body?.result ?? { error: body?.error }
+        results.push({ name, result })
+        return result.structuredContent
+      }
+      const page = (title, color) =>
+        `<!doctype html><html><head><meta charset="utf-8"><title>${title}</title>` +
+        `<style>body{margin:0;font-family:sans-serif;background:${color}}h1{margin:32px}</style></head>` +
+        `<body><h1>${title}</h1></body></html>`
+      await call('list_canvases', {})
+      const made = await call('create_canvas', { name: 'Design system' })
+      for (const [title, color] of [['Colors', '#fef3c7'], ['Type', '#e0f2fe'], ['Buttons', '#dcfce7']]) {
+        await new Promise((r) => setTimeout(r, 500))
+        await call('add_frame', { canvasId: made.canvasId, title, html: page(title, color), width: 390 })
+      }
+      await say(JSON.stringify(results))
       return { stopReason: 'end_turn' }
     }
     // A turn that ends properly having said nothing - an agent that only ran

@@ -77,6 +77,9 @@ export class BoardView {
   private readonly empty: HTMLElement
   private readonly readout: HTMLElement
   private camera: Camera | null
+  /** No saved camera and no gesture yet: the board keeps everything in view as
+   *  frames arrive, so frames an agent adds one by one are all on screen. */
+  private following: boolean
   private readonly cards = new Map<FrameId, Card>()
   private readonly mounted = new Set<FrameId>()
   private readonly loading = new Set<FrameId>()
@@ -100,6 +103,7 @@ export class BoardView {
   ) {
     // The saved one, or null for a canvas never looked at: fit-all on first show.
     this.camera = canvas.camera ?? null
+    this.following = !canvas.camera
     this.el = el('div', 'ez-board')
     this.el.dataset.testid = TEST_IDS.board
     this.el.dataset.canvasId = canvas.id
@@ -179,7 +183,12 @@ export class BoardView {
     })
     this.world.appendChild(fresh)
     this.empty.hidden = canvas.frames.length > 0
-    if (this.shown) this.remount()
+    if (!this.shown) return
+    if (this.following) {
+      this.camera = this.fitCamera()
+      this.requestPaint()
+    }
+    this.remount()
   }
 
   /** First time: measure once, fit-all if no camera was saved, plan mounts.
@@ -397,6 +406,7 @@ export class BoardView {
   }
 
   private setCamera(camera: Camera): void {
+    this.following = false
     this.camera = camera
     this.el.classList.add('ez-moving')
     this.requestPaint()

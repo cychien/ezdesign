@@ -231,10 +231,16 @@ export interface FeedbackBatch {
   skills?: string[]
   /** Not feedback: builds the design harness's files; carries no items or note. */
   setup?: true
+  /** The tab the user was on when they sent this, stamped by `/send`, so the
+   *  turn says where they were rather than where the shell is at delivery. */
+  view?: BatchView
   sentAt: number
   deliveredAt?: number
   ackedAt?: number
 }
+
+/** Where the user was: the App at a page, or a canvas. */
+export type BatchView = { tab: 'app'; page: string } | { tab: 'canvas'; canvasId: string }
 
 /** One annotation as it reads back in the conversation log. `where` is a short,
  *  human-recognisable hint — not the agent-facing anchor. */

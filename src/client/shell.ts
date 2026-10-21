@@ -3228,6 +3228,7 @@ async function sendBatch(): Promise<void> {
         attachments,
         references,
         ...(skills.length ? { skills } : {}),
+        ...(canvasUi ? { view: canvasUi.batchView(nav.url) } : {}),
       }),
     })
     // Reset, not discard: the batch owns these files now. The skill chip goes

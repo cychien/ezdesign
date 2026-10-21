@@ -40,7 +40,9 @@ import {
 } from 'node:fs'
 import { join } from 'node:path'
 import type { FrameRef } from '../protocol.js'
-import { type FrameOverlayConfig, frameUrl, renderFrameDocument } from './frame-document.js'
+import { type FrameOverlayConfig, checkFrameHtml, frameUrl, renderFrameDocument } from './frame-document.js'
+import { autoPlace, defaultHeightFor, normalizeRect } from './place.js'
+import { FrameFileWatcher } from './watch.js'
 import {
   CANVASES_DIR,
   type Canvas,
@@ -48,10 +50,15 @@ import {
   type CanvasId,
   type CanvasInventory,
   type CanvasSummary,
+  DEFAULT_FRAME_WIDTH,
   type FrameId,
   MAX_CANVAS_NAME,
+  MAX_FRAMES_PER_CANVAS,
+  MAX_FRAME_TITLE,
   type Outcome,
+  type Point,
   type Rect,
+  type Size,
   type TabId,
   type ViewStore,
   asCanvasId,
@@ -61,6 +68,39 @@ import type { CanvasSnapshotWire, CanvasWire, ViewWire } from './wire.js'
 
 /** The tab strip's `+` and the empty start: one name, numbered past those taken. */
 export const UNTITLED = '未命名 canvas'
+
+export interface AddFrameInput {
+  canvasId: string
+  title: string
+  html: string
+  size?: Partial<Size>
+  /** Only at creation: after that the rect is the user's. Absent auto-places. */
+  position?: Point
+}
+
+export interface UpdateFrameInput {
+  canvasId: string
+  frameId: string
+  html?: string
+  title?: string
+  /** The hash the agent last read. Given and stale: `FRAME_CONFLICT`, nothing
+   *  written. */
+  expectedHash?: string
+}
+
+/** The agent's side: documents and titles. A canvas it creates or reopens
+ *  becomes the active tab. No geometry after a frame exists. */
+export interface AgentCanvasPort {
+  list(): CanvasInventory
+  create(name: string): Outcome<Canvas>
+  /** Archived canvases too: looking is not changing. */
+  read(canvasId: string): Outcome<Canvas>
+  reopen(canvasId: string): Outcome<Canvas>
+  addFrame(input: AddFrameInput): Outcome<CanvasFrame>
+  updateFrame(input: UpdateFrameInput): Outcome<CanvasFrame>
+  /** Soft, like the user's: the user can undo it. */
+  removeFrame(canvasId: string, frameId: string): Outcome<CanvasFrame>
+}
 
 /** The user's side, from the shell's routes: the canvas lifecycle and the view.
  *  No route can write a document. */
@@ -126,10 +166,11 @@ export interface CanvasWorkspaceOptions {
 }
 
 export interface CanvasWorkspace {
+  readonly agent: AgentCanvasPort
   readonly user: UserCanvasPort
   readonly read: CanvasReader
-  /** After the session's port is bound: read every manifest and run the startup
-   *  sweep. Never creates a canvas - a restore must not write into a project
+  /** After the session's port is bound: read every manifest, run the startup
+   *  sweep and start watching frame files. Never creates a canvas - a restore must not write into a project
    *  nobody is looking at. Idempotent. */
   start(): void
   /** A review shell connected: make sure it has a tab to show, opening an empty
@@ -146,6 +187,7 @@ export interface CanvasWorkspace {
 export function openCanvasWorkspace(options: CanvasWorkspaceOptions): CanvasWorkspace {
   const workspace = new Workspace(options)
   return {
+    agent: workspace.agentPort(),
     user: workspace.userPort(),
     read: workspace.reader(),
     start: () => workspace.start(),
@@ -226,9 +268,11 @@ class Workspace {
   /** `frameDocument` cache: `${canvasId}/${frameId}` -> the stamped document of one hash. */
   private readonly served = new Map<string, { hash: string; html: string }>()
   private readonly root: string
+  private readonly watcher: FrameFileWatcher
 
   constructor(private readonly opts: CanvasWorkspaceOptions) {
     this.root = join(opts.project, CANVASES_DIR)
+    this.watcher = new FrameFileWatcher(this.root, (c, f) => this.frameFileChanged(c, f), (m) => this.log(m))
   }
 
   private now(): number {
@@ -237,6 +281,28 @@ class Workspace {
 
   private log(message: string): void {
     this.opts.log?.(message)
+  }
+
+  agentPort(): AgentCanvasPort {
+    return {
+      list: () => ({ activeTab: this.activeTab(), canvases: this.summaries() }),
+      create: (name) => {
+        const clean = cleanName(name, MAX_CANVAS_NAME)
+        if (clean === null) return { ok: false, problem: { code: 'BAD_NAME', max: MAX_CANVAS_NAME } }
+        return ok(this.project(this.createCanvas(clean)))
+      },
+      read: (canvasId) => {
+        const held = this.held(canvasId)
+        return held ? ok(this.project(held)) : this.notFound(canvasId)
+      },
+      reopen: (canvasId) => {
+        const reopened = this.reopen(canvasId)
+        return reopened.ok ? ok(this.project(this.canvases.get(reopened.value.id)!)) : reopened
+      },
+      addFrame: (input) => this.addFrame(input),
+      updateFrame: (input) => this.updateFrame(input),
+      removeFrame: (canvasId, frameId) => this.removeFrame(canvasId, frameId),
+    }
   }
 
   userPort(): UserCanvasPort {
@@ -300,9 +366,11 @@ class Workspace {
       this.rehash(held)
       this.sweep(held)
     }
+    this.watcher.start()
   }
 
   close(): void {
+    this.watcher.stop()
     this.served.clear()
   }
 
@@ -547,6 +615,8 @@ class Workspace {
     this.writeLayout(held)
     this.writeManifest(held)
     this.canvases.set(id, held)
+    // The first canvas is what creates the root the watcher watches.
+    this.watcher.start()
     this.opts.view.setActiveTab(id)
     this.opts.onChange({ kind: 'updated', canvasId: id })
     this.opts.onChange({ kind: 'view' })
@@ -642,6 +712,119 @@ class Workspace {
     }
     this.remove(held)
     return ok(undefined)
+  }
+
+  // ------------------------------------------------------------ agent edits
+
+  private frameOf(held: Held, frame: ManifestFrame): CanvasFrame {
+    return this.project(held).frames.find((f) => f.id === frame.id)!
+  }
+
+  private addFrame(input: AddFrameInput): Outcome<CanvasFrame> {
+    const writable = this.writable(input.canvasId)
+    if (!writable.ok) return writable
+    const held = writable.value
+    const title = cleanName(input.title, MAX_FRAME_TITLE)
+    if (title === null) return { ok: false, problem: { code: 'BAD_NAME', max: MAX_FRAME_TITLE } }
+    const problem = checkFrameHtml(input.html)
+    if (problem) return { ok: false, problem }
+    const live = held.manifest.frames.filter((f) => f.deletedAt === undefined)
+    if (live.length >= MAX_FRAMES_PER_CANVAS) {
+      return { ok: false, problem: { code: 'TOO_MANY_FRAMES', limit: MAX_FRAMES_PER_CANVAS } }
+    }
+    const width = input.size?.width ?? DEFAULT_FRAME_WIDTH
+    const size = { width, height: input.size?.height ?? defaultHeightFor(width) }
+    const at = input.position ?? autoPlace(live.map((f) => held.layout.rects[f.id] ?? NO_RECT), normalizeRect({ x: 0, y: 0, ...size }))
+    const rect = normalizeRect({ ...at, ...size })
+    let id: FrameId
+    do id = randomBytes(6).toString('hex') as FrameId
+    while (held.manifest.frames.some((f) => f.id === id))
+    const file = `frames/${id}.html`
+    const frame: ManifestFrame = { id, title, file, hash: sha1(input.html), createdAt: this.now() }
+    // Bytes first, manifest last: a crash between leaves an unnamed file.
+    writeAtomic(join(this.dir(held.manifest.id), file), input.html)
+    held.layout.rects[id] = rect
+    this.writeLayout(held)
+    held.manifest.frames.push(frame)
+    this.writeManifest(held)
+    this.opts.onChange({ kind: 'updated', canvasId: held.manifest.id })
+    return ok(this.frameOf(held, frame))
+  }
+
+  private updateFrame(input: UpdateFrameInput): Outcome<CanvasFrame> {
+    const writable = this.writable(input.canvasId)
+    if (!writable.ok) return writable
+    const held = writable.value
+    const frame = this.liveFrame(input.canvasId, input.frameId)
+    if (!frame) {
+      return { ok: false, problem: { code: 'FRAME_NOT_FOUND', canvasId: held.manifest.id, frameId: input.frameId } }
+    }
+    const title = input.title === undefined ? undefined : cleanName(input.title, MAX_FRAME_TITLE)
+    if (title === null) return { ok: false, problem: { code: 'BAD_NAME', max: MAX_FRAME_TITLE } }
+    const path = join(this.dir(held.manifest.id), frame.file)
+    let hash = frame.hash
+    if (input.html !== undefined) {
+      const problem = checkFrameHtml(input.html)
+      if (problem) return { ok: false, problem }
+      // The file, not the manifest: an editor may have written it since the
+      // watcher last ran.
+      let current = frame.hash
+      try {
+        current = sha1(readFileSync(path))
+      } catch {
+        /* gone: the update writes it back */
+      }
+      if (input.expectedHash !== undefined && input.expectedHash !== current) {
+        return {
+          ok: false,
+          problem: { code: 'FRAME_CONFLICT', canvasId: held.manifest.id, frameId: frame.id, currentHash: current },
+        }
+      }
+      writeAtomic(path, input.html)
+      hash = sha1(input.html)
+    }
+    if (hash !== frame.hash || (title !== undefined && title !== frame.title)) {
+      frame.hash = hash
+      if (title !== undefined) frame.title = title
+      this.writeManifest(held)
+      this.served.delete(`${held.manifest.id}/${frame.id}`)
+      this.opts.onChange({ kind: 'updated', canvasId: held.manifest.id })
+    }
+    return ok(this.frameOf(held, frame))
+  }
+
+  private removeFrame(canvasId: string, frameId: string): Outcome<CanvasFrame> {
+    const writable = this.writable(canvasId)
+    if (!writable.ok) return writable
+    const held = writable.value
+    const frame = this.liveFrame(canvasId, frameId)
+    if (!frame) return { ok: false, problem: { code: 'FRAME_NOT_FOUND', canvasId: held.manifest.id, frameId } }
+    const projected = this.frameOf(held, frame)
+    frame.deletedAt = this.now()
+    this.writeManifest(held)
+    this.opts.onChange({ kind: 'updated', canvasId: held.manifest.id })
+    return ok(projected)
+  }
+
+  /** The watcher saw `frames/<frameId>.html` change. Our own writes hash equal
+   *  and so are silent, however many events arrive. A file for a frame the
+   *  manifest does not name is ignored: frames come in through `add_frame`,
+   *  not by dropping files. */
+  private frameFileChanged(canvasId: CanvasId, frameId: FrameId): void {
+    const held = this.canvases.get(canvasId)
+    const frame = this.liveFrame(canvasId, frameId)
+    if (!held || !frame) return
+    let hash: string
+    try {
+      hash = sha1(readFileSync(join(this.dir(canvasId), frame.file)))
+    } catch {
+      return
+    }
+    if (hash === frame.hash) return
+    frame.hash = hash
+    this.writeManifest(held)
+    this.served.delete(`${canvasId}/${frameId}`)
+    this.opts.onChange({ kind: 'updated', canvasId })
   }
 
   private setView(view: ViewWire): void {

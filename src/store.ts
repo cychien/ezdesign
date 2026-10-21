@@ -10,6 +10,7 @@ import type {
   Anchor,
   Annotation,
   Attachment,
+  BatchView,
   ConversationEntry,
   ExploreState,
   ExploreStatus,
@@ -552,6 +553,7 @@ export class SessionStore implements ViewStore {
     attachments: Attachment[] = [],
     references: Reference[] = [],
     skills: string[] = [],
+    view?: BatchView,
   ): FeedbackBatch | null {
     const items = this.annotations
     // A skill on its own is a batch: "run this over what you can see" is a
@@ -572,6 +574,7 @@ export class SessionStore implements ViewStore {
       ...(attachments.length ? { attachments } : {}),
       ...(references.length ? { references } : {}),
       ...(skills.length ? { skills } : {}),
+      ...(view ? { view } : {}),
       sentAt: Date.now(),
     }
     this.writeJson('outbox.json', [...this.outbox, batch])

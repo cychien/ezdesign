@@ -11,7 +11,7 @@
  *  Installed lazily on the first snapshot with a `canvas` field, so with
  *  `EZDESIGN_CANVAS` off nothing here runs. */
 
-import type { FrameRef } from '../../protocol.js'
+import type { BatchView, FrameRef } from '../../protocol.js'
 import { type CanvasId, type TabId, asCanvasId } from '../../canvas/types.js'
 import type { CanvasEventWire, CanvasSnapshotWire, CanvasWire, ViewWire } from '../../canvas/wire.js'
 import type { CanvasGuest, CanvasGuestPort } from '../frame-registry.js'
@@ -69,6 +69,9 @@ export interface CanvasUi {
   readonly activeTab: TabId | null
   /** The name of the canvas on screen, null on the App tab. */
   readonly activeName: string | null
+  /** What `/send` stamps on the batch: the turn names the view the user sent
+   *  from, not the one showing when it is delivered. */
+  batchView(appPage: string): BatchView
   /** A frame's title, for the queue's labels. */
   frameTitle(ref: FrameRef): string | undefined
 }
@@ -318,6 +321,10 @@ export function installCanvas(ports: ShellPorts): CanvasUi {
 
     get activeName() {
       return activeBoard()?.name ?? null
+    },
+
+    batchView(appPage) {
+      return shown && shown !== 'app' ? { tab: 'canvas', canvasId: shown } : { tab: 'app', page: appPage }
     },
 
     frameTitle(ref) {

@@ -2,7 +2,8 @@
  *  we do not control. Pure, so the rules are testable without a server. */
 
 import { MAX_VARIANT_HTML, MAX_VARIANT_NAME } from './explore.js'
-import type { Anchor, ChosenVariant, ExploreCapture, Reference } from './protocol.js'
+import type { Anchor, BatchView, ChosenVariant, ExploreCapture, Reference } from './protocol.js'
+import { asCanvasId } from './canvas/types.js'
 
 /** A comment pointing at more elements than this is a bug or an attack, not a
  *  person. Rejecting is better than truncating: silently dropping references
@@ -301,4 +302,19 @@ function cappedStrings(raw: unknown, max: number, each: number, total: number): 
     bytes += value.length
   }
   return out
+}
+
+/** `/send`'s `view`, three answers: `undefined` when the shell sent none (the
+ *  flag is off), a view, or `null` for one that is there and unusable, which is
+ *  a 400. */
+export function parseBatchView(raw: unknown): BatchView | null | undefined {
+  if (raw === undefined || raw === null) return undefined
+  if (typeof raw !== 'object') return null
+  const { tab, page, canvasId } = raw as Record<string, unknown>
+  if (tab === 'app') {
+    const p = str(page, 300)
+    return p ? { tab: 'app', page: p } : null
+  }
+  const id = tab === 'canvas' ? asCanvasId(canvasId) : null
+  return id ? { tab: 'canvas', canvasId: id } : null
 }

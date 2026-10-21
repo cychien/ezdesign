@@ -9,6 +9,8 @@ import type { SessionConfigOption } from '@agentclientprotocol/sdk'
 import express, { type ErrorRequestHandler, type Response, Router } from 'express'
 import { AppProxy } from './app-proxy.js'
 import { FRAME_HOST } from './canvas/frame-document.js'
+import { CANVAS_MCP_ROUTE, CanvasMcp, isCanvasTool } from './canvas/mcp.js'
+import { canvasBrief } from './canvas/prompt.js'
 import { canvasApiRouter, frameHost } from './canvas/routes.js'
 import { type CanvasEventWire, SSE_CANVAS, SSE_CANVAS_REMOVED } from './canvas/wire.js'
 import { type CanvasChange, type CanvasWorkspace, openCanvasWorkspace } from './canvas/workspace.js'
@@ -34,7 +36,13 @@ import type { AcpSnapshot } from './acp-agent.js'
 import { type AcpConfigValue, configLabel, configValueName } from './acp-config.js'
 import { AGENT_PROFILES, type AgentProfile, agentBrandFor, agentProfileFor } from './agents.js'
 import { clearAgentRecord, reapOrphanedAgents } from './agent-children.js'
-import { attachmentIds, parseReferences, sanitizeAnchor, sanitizeCapture } from './anchor.js'
+import {
+  attachmentIds,
+  parseBatchView,
+  parseReferences,
+  sanitizeAnchor,
+  sanitizeCapture,
+} from './anchor.js'
 import {
   DESIGN_EFFORTS,
   type DesignEffort,
@@ -68,6 +76,7 @@ import type {
   Anchor,
   Annotation,
   Attachment,
+  BatchView,
   ExploreCapture,
   ExploreState,
   ExploreStatus,
@@ -279,6 +288,9 @@ function acpPrompt(
   history: string[] = [],
   effort: DesignEffort = 'high',
   language: string = replyLanguageLine([]),
+  /** `canvasBrief(...)`: which tab the user is on and which canvases exist.
+   *  Empty without canvas tools, so the prompt is otherwise unchanged. */
+  canvas: string[] = [],
 ): string {
   if (feedback.setup) return setupPrompt(truth, feedback.url, language)
   // The markers the composer left behind, spent now that the agent is known. The
@@ -311,6 +323,7 @@ function acpPrompt(
     })(),
     ...(history.length ? [...history, ''] : []),
     'The user reviewed the running app in their browser and sent this feedback batch.',
+    ...canvas,
     // With a file missing, the brief above already names them.
     ...(harnessReady(truth)
       ? [
@@ -646,6 +659,13 @@ class SessionRuntime implements ProjectRuntime {
   /** The project's canvases. Null with `EZDESIGN_CANVAS` off, and every use is
    *  behind that null, which is the whole flag. */
   readonly canvases: CanvasWorkspace | null
+  /** The agent's canvas tools. Built here, before any agent attaches, because
+   *  `mcpServers` is read once per ACP session open and a server added later is
+   *  never seen. It gets the agent's port only. */
+  private readonly canvasMcp: CanvasMcp | null
+  /** Where the user was when they sent the batch being answered; see
+   *  `activeSkills`. */
+  private activeView: BatchView | undefined = undefined
   /** The ask for a round whose branch is still opening. Held rather than sent,
    *  because a prompt to a session that is not up yet is a prompt that is
    *  dropped - see `deliverToAcp`. */
@@ -713,6 +733,7 @@ class SessionRuntime implements ProjectRuntime {
           log: (message) => console.error(message),
         })
       : null
+    this.canvasMcp = this.canvases ? new CanvasMcp(this.canvases.agent) : null
     // Session start is the one moment no composer can be holding a fresh upload,
     // which is what makes an unreferenced attachment safe to judge by age alone.
     this.store.sweepAttachments()
@@ -849,7 +870,7 @@ class SessionRuntime implements ProjectRuntime {
       state: s.state,
       endedBy: s.endedBy,
       ...(this.app.kind === 'attached' ? { app: this.app.origin } : {}),
-      ...(this.canvases ? { canvas: this.canvases.read.snapshot(false) } : {}),
+      ...(this.canvases ? { canvas: this.canvases.read.snapshot(this.agentHasCanvasTools) } : {}),
       annotations: this.store.annotations,
       conversation: this.store.visibleConversation,
       agentOnline:
@@ -914,6 +935,24 @@ class SessionRuntime implements ProjectRuntime {
       this.toShells({ type: SSE_CANVAS_REMOVED, canvasId: change.canvasId })
     }
     this.broadcast()
+  }
+
+  /** Whether the attached agent can be handed the canvas tools: an ACP agent
+   *  that takes HTTP MCP servers. A poll-mode agent cannot. */
+  get agentHasCanvasTools(): boolean {
+    return !!this.canvasMcp && !!this.acp?.servesMcpHttp && this.acp.snapshot().state !== 'exited'
+  }
+
+  /** The per-turn canvas brief: the view sealed on the batch being delivered,
+   *  and the inventory as it is now. */
+  private canvasLines(): string[] {
+    if (!this.canvases) return []
+    return canvasBrief({
+      inventory: this.canvases.read.inventory(),
+      view: this.activeView,
+      app: this.app.kind === 'attached' ? this.app.origin : null,
+      tools: this.agentHasCanvasTools,
+    })
   }
 
   private toShells(event: CanvasEventWire): void {
@@ -1004,8 +1043,13 @@ class SessionRuntime implements ProjectRuntime {
       // Whatever rounds are taking variants when this session opens. The port is
       // read now rather than captured, because a restored session can come back
       // on a different one.
-      mcpServers: () => this.exploreMcp.serverEntries(this.port),
-      ownTool: isExploreTool,
+      // The canvas server first and always: it is the one server an agent must
+      // see from its first `session/new`, because nothing can add it later.
+      mcpServers: () => [
+        ...(this.canvasMcp?.serverEntries(this.port) ?? []),
+        ...this.exploreMcp.serverEntries(this.port),
+      ],
+      ownTool: (name) => isExploreTool(name) || (!!this.canvasMcp && isCanvasTool(name)),
       env: {
         EZDESIGN_PAGE_STATE: `http://127.0.0.1:${this.port}${URL_PREFIX}/api/page-state`,
         EZDESIGN_PAGE_STATE_TOKEN: this.pageStateToken,
@@ -1552,6 +1596,7 @@ class SessionRuntime implements ProjectRuntime {
         history,
         this.designEffort,
         replyLanguageLine(this.store.userWords()),
+        this.canvasLines(),
       ),
     )
     if (truth.enabled) this.store.markHarnessSeen()
@@ -1576,6 +1621,7 @@ class SessionRuntime implements ProjectRuntime {
     this.agentBusy = true
     this.activeBatch = batch.batchId
     this.activeSkills = batch.skills ?? []
+    this.activeView = batch.view
     const attachments = toAgentAttachments(batch.attachments, this.store)
     return {
       type: 'feedback',
@@ -1646,6 +1692,11 @@ class SessionRuntime implements ProjectRuntime {
         res.json(attachment)
       },
     )
+
+    // Ahead of the shared parser, with its own: an oversize frame must come back
+    // as the tool's refusal, not as the attachment handler's 413. Ahead of
+    // `MCP_ROUTE` too, which would take `canvas` for an explore id.
+    if (this.canvasMcp) api.post(CANVAS_MCP_ROUTE, ...this.canvasMcp.handlers())
 
     api.use(express.json({ limit: '2mb' }))
 
@@ -1825,7 +1876,9 @@ class SessionRuntime implements ProjectRuntime {
       if (skills.some((name) => !known.has(name))) {
         return res.status(400).json({ error: 'unknown skill' })
       }
-      const batch = this.store.sendBatch(req.body?.note ?? null, files, refs, skills)
+      const view = parseBatchView(req.body?.view)
+      if (view === null) return res.status(400).json({ error: 'view must be a tab' })
+      const batch = this.store.sendBatch(req.body?.note ?? null, files, refs, skills, view)
       if (!batch) return res.status(400).json({ error: 'nothing to send' })
       this.store.appendConversation({
         role: 'user',
