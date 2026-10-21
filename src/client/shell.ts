@@ -30,7 +30,9 @@ import {
   configValues,
   shortConfigValueName,
 } from '../acp-config.js'
-import { attachify } from './attach.js'
+import { attachify, directAttachments } from './attach.js'
+import { type AppGuest, FrameRegistry, type Guest, senderOf } from './frame-registry.js'
+import { type GuestKind, parseGuestMessage } from './guest-messages.js'
 import { confirmSkipped, rememberConfirm } from './confirm-skip.js'
 import { collectPageStorage } from './page-storage.js'
 import { type Usage, planName, usageNote, usageRows } from './usage-note.js'
@@ -225,6 +227,7 @@ const PREFIX = (() => {
   }
 })()
 const API = `${PREFIX}/api`
+const shellAttachments = directAttachments(API)
 /** Hoisted: the shortcut table is built while this module is still initialising,
  *  so it cannot live down with the rest of the pick code. */
 const MOD_LABEL = modLabel(navigator.userAgent)
@@ -433,6 +436,10 @@ interface Shortcut {
   /** Whether it still fires while focus is in a text field. Only the two that
    *  act on what is being typed are. */
   whileTyping?: boolean
+  /** Whether a canvas frame's overlay may fire it. Off unless set: a frame's
+   *  scripts can forward any key, so sending to the agent or stopping its turn
+   *  is never theirs to press. */
+  fromCanvas?: boolean
 }
 
 /** Modifier-free letters and digits, because the browser has claimed most of the
@@ -460,6 +467,7 @@ const SHORTCUTS: Shortcut[] = [
     label: m.label,
     match: plain(m.key),
     run: () => sendMode(annotateMode === m.id ? 'off' : m.id),
+    fromCanvas: true,
   })),
   ...DEVICES.map((d, i) => ({
     keys: String(i + 1),
@@ -478,6 +486,7 @@ const SHORTCUTS: Shortcut[] = [
     label: '寫補充說明',
     match: plain('n'),
     run: () => note.focus(),
+    fromCanvas: true,
   },
   {
     keys: '⌘ ↵',
@@ -518,12 +527,16 @@ const SHORTCUTS: Shortcut[] = [
       escapeAnnotating()
     },
     whileTyping: true,
+    fromCanvas: true,
   },
 ]
 
-function runShortcut(e: KeyChord, typing: boolean): boolean {
+/** `guest` is the kind of preview a forwarded key came from; absent for the
+ *  shell's own keys. */
+function runShortcut(e: KeyChord, typing: boolean, guest?: GuestKind): boolean {
   for (const s of SHORTCUTS) {
     if (typing && !s.whileTyping) continue
+    if (guest === 'canvas' && !s.fromCanvas) continue
     if (!s.match(e)) continue
     s.run()
     return true
@@ -961,14 +974,14 @@ function paintVariants(): void {
     const html = variant?.html ?? null
     if (posted.get(round.id) === (variant?.id ?? null)) continue
     posted.set(round.id, variant?.id ?? null)
-    broadcast({ type: 'ez:variant', exploreId: round.id, anchor: round.anchor, html })
+    frames.postAll({ type: 'ez:variant', exploreId: round.id, anchor: round.anchor, html })
   }
   // A round that is gone - dismissed, or the session moved on - takes its markup
   // off the page with it.
   for (const id of [...posted.keys()]) {
     if (rounds.some((r) => r.id === id)) continue
     posted.delete(id)
-    broadcast({ type: 'ez:variant', exploreId: id, anchor: null, html: null })
+    frames.postAll({ type: 'ez:variant', exploreId: id, anchor: null, html: null })
   }
 }
 
@@ -976,7 +989,7 @@ function paintVariants(): void {
 function seedVariants(id: string): void {
   for (const round of liveExplores()) {
     const variant = round.variants.find((v) => v.id === round.selected)
-    toFrame(id, {
+    frames.post(id, {
       type: 'ez:variant',
       exploreId: round.id,
       anchor: round.anchor,
@@ -1108,11 +1121,11 @@ function endExploreIn(ref?: RefWire): void {
     // its mode arrived would be dismissed by the very message meant to restore
     // the state around it. A mode that was off is left off: the overlay's echo
     // then keeps the sidebar honest either way.
-    if (held.mode !== 'off') toFrame(held.frame, { type: 'ez:set-mode', mode: held.mode })
+    if (held.mode !== 'off') frames.post(held.frame, { type: 'ez:set-mode', mode: held.mode })
     const body = ref
       ? [...held.draft.body, { t: 'ref' as const, n: nextRefNumber(held.draft.body), ...ref }]
       : held.draft.body
-    toFrame(held.frame, { type: 'ez:restore', draft: { ...held.draft, body } })
+    frames.post(held.frame, { type: 'ez:restore', draft: { ...held.draft, body } })
     return
   }
   if (!ref) return
@@ -1404,13 +1417,13 @@ function toggleShown(id: string): void {
   saveView()
   paintShown()
   if (!multi || stagedApp === null) return
-  const mounted = frames.get(id)
+  const mounted = frames.app(id)
   if (mounted) {
     // A pick could be armed in the frame about to go; adding one cannot strand
     // anything, so only removal calls it off.
     abortPick('mode')
     mounted.card.remove()
-    frames.delete(id)
+    frames.remove(id)
     if (popupFrame === id) setPopupFrame(null)
   } else {
     const device = gridDevice(id)
@@ -1454,8 +1467,7 @@ shownWrap.addEventListener('keydown', (e) => {
  *  several sizes at once holds one per device. Everything the shell says to a
  *  preview goes through the registry, so neither arrangement gets a code path
  *  of its own. */
-interface Frame {
-  id: string
+interface StageFrame {
   /** Label and screen together - what the grid lays out as one item. */
   card: HTMLElement
   head: HTMLElement
@@ -1466,13 +1478,15 @@ interface Frame {
   /** Sized at the device's true pixels and scaled as a whole, which is what
    *  keeps a scaled 390 still 390 to a media query inside. */
   wrap: HTMLElement
-  iframe: HTMLIFrameElement
   device: Device
   zoom: number
 }
 
+type Frame = AppGuest<StageFrame>
+
 const SINGLE = 'single'
-const frames = new Map<string, Frame>()
+/** Every iframe with an overlay in it, and the one way to talk to them. */
+const frames = new FrameRegistry<StageFrame>()
 
 /** The frame with an annotation popup open, if any. One annotation is composed
  *  at a time across the whole grid: while it is open every other frame is
@@ -1481,9 +1495,7 @@ let popupFrame: string | null = null
 
 function setPopupFrame(next: string | null): void {
   popupFrame = next
-  for (const f of frames.values()) {
-    if (f.id !== next) toFrame(f.id, { type: 'ez:hold', held: next !== null })
-  }
+  frames.postAll({ type: 'ez:hold', held: next !== null }, next ?? undefined)
 }
 
 /** Where the previews actually are, and where a frame mounted later has to
@@ -1519,7 +1531,7 @@ function applyNavEffect(effect: NavEffect): void {
       history.replaceState({ ezUrl: effect.url }, '', shellUrl(effect.url))
       return
     case 'navigate':
-      for (const f of frames.values()) {
+      for (const f of frames.apps()) {
         if (f.id !== effect.except) navigateFrame(f, effect.url)
       }
       return
@@ -1574,9 +1586,20 @@ function mountFrame(id: string, device: Device, into: ParentNode): Frame {
   into.appendChild(card)
   // Zoom starts at 0 rather than 1 so the first paint always announces itself
   // to the overlay, whatever it settles on.
-  const frame: Frame = { id, card, head, box, wrap, iframe, device, zoom: 0 }
+  const frame: Frame = {
+    kind: 'app',
+    id,
+    iframe,
+    origin: location.origin,
+    card,
+    head,
+    box,
+    wrap,
+    device,
+    zoom: 0,
+  }
   labelFrame(frame, device)
-  frames.set(id, frame)
+  frames.add(frame)
   head.addEventListener('pointerdown', (e) => beginCardDrag(e, frame))
   return frame
 }
@@ -1585,22 +1608,6 @@ function labelFrame(frame: Frame, device: Device): void {
   const label = deviceLabel(device)
   frame.head.textContent = label
   frame.iframe.title = label
-}
-
-/** The frame a message came from, or null for anything else that posted at us -
- *  an iframe of the app's own, most of the time. */
-function frameIdOf(source: MessageEventSource | null): string | null {
-  if (!source) return null
-  for (const f of frames.values()) if (f.iframe.contentWindow === source) return f.id
-  return null
-}
-
-function toFrame(id: string, message: Record<string, unknown>): void {
-  frames.get(id)?.iframe.contentWindow?.postMessage(message, location.origin)
-}
-
-function broadcast(message: Record<string, unknown>): void {
-  for (const f of frames.values()) f.iframe.contentWindow?.postMessage(message, location.origin)
 }
 
 /** `replace`, not `iframe.src`: assigning src pushes an entry onto the joint
@@ -1643,7 +1650,7 @@ function paintFrame(
     if (frame.device.id !== device.id) labelFrame(frame, device)
     frame.device = device
     frame.zoom = applied
-    toFrame(frame.id, {
+    frames.post(frame.id, {
       type: 'ez:viewport',
       preset: device.id,
       zoom: applied,
@@ -1658,7 +1665,7 @@ function paintFrames(): void {
     grid.style.width = `${plan.width}px`
     grid.style.height = `${plan.height}px`
     for (const placed of plan.cards) {
-      const frame = frames.get(placed.id)
+      const frame = frames.app(placed.id)
       if (!frame) continue
       frame.card.style.left = `${placed.x}px`
       frame.card.style.top = `${placed.y}px`
@@ -1667,7 +1674,7 @@ function paintFrames(): void {
     }
     return
   }
-  const frame = frames.get(SINGLE)
+  const frame = frames.app(SINGLE)
   if (!frame) return
   const device = deviceById(deviceId)
   const fluid = Boolean(device.fluid)
@@ -1696,11 +1703,11 @@ function settleFrames(): void {
   clearTimeout(settleTimer)
   grid.removeAttribute('data-settle')
   const before = new Map<string, DOMRect>()
-  for (const f of frames.values()) before.set(f.id, f.card.getBoundingClientRect())
-  for (const f of frames.values()) f.card.style.transform = ''
+  for (const f of frames.apps()) before.set(f.id, f.card.getBoundingClientRect())
+  for (const f of frames.apps()) f.card.style.transform = ''
   paintFrames()
   const moved: Frame[] = []
-  for (const f of frames.values()) {
+  for (const f of frames.apps()) {
     const was = before.get(f.id)
     if (!was) continue
     const now = f.card.getBoundingClientRect()
@@ -1742,7 +1749,7 @@ function rebuildStage(): void {
   abortPick('mode')
   popupFrame = null
   grid.replaceChildren()
-  frames.clear()
+  frames.clearApps()
   const showing = stagedApp !== null
   noApp.hidden = showing
   grid.hidden = !showing
@@ -1782,7 +1789,7 @@ sendBtn.onclick = () => void sendBatch()
  *  thread from scratch, and what the user is part-way through typing - chips
  *  included - must not go with them. */
 const noteAttach = attachify({
-  api: API,
+  attachments: shellAttachments,
   mk: h,
   className: 'ez-note',
   placeholder: '整體想法或補充說明，輸入 / 用指令（選填）',
@@ -2209,7 +2216,7 @@ queueSection.append(queueScroll, harnessRow, controlRow, noteAttach.wrap, sendBt
  *  and the only thing that triggers one mid-edit is annotating something new,
  *  which takes the focus into the page regardless. */
 const editAttach = attachify({
-  api: API,
+  attachments: shellAttachments,
   mk: h,
   className: 'ez-qi-input',
   // Worded as the page popup's, which asks the same question of the same kind of
@@ -2654,7 +2661,7 @@ stage.addEventListener('pointerdown', (e) => {
  *  is on screen the number only has to be close, and the first real paint
  *  corrects it. */
 function cardHead(): number {
-  for (const f of frames.values()) {
+  for (const f of frames.apps()) {
     const head = f.box.offsetTop
     if (head > 0) return head
   }
@@ -2937,7 +2944,7 @@ function sendMode(mode: Mode): void {
   // A pick and a mode change cannot both be in flight: `setMode` in the overlay
   // tears the popup down, and the pick is what would be answering into it.
   abortPick('mode')
-  broadcast({ type: 'ez:set-mode', mode })
+  frames.postAll({ type: 'ez:set-mode', mode })
 }
 
 // ---------------------------------------------------------------- picking
@@ -2980,8 +2987,8 @@ function dispatchPick(e: PickEvent): void {
 }
 
 /** The frames an effect is aimed at: the one it names, or all of them. */
-function pickFrames(frame?: string): Frame[] {
-  if (!frame) return [...frames.values()]
+function pickFrames(frame?: string): Guest<StageFrame>[] {
+  if (!frame) return frames.all()
   const one = frames.get(frame)
   return one ? [one] : []
 }
@@ -2997,7 +3004,7 @@ function applyPickEffect(effect: PickEffect): void {
         paintSendState()
       }
       for (const f of pickFrames(effect.frame)) {
-        toFrame(f.id, {
+        frames.post(f.id, {
           type: 'ez:pick',
           pickId: effect.id,
           host: effect.host,
@@ -3007,21 +3014,19 @@ function applyPickEffect(effect: PickEffect): void {
       return
     case 'abort-overlay':
       for (const f of pickFrames(effect.frame)) {
-        toFrame(f.id, { type: 'ez:pick-abort', pickId: effect.id })
+        frames.post(f.id, { type: 'ez:pick-abort', pickId: effect.id })
       }
       return
     case 'disarm-others':
-      for (const f of frames.values()) {
-        if (f.id !== effect.keep) toFrame(f.id, { type: 'ez:pick-abort', pickId: effect.id })
-      }
+      frames.postAll({ type: 'ez:pick-abort', pickId: effect.id }, effect.keep)
       return
     case 'restore':
       for (const f of pickFrames(effect.frame)) {
-        toFrame(f.id, { type: 'ez:restore', draft: effect.draft })
+        frames.post(f.id, { type: 'ez:restore', draft: effect.draft })
       }
       return
     case 'navigate':
-      for (const f of pickFrames(effect.frame)) navigateFrame(f, effect.page)
+      for (const f of pickFrames(effect.frame)) if (f.kind === 'app') navigateFrame(f, effect.page)
       return
     case 'insert-note':
       noteAttach.resolveRef(effect.ref)
@@ -3081,7 +3086,7 @@ function setMulti(next: boolean): void {
 
 /** Ahead of anything that starts a turn: the agent's own browser opens the page signed in with it. */
 async function reportPageStorage(): Promise<void> {
-  const win = frames.values().next().value?.iframe.contentWindow
+  const win = frames.firstAppWindow()
   const storage = win ? await collectPageStorage(win).catch(() => null) : null
   if (!storage) return
   await api('/page-state', { method: 'POST', body: JSON.stringify(storage) }).catch(() => {})
@@ -4113,13 +4118,13 @@ function render(): void {
   settleHold()
   paintFork(s)
   pushThread(s)
-  broadcast({ type: 'ez:can-explore', on: s.canExplore === true })
+  frames.postAll({ type: 'ez:can-explore', on: s.canExplore === true })
   // The page is standing in an explore rather than showing the review's own
   // line. The page is told because it withdraws `/explore` while it is true; the
   // line that says so is drawn out here, on the frame's own edge.
   onBranch = !!s.chats?.find((c) => c.current)?.parentChatId
   paintVeil()
-  broadcast({ type: 'ez:in-explore', on: onBranch })
+  frames.postAll({ type: 'ez:in-explore', on: onBranch })
   agentWrap.hidden = !s.acp
   paintHarness()
   // The row carries the gap below it, so it has to go when both of its controls
@@ -4540,194 +4545,144 @@ function acpFieldEl(
 }
 
 window.addEventListener('message', (e: MessageEvent) => {
-  if (e.origin !== location.origin) return
-  // Also the guard against an iframe of the app's own posting up here: a message
-  // is only ours if it came from a frame we mounted.
-  const from = frameIdOf(e.source)
-  if (!from) return
-  const data = e.data as {
-    type?: string
-    mode?: Mode
-    chord?: KeyChord
-    page?: string
-    url?: string
-    pickId?: string
-    host?: 'popup' | 'note'
-    draft?: DraftWire
-    ref?: RefWire
-    anchor?: unknown
-    capture?: unknown
-    direction?: string
-    attachments?: string[]
-    references?: RefWire[]
-    resumed?: boolean
-    ratio?: number
-    dx?: number
-    dy?: number
-    open?: boolean
-  }
-  // A mod+wheel caught inside a preview: the page under the pointer stays put
-  // and the stage moves instead - panning the grid without having to aim for
-  // the gaps between the frames.
-  if (data?.type === 'ez:wheel') {
-    stage.scrollLeft += data.dx ?? 0
-    stage.scrollTop += data.dy ?? 0
-  }
-  // Where one preview is scrolled to is where all of them should be: the grid
-  // exists to compare the same part of the page at three widths, and three
-  // frames scrolled apart is three unrelated screenshots.
-  // While an annotation popup is open, only its own frame may lead: anything
-  // else that slips a scroll through would be relayed straight under the popup.
-  if (
-    data?.type === 'ez:scroll' &&
-    typeof data.ratio === 'number' &&
-    multi &&
-    (!popupFrame || from === popupFrame)
-  ) {
-    for (const f of frames.values()) {
-      if (f.id !== from) toFrame(f.id, { type: 'ez:scroll-to', ratio: data.ratio })
-    }
-  }
-  if (data?.type === 'ez:popup') {
-    // A close only counts from the frame holding it: opening a popup closes
-    // nothing else by design, so a stray close must not lift the hold.
-    if (data.open) setPopupFrame(from)
-    else if (from === popupFrame) setPopupFrame(null)
-  }
-  if (data?.type === 'ez:mode') {
-    annotateMode = data.mode ?? 'off'
-    paintAnnotateMode()
-    // A change born inside one frame - Escape, mostly - has to reach the rest:
-    // left armed, they keep offering highlights for a mode the shell has
-    // already put away. No echo risk: a frame already in this mode stays quiet.
-    for (const f of frames.values()) {
-      if (f.id !== from) toFrame(f.id, { type: 'ez:set-mode', mode: annotateMode })
-    }
-  }
-  // A link the overlay took off the page before the browser could follow it.
-  // The navigation has not happened yet: this is the one moment the shell can
-  // own the entry for it, which is the whole reason the overlay intercepts.
-  if (data?.type === 'ez:navigate' && data.url) {
-    dispatchNav({ t: 'request', url: data.url })
-  }
-  // A route change with no document load behind it - an SPA moving between
-  // pages. Nothing about the overlay was lost, so unlike `ez:ready` this only
-  // says where the frame now is.
-  if (data?.type === 'ez:page' && data.url) {
-    dispatchNav({ t: 'moved', url: data.url, from })
-  }
-  // The user typed a direction into an element's composer and asked for
-  // variants. The shell owns the request because it is the one holding the
-  // session's api - and the one that can say why it was refused.
-  if (data?.type === 'ez:explore' && data.anchor && data.capture) {
-    void (async () => {
-      await reportPageStorage()
-      const res = await api('/explore/start', {
-        method: 'POST',
-        body: JSON.stringify({
-          anchor: data.anchor,
-          capture: data.capture,
-          direction: data.direction ?? '',
-          attachments: data.attachments ?? [],
-          references: data.references ?? [],
-        }),
-      })
-      if (!res.ok) {
-        // Nothing to wait for, so the comment comes straight back rather than
-        // staying hidden behind a round that never started.
-        stripNotice('這個 agent 現在無法執行探索')
-        endExploreIn()
-        return
+  // Window and origin both: a message is only a guest's if it came from a frame
+  // we mounted - not from an iframe of the app's own posting up here.
+  const guest = frames.from(e.source, e.origin)
+  if (!guest) return
+  const msg = parseGuestMessage(e.data, senderOf(guest))
+  if (!msg) return
+  const from = guest.id
+  switch (msg.type) {
+    // A mod+wheel caught inside a preview: the page under the pointer stays put
+    // and the stage moves instead - panning the grid without having to aim for
+    // the gaps between the frames.
+    case 'ez:wheel':
+      stage.scrollLeft += msg.dx
+      stage.scrollTop += msg.dy
+      return
+    // Where one preview is scrolled to is where all of them should be: the grid
+    // exists to compare the same part of the page at three widths, and three
+    // frames scrolled apart is three unrelated screenshots.
+    // While an annotation popup is open, only its own frame may lead: anything
+    // else that slips a scroll through would be relayed straight under the popup.
+    case 'ez:scroll':
+      if (multi && (!popupFrame || from === popupFrame)) {
+        frames.postAll({ type: 'ez:scroll-to', ratio: msg.ratio }, from)
       }
-      // What the held comment is waiting on, so any ending at all can release it.
-      const { exploreId } = (await res.json()) as { exploreId?: string }
-      if (exploreHold && exploreId) exploreHold = { ...exploreHold, round: exploreId }
-    })()
-  }
-  if (data?.type === 'ez:ready') {
-    dispatchNav({ t: 'loaded', url: data.url ?? data.page ?? '/', from })
-    // Straight to the frame, not through `sendMode`: this is a replay of state
-    // the overlay lost, and `sendMode` calls off any pick that is still out -
-    // which is exactly the pick this fresh overlay has to be handed back.
-    toFrame(from, { type: 'ez:set-mode', mode: annotateMode })
-    // A fresh page has none of this: whether it may offer the command, and what
-    // is meant to be standing in place of what.
-    toFrame(from, { type: 'ez:can-explore', on: snapshot?.canExplore === true })
-    toFrame(from, {
-      type: 'ez:in-explore',
-      on: !!snapshot?.chats?.find((c) => c.current)?.parentChatId,
-    })
-    seedVariants(from)
-    const frame = frames.get(from)
-    if (frame) {
-      toFrame(from, {
-        type: 'ez:viewport',
-        preset: frame.device.id,
-        zoom: frame.zoom,
-        scoped: multi,
+      return
+    case 'ez:popup':
+      // A close only counts from the frame holding it: opening a popup closes
+      // nothing else by design, so a stray close must not lift the hold.
+      if (msg.open) setPopupFrame(from)
+      else if (from === popupFrame) setPopupFrame(null)
+      return
+    case 'ez:mode':
+      annotateMode = msg.mode
+      paintAnnotateMode()
+      // A change born inside one frame - Escape, mostly - has to reach the rest:
+      // left armed, they keep offering highlights for a mode the shell has
+      // already put away. No echo risk: a frame already in this mode stays quiet.
+      frames.postAll({ type: 'ez:set-mode', mode: annotateMode }, from)
+      return
+    // A link the overlay took off the page before the browser could follow it.
+    // The navigation has not happened yet: this is the one moment the shell can
+    // own the entry for it, which is the whole reason the overlay intercepts.
+    case 'ez:navigate':
+      dispatchNav({ t: 'request', url: msg.url })
+      return
+    // A route change with no document load behind it - an SPA moving between
+    // pages. Nothing about the overlay was lost, so unlike `ez:ready` this only
+    // says where the frame now is.
+    case 'ez:page':
+      dispatchNav({ t: 'moved', url: msg.url, from })
+      return
+    // The user typed a direction into an element's composer and asked for
+    // variants. The shell owns the request because it is the one holding the
+    // session's api - and the one that can say why it was refused.
+    case 'ez:explore':
+      void (async () => {
+        await reportPageStorage()
+        const res = await api('/explore/start', {
+          method: 'POST',
+          body: JSON.stringify({
+            anchor: msg.anchor,
+            capture: msg.capture,
+            direction: msg.direction,
+            attachments: msg.attachments,
+            references: msg.references,
+          }),
+        })
+        if (!res.ok) {
+          // Nothing to wait for, so the comment comes straight back rather than
+          // staying hidden behind a round that never started.
+          stripNotice('這個 agent 現在無法執行探索')
+          endExploreIn()
+          return
+        }
+        // What the held comment is waiting on, so any ending at all can release it.
+        const { exploreId } = (await res.json()) as { exploreId?: string }
+        if (exploreHold && exploreId) exploreHold = { ...exploreHold, round: exploreId }
+      })()
+      return
+    case 'ez:ready': {
+      dispatchNav({ t: 'loaded', url: msg.url, from })
+      // Straight to the frame, not through `sendMode`: this is a replay of state
+      // the overlay lost, and `sendMode` calls off any pick that is still out -
+      // which is exactly the pick this fresh overlay has to be handed back.
+      frames.post(from, { type: 'ez:set-mode', mode: annotateMode })
+      // A fresh page has none of this: whether it may offer the command, and what
+      // is meant to be standing in place of what.
+      frames.post(from, { type: 'ez:can-explore', on: snapshot?.canExplore === true })
+      frames.post(from, {
+        type: 'ez:in-explore',
+        on: !!snapshot?.chats?.find((c) => c.current)?.parentChatId,
       })
+      seedVariants(from)
+      const frame = frames.app(from)
+      if (frame) {
+        frames.post(from, {
+          type: 'ez:viewport',
+          preset: frame.device.id,
+          zoom: frame.zoom,
+          scoped: multi,
+        })
+      }
+      // A frame that (re)booted while an annotation is being composed elsewhere
+      // starts held; its own popup died with the page it was on.
+      if (popupFrame && popupFrame !== from) frames.post(from, { type: 'ez:hold', held: true })
+      else if (popupFrame === from) setPopupFrame(null)
+      dispatchPick({ t: 'ready', page: msg.page, now: Date.now(), frame: from })
+      return
     }
-    // A frame that (re)booted while an annotation is being composed elsewhere
-    // starts held; its own popup died with the page it was on.
-    if (popupFrame && popupFrame !== from) toFrame(from, { type: 'ez:hold', held: true })
-    else if (popupFrame === from) setPopupFrame(null)
-    dispatchPick({
-      t: 'ready',
-      page: data.page ?? '/',
-      now: Date.now(),
-      frame: from,
-    })
-  }
-  // The comment `/explore` was armed from, handed over before its popup closed.
-  // Which frame sent it matters: that is where it is rebuilt when the round ends,
-  // and the sidebar's own composer is the fallback for a frame that has gone.
-  if (data?.type === 'ez:explore-held' && from && data.draft) {
-    exploreHold = { frame: from, draft: data.draft, mode: annotateMode }
-  }
-  if (data?.type === 'ez:pick-armed' && data.pickId) {
-    dispatchPick({
-      t: 'armed',
-      id: data.pickId,
-      host: data.host ?? 'popup',
-      now: Date.now(),
-      frame: from,
-    })
-  }
-  if (data?.type === 'ez:draft' && data.pickId && data.draft) {
-    dispatchPick({
-      t: 'draft',
-      id: data.pickId,
-      draft: data.draft,
-      frame: from,
-    })
-  }
-  if (data?.type === 'ez:picked' && data.pickId && data.ref) {
-    dispatchPick({
-      t: 'picked',
-      id: data.pickId,
-      ref: data.ref,
-      page: data.page ?? '/',
-      frame: from,
-    })
-  }
-  if (data?.type === 'ez:draft-done' && data.pickId) {
-    dispatchPick({ t: 'draft-done', id: data.pickId })
-  }
-  if (data?.type === 'ez:draft-expired' && data.pickId) {
-    dispatchPick({ t: 'expired', id: data.pickId, frame: from })
-  }
-  if (data?.type === 'ez:pick-cancelled' && data.pickId) {
-    dispatchPick({
-      t: 'cancelled',
-      id: data.pickId,
-      resumed: Boolean(data.resumed),
-      frame: from,
-    })
-  }
-  if (data?.type === 'ez:key') {
+    // The comment `/explore` was armed from, handed over before its popup closed.
+    // Which frame sent it matters: that is where it is rebuilt when the round ends,
+    // and the sidebar's own composer is the fallback for a frame that has gone.
+    case 'ez:explore-held':
+      exploreHold = { frame: from, draft: msg.draft, mode: annotateMode }
+      return
+    case 'ez:pick-armed':
+      dispatchPick({ t: 'armed', id: msg.pickId, host: msg.host, now: Date.now(), frame: from })
+      return
+    case 'ez:draft':
+      dispatchPick({ t: 'draft', id: msg.pickId, draft: msg.draft, frame: from })
+      return
+    case 'ez:picked':
+      dispatchPick({ t: 'picked', id: msg.pickId, ref: msg.ref, page: msg.page, frame: from })
+      return
+    case 'ez:draft-done':
+      dispatchPick({ t: 'draft-done', id: msg.pickId })
+      return
+    case 'ez:draft-expired':
+      dispatchPick({ t: 'expired', id: msg.pickId, frame: from })
+      return
+    case 'ez:pick-cancelled':
+      dispatchPick({ t: 'cancelled', id: msg.pickId, resumed: msg.resumed, frame: from })
+      return
     // Already screened by the overlay for its own popup and the host page's
     // fields, so nothing here is being typed into.
-    if (data.chord) runShortcut(data.chord, false)
+    case 'ez:key':
+      runShortcut(msg.chord, false, msg.guest)
+      return
   }
 })
 
@@ -4735,7 +4690,7 @@ window.addEventListener('message', (e: MessageEvent) => {
  *  mode is the overlay's call, and only it can see whether a popup is open. */
 function escapeAnnotating(): void {
   if (annotateMode === 'off') return
-  broadcast({ type: 'ez:escape' })
+  frames.postAll({ type: 'ez:escape' })
 }
 
 /** The shell is the only listener for the table, and the overlay forwards keys it

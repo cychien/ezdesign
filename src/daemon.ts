@@ -8,6 +8,7 @@ import type { Socket } from 'node:net'
 import type { SessionConfigOption } from '@agentclientprotocol/sdk'
 import express, { type ErrorRequestHandler, type Response, Router } from 'express'
 import { AppProxy } from './app-proxy.js'
+import { refuseCrossSite } from './origin-gate.js'
 import { type ProjectRuntime, SessionDirectory } from './session-directory.js'
 import { migrateLegacySessions } from './session-migrate.js'
 import {
@@ -727,6 +728,12 @@ class SessionRuntime implements ProjectRuntime {
 
   get state(): 'active' | 'ended' {
     return this.store.session.state
+  }
+
+  /** The shell's, the api's and the proxied app's origin - the only one
+   *  `refuseCrossSite` lets act. */
+  get shellOrigin(): string {
+    return `http://127.0.0.1:${this.port}`
   }
 
   get endedByUser(): boolean {
@@ -1555,6 +1562,9 @@ class SessionRuntime implements ProjectRuntime {
 
   private apiRouter(): Router {
     const api = Router()
+    // First: a page on any other origin gets nothing from here, not even a
+    // bodiless POST. The CLI and the agent send neither header and pass.
+    api.use(refuseCrossSite(() => this.shellOrigin))
     api.use((_req, _res, next) => {
       this.touch()
       next()

@@ -8,6 +8,7 @@ import { type AttachController, attachify } from './attach.js'
 import { GRACE_MS, draftExpired, draftPendingNames, normalizeDraft } from './draft.js'
 import type { AnchorWire, DraftSubject, DraftWire, RefWire } from './draft.js'
 import { type IconNode, icon } from './icon.js'
+import { type OverlaySnapshot, linkFromScript } from './overlay-link.js'
 import { modLabel } from './pick.js'
 import { type Candidate, SWAPPED_ATTR, VariantSwapper, captureElement } from './variant.js'
 import { following, scrollRange, scrollRatio } from './scroll-sync.js'
@@ -52,17 +53,7 @@ interface Pick {
   scroll: { x: number; y: number }
 }
 
-interface AnnotationWire {
-  id: string
-  kind: 'element' | 'point' | 'text' | 'page'
-  comment: string
-  anchor: AnchorWire
-}
-
-interface SnapshotWire {
-  state: 'active' | 'ended'
-  annotations: AnnotationWire[]
-}
+type AnnotationWire = OverlaySnapshot['annotations'][number]
 
 /** Whether this document is a preview inside the review shell. Un-framed, the
  *  overlay is a guest in a page the user is simply browsing: it annotates, but
@@ -79,6 +70,9 @@ const PREFIX = (() => {
   }
 })()
 const API = `${PREFIX}/api`
+/** Everything this overlay says to the review goes through here, configured by
+ *  the daemon's own script tag, so a page cannot pick. */
+const link = linkFromScript(document.currentScript as HTMLScriptElement | null, API)
 const SOURCE_ATTR = 'data-ez-source'
 
 let mode: Mode = 'off'
@@ -618,7 +612,7 @@ function openPopup(
   exploreHead.querySelector('.ez-explore-title')!.textContent = '探索樣式'
   exploreHead.hidden = true
   const attach = attachify({
-    api: API,
+    attachments: link.attachments,
     mk: el,
     className: 'ez-input',
     placeholder: COMPOSE_PLACEHOLDER,
@@ -835,12 +829,7 @@ async function saveAnnotation(
   const anchor =
     extra?.anchor ?? (element ? buildAnchor(element, extra?.selectedText, extra?.pin) : null)
   if (!anchor) throw new Error('no anchor to save against')
-  const res = await fetch(`${API}/annotations`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ kind, comment, attachments, references, anchor }),
-  })
-  if (!res.ok) throw new Error(`annotation rejected (${res.status})`)
+  await link.annotate({ kind, comment, attachments, references, anchor })
 }
 
 // ---------------------------------------------------------------- restore
@@ -1111,7 +1100,7 @@ let pickSeq = 0
 const newPickId = (): string => `p${++pickSeq}-${Date.now().toString(36)}`
 
 function post(message: Record<string, unknown>): void {
-  window.parent?.postMessage(message, location.origin)
+  link.post(message)
 }
 
 /** The popup goes inert: hidden, blurred, unpainted. Everything it owns - its
@@ -1543,7 +1532,7 @@ function setMode(next: Mode): void {
   dismiss()
   ui.selectionBubble?.remove()
   ui.selectionBubble = null
-  window.parent?.postMessage({ type: 'ez:mode', mode }, location.origin)
+  post({ type: 'ez:mode', mode })
 }
 
 // ---------------------------------------------------------------- events
@@ -1993,7 +1982,7 @@ function boot(): void {
   })
 
   window.addEventListener('message', (e: MessageEvent) => {
-    if (e.origin !== location.origin) return
+    if (!link.fromShell(e)) return
     const data = e.data as {
       type?: string
       mode?: Mode
@@ -2054,9 +2043,7 @@ function boot(): void {
     if (data?.type === 'ez:restore' && data.draft) restoreDraft(data.draft)
   })
 
-  const events = new EventSource(`${API}/events`)
-  events.onmessage = (e) => {
-    const snapshot = JSON.parse(e.data) as SnapshotWire
+  link.subscribe((snapshot) => {
     annotations = snapshot.annotations
     ended = snapshot.state === 'ended'
     // Explicit, not left to `setMode`: a pick from the note box runs with the mode
@@ -2066,7 +2053,7 @@ function boot(): void {
       setMode('off')
     }
     scheduleRepaint()
-  }
+  })
 
   // The page comes with it: the shell only knows the path it was opened on, which
   // goes stale the moment the app navigates, and a pick has to be re-armed and a

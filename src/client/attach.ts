@@ -29,8 +29,42 @@ import { type Make, type SlashCommand, attachSlashMenu } from './slash.js'
 /** Mirrors MAX_ATTACHMENT_BYTES in src/constants.ts, which is node-only. */
 const MAX_BYTES = 8 * 1024 * 1024
 
+/** Where a composer's file chips go. The shell and an App overlay upload to
+ *  the api themselves (`directAttachments`); a canvas overlay has no api and
+ *  asks the shell. */
+export interface AttachmentTransport {
+  /** Rejects with the daemon's own words. */
+  upload(file: File): Promise<{ id: string; name: string }>
+  /** Fire and forget; the daemon's sweep collects whatever this misses. */
+  discard(id: string): void
+}
+
+export function directAttachments(api: string): AttachmentTransport {
+  return {
+    async upload(file) {
+      const res = await fetch(`${api}/attachments`, {
+        method: 'POST',
+        headers: {
+          'content-type': file.type || 'application/octet-stream',
+          // A filename is free to hold bytes no header may carry.
+          'x-ez-name': encodeURIComponent(file.name || 'image.png'),
+        },
+        body: file,
+      })
+      if (!res.ok) {
+        const body = (await res.json().catch(() => null)) as { error?: string } | null
+        throw new Error(body?.error ?? `HTTP ${res.status}`)
+      }
+      return (await res.json()) as { id: string; name: string }
+    },
+    discard(id) {
+      fetch(`${api}/attachments/${id}`, { method: 'DELETE' }).catch(() => {})
+    },
+  }
+}
+
 interface Options {
-  api: string
+  attachments: AttachmentTransport
   mk: Make
   /** Class for the editable itself, so each host keeps its own field styling. */
   className: string
@@ -113,7 +147,7 @@ const REF_ATTR = 'data-ez-ref'
 const SKILL_ATTR = 'data-ez-skill'
 
 export function attachify({
-  api,
+  attachments,
   mk,
   className,
   placeholder,
@@ -205,7 +239,7 @@ export function attachify({
   /** Unawaited: the chip is already gone from the box, and a delete that never
    *  lands leaves a file the daemon's sweep collects anyway. */
   function del(id: string): void {
-    fetch(`${api}/attachments/${id}`, { method: 'DELETE' }).catch(() => {})
+    attachments.discard(id)
   }
 
   function makeChip(
@@ -295,20 +329,7 @@ export function attachify({
 
   async function upload(chip: HTMLElement, file: File): Promise<void> {
     try {
-      const res = await fetch(`${api}/attachments`, {
-        method: 'POST',
-        headers: {
-          'content-type': file.type || 'application/octet-stream',
-          // A filename is free to hold bytes no header may carry.
-          'x-ez-name': encodeURIComponent(file.name || 'image.png'),
-        },
-        body: file,
-      })
-      if (!res.ok) {
-        const body = (await res.json().catch(() => null)) as { error?: string } | null
-        throw new Error(body?.error ?? `HTTP ${res.status}`)
-      }
-      const saved = (await res.json()) as { id: string; name: string }
+      const saved = await attachments.upload(file)
       // Deleted while it was uploading. The id never reached anything that could
       // reference it, so the file can go now rather than waiting for the sweep.
       if (!editable.contains(chip)) {
