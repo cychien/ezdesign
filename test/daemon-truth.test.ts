@@ -290,7 +290,7 @@ test('an explore is bound by the harness only when it is on and ready', async ()
   assert.ok(onExplore.includes('An explore has no review, your'))
 })
 
-// A dev server that moved to another port is a new session; the switch is the project's.
+// A dev server that moved to another port is the same session, and the switch the project's.
 test('the switch is remembered for the project, whatever port its dev server is on', async () => {
   const dir = project(['product', 'design'])
   const first = await ready(dir)
@@ -307,6 +307,9 @@ test('a remembered on whose files are gone starts off, so turning it on asks aga
   const dir = project(['product', 'design'])
   await api(await ready(dir), '/harness', { on: true })
   rmSync(join(dir, 'PRODUCT.md'))
+  // The session is the project's for as long as the daemon runs; the next one
+  // starts it again from what was remembered.
+  await world.stopDaemon((await world.liveDaemon()).port)
   const later = await ready(dir)
   assert.equal((await state(later)).designHarness, false)
   const res = await api(later, '/harness', { on: true })

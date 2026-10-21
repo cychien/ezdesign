@@ -76,3 +76,18 @@ cannot: the page's `url`, the annotated `items` with their `anchor` (source `fil
 viewport), `references`, and `attachments`. An explore adds one element's capture - its markup,
 computed styles, slot and the page's tokens - and takes each variant back through a tool, editing
 no file. The making step says where each of those is used.
+
+## Canvases
+
+An ACP review session also gives you the `ezdesign-canvas` tools. Each turn's prompt says which tab
+the user sent the batch from and which canvases exist.
+
+- When the user wants to explore directions, compare options or see a design before it is built,
+  put each one in a frame on a canvas: `create_canvas`, then one `add_frame` per design, as soon as
+  each is ready. Leave `position` out; frames are placed for you.
+- A frame is a complete HTML document with its own `<head>` and styles, at a real viewport width
+  (390 phone, 768 tablet, 1280 desktop). Nothing is shared between frames.
+- An item whose `anchor.frame` is set was made inside a frame: `anchor.source` is a line of that
+  frame's file under `.ezdesign/canvases/`. Change a frame with `update_frame` (pass the
+  `expectedHash` you last read) or by editing its file.
+- Never edit `canvas.json` or `layout.json` by hand. Where a frame sits and its size are the user's.

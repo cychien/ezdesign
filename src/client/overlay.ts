@@ -8,6 +8,7 @@ import { type AttachController, attachify } from './attach.js'
 import { GRACE_MS, draftExpired, draftPendingNames, normalizeDraft } from './draft.js'
 import type { AnchorWire, DraftSubject, DraftWire, RefWire } from './draft.js'
 import { type IconNode, icon } from './icon.js'
+import { type OverlaySnapshot, linkFromScript } from './overlay-link.js'
 import { modLabel } from './pick.js'
 import { type Candidate, SWAPPED_ATTR, VariantSwapper, captureElement } from './variant.js'
 import { following, scrollRange, scrollRatio } from './scroll-sync.js'
@@ -52,17 +53,7 @@ interface Pick {
   scroll: { x: number; y: number }
 }
 
-interface AnnotationWire {
-  id: string
-  kind: 'element' | 'point' | 'text' | 'page'
-  comment: string
-  anchor: AnchorWire
-}
-
-interface SnapshotWire {
-  state: 'active' | 'ended'
-  annotations: AnnotationWire[]
-}
+type AnnotationWire = OverlaySnapshot['annotations'][number]
 
 /** Whether this document is a preview inside the review shell. Un-framed, the
  *  overlay is a guest in a page the user is simply browsing: it annotates, but
@@ -79,6 +70,9 @@ const PREFIX = (() => {
   }
 })()
 const API = `${PREFIX}/api`
+/** Everything this overlay says to the review goes through here, configured by
+ *  the daemon's own script tag, so a page cannot pick. */
+const link = linkFromScript(document.currentScript as HTMLScriptElement | null, API)
 const SOURCE_ATTR = 'data-ez-source'
 
 let mode: Mode = 'off'
@@ -307,7 +301,9 @@ function buildAnchor(
       height: Math.round(rect.height),
     },
     viewport: { width: window.innerWidth, height: window.innerHeight, preset: viewportPreset },
-    page: location.pathname,
+    // A canvas frame is one document with no page in the app: its `frame`,
+    // stamped by the shell, says where it is.
+    ...(link.kind === 'relay' ? {} : { page: location.pathname }),
   }
 }
 
@@ -618,7 +614,7 @@ function openPopup(
   exploreHead.querySelector('.ez-explore-title')!.textContent = '探索樣式'
   exploreHead.hidden = true
   const attach = attachify({
-    api: API,
+    attachments: link.attachments,
     mk: el,
     className: 'ez-input',
     placeholder: COMPOSE_PLACEHOLDER,
@@ -835,12 +831,7 @@ async function saveAnnotation(
   const anchor =
     extra?.anchor ?? (element ? buildAnchor(element, extra?.selectedText, extra?.pin) : null)
   if (!anchor) throw new Error('no anchor to save against')
-  const res = await fetch(`${API}/annotations`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ kind, comment, attachments, references, anchor }),
-  })
-  if (!res.ok) throw new Error(`annotation rejected (${res.status})`)
+  await link.annotate({ kind, comment, attachments, references, anchor })
 }
 
 // ---------------------------------------------------------------- restore
@@ -1059,12 +1050,17 @@ function markerPosition(a: AnnotationWire): { top: number; left: number } | null
 function renderMarkers(): void {
   ui.markers.textContent = ''
   if (pick) return
-  const relevant = annotations.filter((a) => a.anchor.page === location.pathname && madeHere(a))
-  relevant.forEach((a, i) => {
+  // A relay overlay is handed only its own frame's annotations, page-less.
+  const relevant = annotations.filter(
+    (a) => (link.kind === 'relay' || a.anchor.page === location.pathname) && madeHere(a),
+  )
+  relevant.forEach((a) => {
     const at = markerPosition(a)
     if (!at) return
     const marker = el('div', 'ez-marker')
-    marker.textContent = String(i + 1)
+    // The queue's number, so a pin and its row in the sidebar say the same thing
+    // whatever page, device or frame the rest of the queue was made on.
+    marker.textContent = String(a.n ?? annotations.indexOf(a) + 1)
     marker.title = a.comment
     // Centred on its anchor, so an anchor on a viewport edge would leave half the
     // dot outside. Nudge it whole only while the anchor itself is on screen - an
@@ -1111,7 +1107,7 @@ let pickSeq = 0
 const newPickId = (): string => `p${++pickSeq}-${Date.now().toString(36)}`
 
 function post(message: Record<string, unknown>): void {
-  window.parent?.postMessage(message, location.origin)
+  link.post(message)
 }
 
 /** The popup goes inert: hidden, blurred, unpainted. Everything it owns - its
@@ -1543,7 +1539,7 @@ function setMode(next: Mode): void {
   dismiss()
   ui.selectionBubble?.remove()
   ui.selectionBubble = null
-  window.parent?.postMessage({ type: 'ez:mode', mode }, location.origin)
+  post({ type: 'ez:mode', mode })
 }
 
 // ---------------------------------------------------------------- events
@@ -1626,7 +1622,7 @@ function onMouseDown(e: MouseEvent): void {
     return
   }
   if (mode === 'off') return
-  // One annotation is composed at a time across the whole canvas: a popup open
+  // One annotation is composed at a time across the whole grid: a popup open
   // here or in any other frame means this press starts no second one - and does
   // not reach the page either, the way an armed mode's gestures never do.
   if (ui.popup || held) {
@@ -1773,7 +1769,7 @@ function isTyping(target: EventTarget | null): boolean {
  *  teardown mid-scroll would strand those styles on their page. Our own chrome
  *  is exempt so a long comment can still be scrolled inside the field. */
 function onScrollAttempt(e: Event): void {
-  // Mod+wheel is the canvas's, wherever the pointer happens to be: the shell
+  // Mod+wheel is the grid's, wherever the pointer happens to be: the shell
   // cannot hear a wheel that lands on this document, so the page's own scroll
   // is cancelled here and the deltas are handed up to move the stage instead.
   // Only while framed - in a plain tab there is no stage to hand them to.
@@ -1782,7 +1778,14 @@ function onScrollAttempt(e: Event): void {
   if (w && (w.metaKey || w.ctrlKey) && window.parent !== window) {
     e.preventDefault()
     const unit = w.deltaMode === 1 ? 16 : w.deltaMode === 2 ? window.innerHeight : 1
-    post({ type: 'ez:wheel', dx: w.deltaX * unit, dy: w.deltaY * unit })
+    // On a canvas board the modified wheel - a pinch arrives as ctrl+wheel - is a
+    // zoom around the pointer, so where the pointer is goes with it.
+    post({
+      type: 'ez:wheel',
+      dx: w.deltaX * unit,
+      dy: w.deltaY * unit,
+      ...(link.kind === 'relay' ? { zoom: true, at: { x: w.clientX, y: w.clientY } } : {}),
+    })
     return
   }
   // Never during a pick: reaching the element being pointed at is the entire
@@ -1935,6 +1938,12 @@ function linkTarget(e: MouseEvent): string | null {
  *  that is the shell's to make: it owns where the review goes, and the history
  *  entry for having gone there. */
 function onNavClick(e: MouseEvent): void {
+  if (link.kind === 'relay') {
+    // A canvas frame is one document: a link that would leave it goes nowhere.
+    const href = (e.target as Element | null)?.closest?.('a[href]')?.getAttribute('href')
+    if (href && !href.startsWith('#')) e.preventDefault()
+    return
+  }
   const to = linkTarget(e)
   if (!to) return
   e.preventDefault()
@@ -1993,7 +2002,7 @@ function boot(): void {
   })
 
   window.addEventListener('message', (e: MessageEvent) => {
-    if (e.origin !== location.origin) return
+    if (!link.fromShell(e)) return
     const data = e.data as {
       type?: string
       mode?: Mode
@@ -2005,6 +2014,7 @@ function boot(): void {
       host?: 'popup' | 'note'
       returnTo?: string
       draft?: DraftWire
+      ref?: RefWire
       held?: boolean
       exploreId?: string
       anchor?: AnchorWire
@@ -2051,12 +2061,17 @@ function boot(): void {
     }
     if (data?.type === 'ez:scroll-to' && typeof data.ratio === 'number') scrollToRatio(data.ratio)
     if (data?.type === 'ez:pick-abort') cancelPick('abort')
+    // Another frame - another device, or a canvas frame on another tab - answered
+    // the pick this popup is waiting on. A popup that did not survive the wait is
+    // rebuilt from the shell's copy, which already holds the answer.
+    if (data?.type === 'ez:pick-resolve' && data.pickId) {
+      if (pick?.id === data.pickId && pick.host === 'popup' && pick.suspended && data.ref) deliverPick(data.ref)
+      else if (data.draft) restoreDraft(data.draft)
+    }
     if (data?.type === 'ez:restore' && data.draft) restoreDraft(data.draft)
   })
 
-  const events = new EventSource(`${API}/events`)
-  events.onmessage = (e) => {
-    const snapshot = JSON.parse(e.data) as SnapshotWire
+  link.subscribe((snapshot) => {
     annotations = snapshot.annotations
     ended = snapshot.state === 'ended'
     // Explicit, not left to `setMode`: a pick from the note box runs with the mode
@@ -2066,7 +2081,7 @@ function boot(): void {
       setMode('off')
     }
     scheduleRepaint()
-  }
+  })
 
   // The page comes with it: the shell only knows the path it was opened on, which
   // goes stale the moment the app navigates, and a pick has to be re-armed and a

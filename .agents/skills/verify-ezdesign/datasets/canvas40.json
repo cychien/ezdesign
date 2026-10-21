@@ -1,0 +1,8 @@
+{
+  "description": "Fixture session plus canvas 40 frames: 40 self-contained documents of about 1 KB with no external assets, 390x844 each, laid out 8x5. For the open and pan/zoom budgets.",
+  "sessions": [],
+  "canvases": [
+    { "name": "40 frames", "grid": { "count": 40, "columns": 8, "width": 390, "height": 844, "gap": 120, "file": "canvas-frames/card.html" } },
+    { "name": "空白", "frames": [] }
+  ]
+}

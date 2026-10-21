@@ -33,6 +33,7 @@ Each feature file starts with an H1 and one paragraph describing the user-visibl
 
 - [Annotate and deliver](./annotate-and-deliver.md) covers element and region annotation, the comment box, sending, and the agent side (`poll`, `progress`, reply, `end`) with the `file:line` anchor.
 - [Queue and note](./queue-and-note.md) covers editing and removing queued annotations, the batch note, and keyboard sends.
-- [Device previews](./device-previews.md) covers the single-size previews, the size menu, and the all-sizes canvas.
+- [Device previews](./device-previews.md) covers the single-size previews, the size menu, and the all-sizes grid.
+- [Canvas](./canvas.md) covers the tab strip, boards, frames, annotation inside frames and their isolation, and `/element` across tabs.
 - [CLI and sessions](./cli-and-sessions.md) covers the terminal surface: help, version, open, status, stop, env handling, login/logout/inspire, session end and reopen.
 - [Consumer install](./consumer-install.md) covers the packed tarball: contents, bin, `@cychien/ezdesign/vite`, and a session from the installed daemon.

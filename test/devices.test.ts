@@ -2,17 +2,17 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import type { Device } from '../src/client/devices.js'
 import {
-  CANVAS_DEFAULT,
-  CANVAS_DEVICES,
-  CANVAS_GAP,
-  CANVAS_ZOOM,
+  GRID_DEFAULT,
+  GRID_DEVICES,
+  GRID_GAP,
+  GRID_ZOOM,
   DESKTOP,
   DEVICES,
   MIN_ZOOM,
   MOBILE,
   TABLET,
-  canvasLimit,
-  canvasRows,
+  gridLimit,
+  gridRows,
   deviceById,
   deviceLabel,
   fitWidth,
@@ -53,18 +53,18 @@ test('the label carries both the name and the size it stands for', () => {
 })
 
 const ids = (rows: Device[][]) => rows.map((row) => row.map((d) => d.id))
-const shown = (list: string[]) => CANVAS_DEVICES.filter((d) => list.includes(d.id))
-const LIMIT = canvasLimit(CANVAS_DEVICES, CANVAS_GAP)
-const defaultRows = () => canvasRows(shown(CANVAS_DEFAULT), CANVAS_GAP, LIMIT)
+const shown = (list: string[]) => GRID_DEVICES.filter((d) => list.includes(d.id))
+const LIMIT = gridLimit(GRID_DEVICES, GRID_GAP)
+const defaultRows = () => gridRows(shown(GRID_DEFAULT), GRID_GAP, LIMIT)
 
 // Narrowest first, and a pairing that saves a whole row of dragging costs only
 // width the limit already allows for.
-test('the canvas pairs what fits and gives the rest their own row', () => {
+test('the grid pairs what fits and gives the rest their own row', () => {
   assert.deepEqual(ids(defaultRows()), [['mobile', 'tablet'], ['desktop']])
 })
 
 test('every size that is on is laid out, and nothing else is', () => {
-  const rows = canvasRows(shown(['mobile', 'desktop']), CANVAS_GAP, LIMIT)
+  const rows = gridRows(shown(['mobile', 'desktop']), GRID_GAP, LIMIT)
   assert.deepEqual(
     rows.flat().map((d) => d.id),
     ['mobile', 'desktop'],
@@ -72,12 +72,12 @@ test('every size that is on is laid out, and nothing else is', () => {
 })
 
 // The limit is what the arrangement answers to, and it is taken from every size
-// the canvas offers - so turning one off cannot rearrange or resize the rest.
+// the grid offers - so turning one off cannot rearrange or resize the rest.
 test('no row runs past the limit, whichever sizes are on', () => {
-  for (const on of [CANVAS_DEVICES, shown(CANVAS_DEFAULT), shown(['tablet'])]) {
-    const rows = canvasRows(on, CANVAS_GAP, LIMIT)
+  for (const on of [GRID_DEVICES, shown(GRID_DEFAULT), shown(['tablet'])]) {
+    const rows = gridRows(on, GRID_GAP, LIMIT)
     for (const row of rows) {
-      assert.ok(rowWidth(row, CANVAS_GAP) <= LIMIT, `${row.map((d) => d.id)} is too wide`)
+      assert.ok(rowWidth(row, GRID_GAP) <= LIMIT, `${row.map((d) => d.id)} is too wide`)
     }
     assert.equal(rows.flat().length, on.length, 'and none is dropped')
   }
@@ -86,17 +86,17 @@ test('no row runs past the limit, whichever sizes are on', () => {
 // Turning a size off must not resize the ones that are left, and nothing is
 // shrunk to make a row fit either: a page measured at a size nobody browses at
 // is not a measurement.
-test('the canvas is drawn at true size, whatever is on it', () => {
-  assert.equal(CANVAS_ZOOM, 1)
+test('the grid is drawn at true size, whatever is on it', () => {
+  assert.equal(GRID_ZOOM, 1)
 })
 
-test('an empty canvas has no rows rather than a row of nothing', () => {
-  assert.deepEqual(canvasRows([], CANVAS_GAP, LIMIT), [])
+test('an empty grid has no rows rather than a row of nothing', () => {
+  assert.deepEqual(gridRows([], GRID_GAP, LIMIT), [])
 })
 
 test('the picker lists the sizes narrowest first', () => {
   assert.deepEqual(
-    CANVAS_DEVICES.map((d) => d.id),
+    GRID_DEVICES.map((d) => d.id),
     ['mobile', 'tablet-portrait', 'tablet', 'desktop'],
   )
   assert.deepEqual(

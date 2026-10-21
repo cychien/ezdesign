@@ -6,7 +6,7 @@ const world = await DaemonWorld.create()
 after(() => world.dispose())
 
 const TARGET = 'http://127.0.0.1:9/'
-const ORIGIN = new URL(TARGET).origin
+const FIND = `/control/sessions/find?project=${encodeURIComponent(world.dataDir)}`
 
 interface State {
   agentOnline: boolean
@@ -43,7 +43,7 @@ test('a successor registers first, waits for the predecessor, then takes its ses
   // Sessions are not there to be found yet - and the lookup waits rather than
   // saying so, because the predecessor is still holding the ports.
   await assert.rejects(
-    world.control(successor.port, `/control/sessions/find?origin=${encodeURIComponent(ORIGIN)}`, {
+    world.control(successor.port, FIND, {
       signal: AbortSignal.timeout(700),
     }),
     /abort|timeout/i,
@@ -54,10 +54,7 @@ test('a successor registers first, waits for the predecessor, then takes its ses
   await world.stopDaemon(old.port)
   assert.equal(world.registry()?.pid, successor.pid)
 
-  const found = await world.control(
-    successor.port,
-    `/control/sessions/find?origin=${encodeURIComponent(ORIGIN)}`,
-  )
+  const found = await world.control(successor.port, FIND)
   assert.equal(found.status, 200)
   const { port } = (await found.json()) as { port: number }
   assert.equal(port, opened.port, 'the session came back on the port the shell already has')

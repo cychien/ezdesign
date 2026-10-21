@@ -7,6 +7,9 @@ export const URL_PREFIX = '/__ezdesign'
 const ENV_PREFIX = APP_NAME.toUpperCase()
 export const DATA_DIR = process.env[`${ENV_PREFIX}_DATA_DIR`] ?? join(homedir(), `.${APP_NAME}`)
 export const SESSIONS_DIR = join(DATA_DIR, 'sessions')
+/** Where `(origin, project)` directories go once folded into project sessions:
+ *  moved, never deleted, so a downgrade or a bad merge can be undone by hand. */
+export const LEGACY_SESSIONS_DIR = join(DATA_DIR, 'sessions-legacy')
 export const REGISTRY_FILE = join(DATA_DIR, 'daemon.json')
 export const DAEMON_LOG = join(DATA_DIR, 'daemon.log')
 /** Where a self-updating daemon installs the version it hands over to. */

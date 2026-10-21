@@ -6,15 +6,13 @@ import { test } from 'node:test'
 
 process.env.EZDESIGN_DATA_DIR = mkdtempSync(join(tmpdir(), 'ezdesign-test-'))
 
-const { SessionStore, listPersistedSessions, listRestorableSessions } = await import(
-  '../src/store.js'
-)
+const { SessionStore, listPersistedSessions, listRestorableSessions, persistedSession } =
+  await import('../src/store.js')
 const { ATTACHMENT_GRACE_MS } = await import('../src/constants.js')
 const anchor = { selector: 'div', page: '/' }
-const PROJECT = '/tmp/project-a'
 
 test('annotations queue: add, update, remove', () => {
-  const store = new SessionStore('http://localhost:1111', PROJECT)
+  const store = new SessionStore('/tmp/project-1111')
   store.addAnnotation({ id: 'a1', kind: 'element', comment: 'x', anchor, createdAt: 1 })
   store.addAnnotation({ id: 'a2', kind: 'text', comment: 'y', anchor, createdAt: 2 })
   assert.equal(store.annotations.length, 2)
@@ -28,7 +26,7 @@ test('annotations queue: add, update, remove', () => {
 })
 
 test('sendBatch seals the queue and empty sends are rejected', () => {
-  const store = new SessionStore('http://localhost:2222', PROJECT)
+  const store = new SessionStore('/tmp/project-2222')
   assert.equal(store.sendBatch(null), null)
   assert.equal(store.sendBatch('   '), null)
 
@@ -43,7 +41,7 @@ test('sendBatch seals the queue and empty sends are rejected', () => {
 })
 
 test('delivery is at-least-once: unacked batches redeliver, acked ones do not', () => {
-  const store = new SessionStore('http://localhost:3333', PROJECT)
+  const store = new SessionStore('/tmp/project-3333')
   store.addAnnotation({ id: 'c1', kind: 'element', comment: 'fix', anchor, createdAt: 1 })
   const batch = store.sendBatch(null)!
 
@@ -56,11 +54,11 @@ test('delivery is at-least-once: unacked batches redeliver, acked ones do not', 
 })
 
 test('state survives a store re-instantiation (daemon restart)', () => {
-  const first = new SessionStore('http://localhost:4444', PROJECT)
+  const first = new SessionStore('/tmp/project-4444')
   first.addAnnotation({ id: 'd1', kind: 'element', comment: 'keep me', anchor, createdAt: 1 })
   first.end('user')
 
-  const second = new SessionStore('http://localhost:4444', PROJECT)
+  const second = new SessionStore('/tmp/project-4444')
   assert.equal(second.annotations[0]!.comment, 'keep me')
   assert.equal(second.session.state, 'ended')
   assert.equal(second.session.endedBy, 'user')
@@ -73,21 +71,20 @@ test('state survives a store re-instantiation (daemon restart)', () => {
 // A restarted daemon rebuilds its session map from these, so a session it
 // cannot see is a session whose queued feedback it will never deliver.
 test('persisted sessions are listable across a daemon restart', () => {
-  const active = new SessionStore('http://localhost:4444', PROJECT)
+  const active = new SessionStore('/tmp/project-list-active')
   active.setPort(51000)
-  const ended = new SessionStore('http://localhost:5555', PROJECT)
+  const ended = new SessionStore('/tmp/project-list-ended')
   ended.end('user')
 
-  const listed = listPersistedSessions()
-  const byOrigin = new Map(listed.map((s) => [s.targetOrigin, s]))
-
-  assert.equal(byOrigin.get('http://localhost:4444')?.state, 'active')
-  assert.equal(byOrigin.get('http://localhost:4444')?.port, 51000)
-  assert.equal(byOrigin.get('http://localhost:5555')?.state, 'ended')
+  const byProject = new Map(listPersistedSessions().map((s) => [s.project, s]))
+  assert.equal(byProject.get('/tmp/project-list-active')?.state, 'active')
+  assert.equal(byProject.get('/tmp/project-list-active')?.port, 51000)
+  assert.deepEqual(byProject.get('/tmp/project-list-active')?.app, { kind: 'none' })
+  assert.equal(byProject.get('/tmp/project-list-ended')?.state, 'ended')
 })
 
 test('the remembered port survives an end/reopen cycle', () => {
-  const store = new SessionStore('http://localhost:6666', PROJECT)
+  const store = new SessionStore('/tmp/project-6666')
   store.setPort(51001)
   store.end('agent')
   store.reopen()
@@ -96,23 +93,21 @@ test('the remembered port survives an end/reopen cycle', () => {
   assert.equal(store.session.endedBy, undefined)
 })
 
-test('restore rebuilds every active session and skips ended ones', () => {
-  new SessionStore('http://localhost:7777', PROJECT)
-  new SessionStore('http://localhost:8888', PROJECT).end('user')
-
-  const restorable = listRestorableSessions().map((s) => s.targetOrigin)
-  assert.ok(restorable.includes('http://localhost:7777'))
-  assert.ok(!restorable.includes('http://localhost:8888'))
-  // Ended, but still on disk: restore decides what to rebuild, not what to keep.
-  assert.ok(listPersistedSessions().some((s) => s.targetOrigin === 'http://localhost:8888'))
+test('the project is the identity, so one dev server moving ports keeps the store', () => {
+  const store = new SessionStore('/tmp/project-moves')
+  store.attachApp('http://localhost:5173', 100)
+  store.addAnnotation({ id: 'keep', kind: 'element', comment: 'still mine', anchor, createdAt: 1 })
+  const reopened = new SessionStore('/tmp/project-moves')
+  reopened.attachApp('http://localhost:5174', 200)
+  assert.equal(reopened.dir, store.dir)
+  assert.equal(reopened.annotations[0]?.comment, 'still mine')
+  assert.deepEqual(reopened.app, { kind: 'attached', origin: 'http://localhost:5174', attachedAt: 200 })
+  assert.equal(persistedSession('/tmp/project-moves')?.app.kind, 'attached')
 })
 
-// Dev servers default to the same port, so two projects reviewed on
-// localhost:5173 are the case that made this identity change necessary.
-test('two projects on one origin get separate stores', () => {
-  const origin = 'http://localhost:5173'
-  const a = new SessionStore(origin, '/tmp/project-a')
-  const b = new SessionStore(origin, '/tmp/project-b')
+test('two projects get separate stores', () => {
+  const a = new SessionStore('/tmp/project-a')
+  const b = new SessionStore('/tmp/project-b')
   assert.notEqual(a.dir, b.dir)
 
   a.addAnnotation({ id: 'a1', kind: 'element', comment: 'A only', anchor, createdAt: 1 })
@@ -124,34 +119,45 @@ test('two projects on one origin get separate stores', () => {
   assert.equal(a.nextBatch()?.note, 'A note')
 })
 
-test('the same project on one origin keeps its store', () => {
-  const origin = 'http://localhost:5174'
-  new SessionStore(origin, '/tmp/project-a').addAnnotation({
-    id: 'keep',
-    kind: 'element',
-    comment: 'still mine',
-    anchor,
-    createdAt: 1,
-  })
-  const reopened = new SessionStore(origin, '/tmp/project-a')
-  assert.equal(reopened.annotations[0]?.comment, 'still mine')
+test('detaching forgets the origin and its attachedAt', () => {
+  const store = new SessionStore('/tmp/project-detach')
+  store.attachApp('http://localhost:5180', 10)
+  store.detachApp()
+  assert.deepEqual(store.app, { kind: 'none' })
+  store.detachApp()
+  assert.deepEqual(store.app, { kind: 'none' })
 })
 
-// Only one project can hold a port at a time, so restoring both would rebuild a
-// proxy for a dev server that is certainly gone.
-test('restore keeps only the newest session per origin', () => {
-  const origin = 'http://localhost:5175'
-  const older = new SessionStore(origin, '/tmp/old-project')
-  // Both stores are built in the same millisecond here; date the first one back
-  // so the assertion tests the rule rather than readdir order.
-  const record = join(older.dir, 'session.json')
-  writeFileSync(record, JSON.stringify({ ...older.session, createdAt: 1 }))
-  const newer = new SessionStore(origin, '/tmp/new-project')
-  newer.setPort(50001)
+test('restore takes active sessions flagged restoreOnStart, newest attach first', () => {
+  const flagged = (project: string, origin: string | null, at: number) => {
+    const store = new SessionStore(project)
+    if (origin) store.attachApp(origin, at)
+    store.setRestoreOnStart(true)
+    return store
+  }
+  flagged('/tmp/restore-old', 'http://localhost:5190', 1_000)
+  flagged('/tmp/restore-new', 'http://localhost:5190', 2_000)
+  flagged('/tmp/restore-none', null, 0)
+  flagged('/tmp/restore-ended', 'http://localhost:5191', 3_000).end('user')
+  new SessionStore('/tmp/restore-unflagged').attachApp('http://localhost:5192', 4_000)
+  const cleared = flagged('/tmp/restore-cleared', 'http://localhost:5193', 5_000)
+  cleared.setRestoreOnStart(false)
 
-  const restorable = listRestorableSessions().filter((s) => s.targetOrigin === origin)
-  assert.equal(restorable.length, 1)
-  assert.equal(restorable[0]?.project, '/tmp/new-project')
+  const order = listRestorableSessions()
+    .map((s) => s.project)
+    .filter((p) => p.startsWith('/tmp/restore-'))
+  assert.deepEqual(order, ['/tmp/restore-new', '/tmp/restore-old', '/tmp/restore-none'])
+  assert.equal(cleared.session.restoreOnStart, undefined)
+})
+
+test('a legacy (origin, project) record is neither listed nor found', () => {
+  const store = new SessionStore('/tmp/project-legacy-shaped')
+  writeFileSync(
+    join(store.dir, 'session.json'),
+    JSON.stringify({ targetOrigin: 'http://localhost:5173', project: '/tmp/project-legacy-shaped', state: 'active', createdAt: 1 }),
+  )
+  assert.equal(persistedSession('/tmp/project-legacy-shaped'), null)
+  assert.ok(!listPersistedSessions().some((s) => s.project === '/tmp/project-legacy-shaped'))
 })
 
 // ---------------------------------------------------------------- attachments
@@ -159,7 +165,7 @@ test('restore keeps only the newest session per origin', () => {
 const bytes = (s: string) => Buffer.from(s)
 
 test('an attachment is written to disk and indexed', () => {
-  const store = new SessionStore('http://localhost:9001', PROJECT)
+  const store = new SessionStore('/tmp/project-9001')
   const a = store.addAttachment('shot.png', 'image/png', bytes('png-bytes'))
 
   assert.equal(a.name, 'shot.png')
@@ -173,13 +179,13 @@ test('an attachment is written to disk and indexed', () => {
 // Every clipboard screenshot arrives under the same name, so without this the
 // chips in one composer would be indistinguishable.
 test('names are deduplicated within a session', () => {
-  const store = new SessionStore('http://localhost:9002', PROJECT)
+  const store = new SessionStore('/tmp/project-9002')
   const names = [1, 2, 3].map(() => store.addAttachment('image.png', 'image/png', bytes('x')).name)
   assert.deepEqual(names, ['image.png', 'image-2.png', 'image-3.png'])
 })
 
 test('a nameless paste is named from its type', () => {
-  const store = new SessionStore('http://localhost:9003', PROJECT)
+  const store = new SessionStore('/tmp/project-9003')
   assert.equal(store.addAttachment('', 'image/jpeg', bytes('x')).name, 'file.jpg')
   assert.equal(store.addAttachment('', 'application/octet-stream', bytes('x')).name, 'file')
 })
@@ -187,7 +193,7 @@ test('a nameless paste is named from its type', () => {
 // The name reaches a real path, so a traversal attempt must not resolve above
 // the attachments directory.
 test('hostile names cannot escape the attachments directory', () => {
-  const store = new SessionStore('http://localhost:9004', PROJECT)
+  const store = new SessionStore('/tmp/project-9004')
   for (const raw of ['../../evil.png', '/etc/passwd', '..', '.hidden']) {
     const a = store.addAttachment(raw, 'image/png', bytes('x'))
     assert.equal(dirname(store.attachmentPath(a)), store.attachmentsDir)
@@ -197,7 +203,7 @@ test('hostile names cannot escape the attachments directory', () => {
 })
 
 test('unknown ids resolve to null rather than a partial list', () => {
-  const store = new SessionStore('http://localhost:9005', PROJECT)
+  const store = new SessionStore('/tmp/project-9005')
   const a = store.addAttachment('a.png', 'image/png', bytes('x'))
   assert.equal(store.getAttachments([a.id])?.length, 1)
   assert.equal(store.getAttachments([a.id, 'nope']), null)
@@ -205,7 +211,7 @@ test('unknown ids resolve to null rather than a partial list', () => {
 })
 
 test('removing an attachment deletes the file, unless something references it', () => {
-  const store = new SessionStore('http://localhost:9006', PROJECT)
+  const store = new SessionStore('/tmp/project-9006')
   const loose = store.addAttachment('loose.png', 'image/png', bytes('x'))
   const held = store.addAttachment('held.png', 'image/png', bytes('x'))
   store.addAnnotation({
@@ -226,7 +232,7 @@ test('removing an attachment deletes the file, unless something references it', 
 })
 
 test('deleting an annotation takes its files with it', () => {
-  const store = new SessionStore('http://localhost:9007', PROJECT)
+  const store = new SessionStore('/tmp/project-9007')
   const file = store.addAttachment('gone.png', 'image/png', bytes('x'))
   store.addAnnotation({
     id: 'ann',
@@ -244,7 +250,7 @@ test('deleting an annotation takes its files with it', () => {
 
 // A pasted screenshot can be the whole message.
 test('a file with no text is still a batch worth sending', () => {
-  const store = new SessionStore('http://localhost:9008', PROJECT)
+  const store = new SessionStore('/tmp/project-9008')
   const file = store.addAttachment('only.png', 'image/png', bytes('x'))
 
   assert.equal(store.sendBatch(null), null)
@@ -254,9 +260,9 @@ test('a file with no text is still a batch worth sending', () => {
 })
 
 test('the attachment index survives a daemon restart', () => {
-  const origin = 'http://localhost:9009'
-  const file = new SessionStore(origin, PROJECT).addAttachment('keep.png', 'image/png', bytes('x'))
-  const restarted = new SessionStore(origin, PROJECT)
+  const project = '/tmp/project-9009'
+  const file = new SessionStore(project).addAttachment('keep.png', 'image/png', bytes('x'))
+  const restarted = new SessionStore(project)
 
   assert.equal(restarted.attachmentIndex[file.id]?.name, 'keep.png')
   assert.equal(restarted.getAttachments([file.id])?.[0]?.name, 'keep.png')
@@ -265,7 +271,7 @@ test('the attachment index survives a daemon restart', () => {
 // The sweep is what collects files from a composer that was never sent, so it
 // has to be able to tell those from the ones still in play.
 test('the sweep drops only stale, unreferenced attachments', () => {
-  const store = new SessionStore('http://localhost:9010', PROJECT)
+  const store = new SessionStore('/tmp/project-9010')
   const fresh = store.addAttachment('fresh.png', 'image/png', bytes('x'))
   const stale = store.addAttachment('stale.png', 'image/png', bytes('x'))
   const queued = store.addAttachment('queued.png', 'image/png', bytes('x'))
@@ -312,7 +318,7 @@ test('the sweep drops only stale, unreferenced attachments', () => {
 
 // A crash between the two writes leaves bytes nothing will ever name.
 test('the sweep collects files the index never learned about', () => {
-  const store = new SessionStore('http://localhost:9011', PROJECT)
+  const store = new SessionStore('/tmp/project-9011')
   store.addAttachment('real.png', 'image/png', bytes('x'))
   const stray = join(store.attachmentsDir, 'ffffffffffff-stray.png')
   writeFileSync(stray, 'x')
@@ -325,7 +331,7 @@ test('the sweep collects files the index never learned about', () => {
 // A note that points at an element but says nothing else is still a send: the
 // element is the message.
 test('a batch carries the elements the note pointed at', () => {
-  const store = new SessionStore('http://localhost:1131', PROJECT)
+  const store = new SessionStore('/tmp/project-1131')
   const references = [{ n: 1, anchor: { source: 'src/b.tsx:88' }, label: '立即報名' }]
   assert.equal(store.sendBatch(null), null)
   const batch = store.sendBatch(null, [], references)!
@@ -334,7 +340,7 @@ test('a batch carries the elements the note pointed at', () => {
 })
 
 test('references on a queued annotation reach the batch that seals it', () => {
-  const store = new SessionStore('http://localhost:1132', PROJECT)
+  const store = new SessionStore('/tmp/project-1132')
   store.addAnnotation({
     id: 'a1',
     kind: 'element',
@@ -348,7 +354,7 @@ test('references on a queued annotation reach the batch that seals it', () => {
 })
 
 test('a batch with no references does not invent the field', () => {
-  const store = new SessionStore('http://localhost:1133', PROJECT)
+  const store = new SessionStore('/tmp/project-1133')
   assert.equal(store.sendBatch('just a note')!.references, undefined)
 })
 
@@ -356,7 +362,7 @@ test('a batch with no references does not invent the field', () => {
 // leave a field alone, replace it, and clear it - three different things that a
 // single `Object.assign` of the request body cannot tell apart.
 test('updateAnnotation leaves absent fields alone and clears empty ones', () => {
-  const store = new SessionStore('http://localhost:7777', PROJECT)
+  const store = new SessionStore('/tmp/project-7777')
   const file = { id: 'f1', name: 'a.png', mime: 'image/png', size: 3, createdAt: 1 }
   const ref = { n: 2, anchor, label: 'div' }
   store.addAnnotation({
@@ -388,7 +394,7 @@ test('updateAnnotation leaves absent fields alone and clears empty ones', () => 
 // be destructive in a way the user cannot see, and `sweepAttachments` is what
 // collects an attachment nothing references any more.
 test('a file dropped by an edit is left for the sweep, not deleted', () => {
-  const store = new SessionStore('http://localhost:7778', PROJECT)
+  const store = new SessionStore('/tmp/project-7778')
   const saved = store.addAttachment('shot.png', 'image/png', Buffer.from([1, 2, 3]))
   store.addAnnotation({
     id: 'e2',
@@ -406,7 +412,7 @@ test('a file dropped by an edit is left for the sweep, not deleted', () => {
 // ------------------------------------------------------------------- chats
 
 test('a store with no chats grows one, and everything logged belongs to it', () => {
-  const store = new SessionStore('http://localhost:7001', PROJECT)
+  const store = new SessionStore('/tmp/project-7001')
   store.appendConversation({ role: 'user', text: 'first', ts: 1 })
   store.appendConversation({ role: 'agent', text: 'reply', ts: 2 })
 
@@ -422,7 +428,7 @@ test('a store with no chats grows one, and everything logged belongs to it', () 
 })
 
 test('a new chat hides the old thread without deleting a word of it', () => {
-  const store = new SessionStore('http://localhost:7002', PROJECT)
+  const store = new SessionStore('/tmp/project-7002')
   store.appendConversation({ role: 'user', text: 'old', ts: 1 })
   const before = store.currentChat.id
 
@@ -446,7 +452,7 @@ test('a new chat hides the old thread without deleting a word of it', () => {
 // an earlier conversation and its new entries are stamped later than the chat
 // that followed it, so any date-based window would leak one into the other.
 test('an earlier chat picked back up collects entries stamped after the next one', () => {
-  const store = new SessionStore('http://localhost:7003', PROJECT)
+  const store = new SessionStore('/tmp/project-7003')
   const first = store.currentChat.id
   store.appendConversation({ role: 'user', text: 'in first', ts: 1 })
   const second = store.startChat().id
@@ -471,7 +477,7 @@ test('an earlier chat picked back up collects entries stamped after the next one
 // window, so the chat built from it has to draw exactly what it drew before -
 // including hiding what the /new of the day hid.
 test('a pre-chats session migrates its conversationClear into the first chat', () => {
-  const store = new SessionStore('http://localhost:7004', PROJECT)
+  const store = new SessionStore('/tmp/project-7004')
   const dir = store.dir
 
   // Rewind the store to what a pre-chats daemon would have written: a clear
@@ -489,7 +495,7 @@ test('a pre-chats session migrates its conversationClear into the first chat', (
     ]),
   )
 
-  const reopened = new SessionStore('http://localhost:7004', PROJECT)
+  const reopened = new SessionStore('/tmp/project-7004')
   assert.equal(reopened.chats.length, 1)
   assert.equal(reopened.chats[0]!.startedAt, 200, 'the clear point became the chat')
   assert.deepEqual(
@@ -507,7 +513,7 @@ test('a pre-chats session migrates its conversationClear into the first chat', (
 })
 
 test('the chat remembers the agent session backing it', () => {
-  const store = new SessionStore('http://localhost:7005', PROJECT)
+  const store = new SessionStore('/tmp/project-7005')
   assert.equal(store.currentChat.acpSessionId, undefined)
   store.setChatSession('acp-1', 'claude')
   assert.equal(store.currentChat.acpSessionId, 'acp-1')
@@ -526,7 +532,7 @@ test('the chat remembers the agent session backing it', () => {
 // A session id is only meaningful to the agent that issued it. Handing Codex a
 // Claude id gets "no rollout found for thread id ..." - so it is never offered.
 test('a session is only offered back to the agent that made it', () => {
-  const store = new SessionStore('http://localhost:7008', PROJECT)
+  const store = new SessionStore('/tmp/project-7008')
   store.setChatSession('claude-session', 'claude')
 
   assert.equal(store.resumableSessionId('claude'), 'claude-session')
@@ -539,7 +545,7 @@ test('a session is only offered back to the agent that made it', () => {
 })
 
 test('a chat that never reached an agent has nothing to resume', () => {
-  const store = new SessionStore('http://localhost:7009', PROJECT)
+  const store = new SessionStore('/tmp/project-7009')
   assert.equal(store.resumableSessionId('claude'), undefined)
 })
 
@@ -548,7 +554,7 @@ test('a chat that never reached an agent has nothing to resume', () => {
 // newest entry - and the shell, which reads "an earlier conversation is showing"
 // off exactly that, stopped saying so in the one state it exists to report.
 test('an empty chat still appears in the list, so position keeps its meaning', () => {
-  const store = new SessionStore('http://localhost:7006', PROJECT)
+  const store = new SessionStore('/tmp/project-7006')
   const first = store.currentChat.id
   store.appendConversation({ role: 'user', text: 'said something', ts: 1 })
   const fresh = store.startChat().id
@@ -568,7 +574,7 @@ test('an empty chat still appears in the list, so position keeps its meaning', (
 })
 
 test('asking for a fresh chat while already on an empty one has nothing to do', () => {
-  const store = new SessionStore('http://localhost:7007', PROJECT)
+  const store = new SessionStore('/tmp/project-7007')
   assert.equal(store.onEmptyNewestChat, true, 'a brand new review is already fresh')
 
   store.appendConversation({ role: 'user', text: 'x', ts: 1 })
@@ -588,7 +594,7 @@ test('asking for a fresh chat while already on an empty one has nothing to do', 
 // A closed round keeps what arrived. When nothing did, there is nothing to keep
 // and nothing for the strip to show - so it leaves rather than lingering as a tab.
 test('a round that ends with nothing is dismissed; one that ends with something is kept', () => {
-  const store = new SessionStore('http://localhost:9012', PROJECT)
+  const store = new SessionStore('/tmp/project-9012')
   store.startExplore({ id: 'empty', chatId: 'c1', label: 'A', anchor })
   store.startExplore({ id: 'full', chatId: 'c2', label: 'B', anchor: { ...anchor, text: 'other' } })
   store.addVariant('full', { name: 'v', html: '<i/>' })
@@ -599,8 +605,8 @@ test('a round that ends with nothing is dismissed; one that ends with something 
 })
 
 test('a round still generating when the store is reopened is over, because no turn survived', () => {
-  const origin = 'http://localhost:9013'
-  const first = new SessionStore(origin, PROJECT)
+  const project = '/tmp/project-9013'
+  const first = new SessionStore(project)
   first.startExplore({ id: 'bare', chatId: 'c1', label: 'A', anchor })
   first.startExplore({ id: 'partial', chatId: 'c2', label: 'B', anchor: { ...anchor, text: 'x' } })
   first.addVariant('partial', { name: 'v', html: '<i/>' })
@@ -611,7 +617,7 @@ test('a round still generating when the store is reopened is over, because no tu
   const legacy = first.explores.map((e) => (e.id === 'legacy' ? { ...e, status: 'cancelled' } : e))
   writeFileSync(join(first.dir, 'explores.json'), JSON.stringify(legacy))
 
-  const reopened = new SessionStore(origin, PROJECT)
+  const reopened = new SessionStore(project)
   reopened.settleExplores()
   assert.deepEqual(
     reopened.explores.map((e) => [e.id, e.status]),

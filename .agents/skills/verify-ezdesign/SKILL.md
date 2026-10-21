@@ -51,7 +51,7 @@ ready    run `vz.mjs doctor` next
 
 ## Seed
 
-Datasets live in `datasets/*.json` and are written straight into the daemon's on-disk format (`<data>/sessions/<sha1(origin + "\n" + project)[:12]>/{session,queue,outbox,conversation}.json`), never through the daemon's API. Loading wipes the run's data dir first and uses a fixed epoch and position-derived ids, so loading twice gives the same state.
+Datasets live in `datasets/*.json` and are written straight into the daemon's on-disk format (`<data>/sessions/<sha1(project)[:12]>/{session,queue,outbox,conversation}.json`, one directory per project), never through the daemon's API. Loading wipes the run's data dir first and uses a fixed epoch and position-derived ids, so loading twice gives the same state.
 
 ```
 $V/vz.mjs seed baseline
@@ -107,7 +107,7 @@ Run axi from a neutral directory (or give `screenshot` absolute paths): relative
 | `textbox "整體想法或補充說明，輸入 / 用指令（選填）"` / key `n` | the batch note box |
 | `button "送出給 agent"` / `Meta+Enter` | send the queue as one batch |
 | `"Agent 未連線"` / `"Agent 已連線"` / `status "Agent 修改中"` | agent state: no poller / a `poll` is waiting / a batch is out |
-| `button "電腦"`, `button "換一個尺寸"`, `button "全部尺寸"` / keys `1` `2` `3` `4` | device size, size menu, all-sizes canvas |
+| `button "電腦"`, `button "換一個尺寸"`, `button "全部尺寸"` / keys `1` `2` `3` `4` | device size, size menu, all-sizes grid |
 | `button "快捷鍵"` | shortcut panel |
 
 Plain keys (`e`, `r`, `n`, `1`-`4`) are ignored while a text field has focus; press `Escape` first.

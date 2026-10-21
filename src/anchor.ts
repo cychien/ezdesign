@@ -2,7 +2,8 @@
  *  we do not control. Pure, so the rules are testable without a server. */
 
 import { MAX_VARIANT_HTML, MAX_VARIANT_NAME } from './explore.js'
-import type { Anchor, ChosenVariant, ExploreCapture, Reference } from './protocol.js'
+import type { Anchor, BatchView, ChosenVariant, ExploreCapture, Reference } from './protocol.js'
+import { asCanvasId } from './canvas/types.js'
 
 /** A comment pointing at more elements than this is a bug or an attack, not a
  *  person. Rejecting is better than truncating: silently dropping references
@@ -107,7 +108,18 @@ export function sanitizeAnchor(raw: unknown): Anchor | null {
   if (r) out.rect = r
   const vp = viewport(v.viewport)
   if (vp) out.viewport = vp
+  const fr = frameRef(v.frame)
+  if (fr) out.frame = fr
   return out
+}
+
+/** Both ids or nothing: a half-named frame resolves to no file. */
+function frameRef(v: unknown): Anchor['frame'] {
+  if (typeof v !== 'object' || v === null) return undefined
+  const { canvasId, frameId } = v as Record<string, unknown>
+  const c = str(canvasId, 40)
+  const f = str(frameId, 40)
+  return c && f ? { canvasId: c, frameId: f } : undefined
 }
 
 /** Null marks a malformed field, which is a 400 - distinct from an absent one,
@@ -290,4 +302,19 @@ function cappedStrings(raw: unknown, max: number, each: number, total: number): 
     bytes += value.length
   }
   return out
+}
+
+/** `/send`'s `view`, three answers: `undefined` when the shell sent none (the
+ *  flag is off), a view, or `null` for one that is there and unusable, which is
+ *  a 400. */
+export function parseBatchView(raw: unknown): BatchView | null | undefined {
+  if (raw === undefined || raw === null) return undefined
+  if (typeof raw !== 'object') return null
+  const { tab, page, canvasId } = raw as Record<string, unknown>
+  if (tab === 'app') {
+    const p = str(page, 300)
+    return p ? { tab: 'app', page: p } : null
+  }
+  const id = tab === 'canvas' ? asCanvasId(canvasId) : null
+  return id ? { tab: 'canvas', canvasId: id } : null
 }

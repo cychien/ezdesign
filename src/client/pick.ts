@@ -35,10 +35,13 @@ export interface PickState {
   /** Set once the pick has landed but the composer is somewhere else. */
   ref: RefWire | null
   /** The frame holding the pick, once one does. Null while it is still out to
-   *  every frame at once, which is how a pick from the note box starts: no frame
-   *  asked for it, so any of them may answer it. A pick from an overlay's own
-   *  popup belongs to that frame from the first event. */
+   *  every frame at once: a pick from the note box (no frame asked for it), and
+   *  a pick from a popup, which any frame - another device, or a canvas frame on
+   *  another tab - may answer. */
   frame: string | null
+  /** The frame whose popup the pick was started from and is waiting in, for a
+   *  popup-host pick. The answer goes back there, whichever frame gave it. */
+  home: string | null
   /** Last page the iframe reported. */
   page: string | null
   /** When the current arm attempt started, for the timeout. */
@@ -72,6 +75,14 @@ export type PickEvent =
  *  single preview ever produces. */
 export type PickEffect =
   | { do: 'arm-overlay'; id: string; host: PickHost; returnTo?: string; frame?: string }
+  /** Every frame but `except`: a popup's pick is answerable anywhere. */
+  | { do: 'arm-others'; id: string; host: PickHost; except: string }
+  /** Another frame answered a popup's pick: the ref goes into the popup still
+   *  suspended in `frame`, or, if that popup did not survive, the draft is
+   *  rebuilt there. */
+  | { do: 'deliver'; id: string; ref: RefWire; draft: DraftWire | null; frame: string }
+  /** Bring the tab holding `frame` back on screen. */
+  | { do: 'focus'; frame: string }
   | { do: 'abort-overlay'; id: string; frame?: string }
   /** Everyone but the frame that answered. A pick armed on every frame has one
    *  that took it, and the rest have to stand down - otherwise a click on any of
@@ -113,6 +124,11 @@ function elsewhere(state: PickState, frame: string | undefined): boolean {
   return Boolean(frame && state.frame && state.frame !== frame)
 }
 
+/** A popup's draft comes only from the popup's own frame. */
+function notHome(state: PickState, frame: string | undefined): boolean {
+  return Boolean(state.home && frame && frame !== state.home)
+}
+
 const done = (effects: PickEffect[]): Result => ({ state: null, effects })
 
 /** The shell's banner is deliberately quiet while picking: the overlay is showing
@@ -139,6 +155,7 @@ export function reducePick(state: PickState | null, e: PickEvent): Result {
         phase: 'picking',
         armed: false,
         frame: null,
+        home: null,
         draft: null,
         ref: null,
         page: null,
@@ -155,19 +172,26 @@ export function reducePick(state: PickState | null, e: PickEvent): Result {
       // A pick that started in the overlay's own popup: this is the shell first
       // hearing about it, so it adopts it rather than ignoring it.
       if (!state) {
+        // A popup's pick stays open to every frame, and remembers where the
+        // popup is; anything else is the frame's own.
+        const home = e.host === 'popup' ? (e.frame ?? null) : null
         const next: PickState = {
           id: e.id,
           host: e.host,
           phase: 'picking',
           armed: true,
-          frame: e.frame ?? null,
+          frame: home ? null : (e.frame ?? null),
+          home,
           draft: null,
           ref: null,
           page: null,
           armedAt: e.now,
           returns: 0,
         }
-        return { state: next, effects: [banner(next)] }
+        return {
+          state: next,
+          effects: [...(home ? [{ do: 'arm-others' as const, id: e.id, host: e.host, except: home }] : []), banner(next)],
+        }
       }
       // A confirmation for something we are not tracking. The overlay refuses to
       // arm twice, so this can only be an echo we have already moved past.
@@ -181,11 +205,26 @@ export function reducePick(state: PickState | null, e: PickEvent): Result {
     }
 
     case 'draft':
-      if (!state || state.id !== e.id || elsewhere(state, e.frame)) return { state, effects: [] }
+      if (!state || state.id !== e.id || elsewhere(state, e.frame) || notHome(state, e.frame)) {
+        return { state, effects: [] }
+      }
       return { state: { ...state, draft: e.draft }, effects: [] }
 
     case 'picked': {
       if (!state || state.id !== e.id || elsewhere(state, e.frame)) return { state, effects: [] }
+      // Answered in another frame than the popup's: across devices or across
+      // tabs. The popup is still suspended at home, so the ref goes there.
+      if (state.home && e.frame && e.frame !== state.home) {
+        const filled = state.draft ? { ...state.draft, body: resolveDraftRef(state.draft.body, e.ref) } : null
+        // The home tab first: a popup placed in a frame still hidden on another
+        // tab would measure nothing.
+        return done([
+          { do: 'focus', frame: state.home },
+          { do: 'deliver', id: state.id, ref: e.ref, draft: filled, frame: state.home },
+          { do: 'disarm-others', id: state.id, keep: state.home },
+          banner(null),
+        ])
+      }
       // The answer settles the ownership a note-box pick started without.
       const owner = state.frame ?? e.frame ?? null
       if (state.host === 'note') {
@@ -223,6 +262,16 @@ export function reducePick(state: PickState | null, e: PickEvent): Result {
 
     case 'cancelled': {
       if (!state || state.id !== e.id || elsewhere(state, e.frame)) return { state, effects: [] }
+      // Called off from a frame that is not the popup's: the popup at home is
+      // the one to hand back, which its own abort does.
+      if (state.home && e.frame && e.frame !== state.home) {
+        return done([
+          { do: 'focus', frame: state.home },
+          { do: 'abort-overlay', id: state.id, frame: state.home },
+          { do: 'disarm-others', id: state.id, keep: state.home },
+          banner(null),
+        ])
+      }
       // The overlay gave a live popup back, so its copy is the real one and ours
       // is stale. Nothing to restore, and nothing to delete: those files are
       // still chipped in a composer the user can see.
@@ -252,7 +301,7 @@ export function reducePick(state: PickState | null, e: PickEvent): Result {
 
     case 'ready': {
       if (!state) return { state, effects: [] }
-      // Every frame on a canvas reports in after a navigation, and only the one
+      // Every frame on a grid reports in after a navigation, and only the one
       // the pick is out to has anything to say about it.
       if (elsewhere(state, e.frame)) return { state, effects: [] }
       const here = { ...state, page: e.page }
@@ -281,6 +330,9 @@ export function reducePick(state: PickState | null, e: PickEvent): Result {
       // frame that reported: a pick still out to all of them leaves the others
       // armed exactly as they were.
       const next: PickState = { ...here, armed: false, armedAt: e.now }
+      // Only the popup's own frame is going back anywhere; another frame is just
+      // somewhere the answer might come from.
+      const returning = !state.home || e.frame === state.home
       return {
         state: next,
         effects: [
@@ -288,7 +340,7 @@ export function reducePick(state: PickState | null, e: PickEvent): Result {
             do: 'arm-overlay',
             id: state.id,
             host: state.host,
-            ...(state.draft?.subject ? { returnTo: state.draft.subject.page } : {}),
+            ...(returning && state.draft?.subject ? { returnTo: state.draft.subject.page } : {}),
             ...at(e.frame ?? state.frame),
           },
           banner(next),
@@ -306,7 +358,9 @@ export function reducePick(state: PickState | null, e: PickEvent): Result {
     }
 
     case 'expired': {
-      if (!state || state.id !== e.id || elsewhere(state, e.frame)) return { state, effects: [] }
+      if (!state || state.id !== e.id || elsewhere(state, e.frame) || notHome(state, e.frame)) {
+        return { state, effects: [] }
+      }
       return done([
         { do: 'banner', text: '這則留言擱置太久，附加的檔案已經被清掉了，請重新留一次' },
       ])

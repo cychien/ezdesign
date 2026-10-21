@@ -7,7 +7,17 @@ import { fileURLToPath } from 'node:url'
 import type { Socket } from 'node:net'
 import type { SessionConfigOption } from '@agentclientprotocol/sdk'
 import express, { type ErrorRequestHandler, type Response, Router } from 'express'
-import { createProxyMiddleware, responseInterceptor } from 'http-proxy-middleware'
+import { AppProxy } from './app-proxy.js'
+import { FRAME_HOST } from './canvas/frame-document.js'
+import { CANVAS_MCP_ROUTE, CanvasMcp, isCanvasTool } from './canvas/mcp.js'
+import { canvasBrief } from './canvas/prompt.js'
+import { canvasApiRouter, frameHost } from './canvas/routes.js'
+import { type CanvasEventWire, SSE_CANVAS, SSE_CANVAS_REMOVED } from './canvas/wire.js'
+import { type CanvasChange, type CanvasWorkspace, openCanvasWorkspace } from './canvas/workspace.js'
+import type { CanvasSnapshotWire } from './canvas/wire.js'
+import { refuseCrossSite } from './origin-gate.js'
+import { type ProjectRuntime, SessionDirectory } from './session-directory.js'
+import { migrateLegacySessions } from './session-migrate.js'
 import {
   DAEMON_LOG,
   IDLE_STOP_MS,
@@ -25,7 +35,13 @@ import type { AcpSnapshot } from './acp-agent.js'
 import { type AcpConfigValue, configLabel, configValueName } from './acp-config.js'
 import { AGENT_PROFILES, type AgentProfile, agentBrandFor, agentProfileFor } from './agents.js'
 import { clearAgentRecord, reapOrphanedAgents } from './agent-children.js'
-import { attachmentIds, parseReferences, sanitizeAnchor, sanitizeCapture } from './anchor.js'
+import {
+  attachmentIds,
+  parseBatchView,
+  parseReferences,
+  sanitizeAnchor,
+  sanitizeCapture,
+} from './anchor.js'
 import {
   DESIGN_EFFORTS,
   type DesignEffort,
@@ -52,7 +68,6 @@ import {
   rememberedDesignHarness,
 } from './preferences.js'
 import { readInspireToken } from './credentials.js'
-import { injectOverlay, wantsHtml } from './inject.js'
 import type { AttachmentLocator } from './label.js'
 import { shortAnchor, toAgentAttachments, toAgentItem, toConversationItem } from './label.js'
 import { type IncomingVariant, ExploreMcp, MCP_ROUTE, isExploreTool } from './mcp-explore.js'
@@ -60,6 +75,7 @@ import type {
   Anchor,
   Annotation,
   Attachment,
+  BatchView,
   ExploreCapture,
   ExploreState,
   ExploreStatus,
@@ -68,7 +84,14 @@ import type {
   SessionEndedBy,
 } from './protocol.js'
 import { listSkills, skillPrefix, spendSkillMarkers } from './skills.js'
-import { SessionStore, listRestorableSessions, newId } from './store.js'
+import {
+  type AppAttachment,
+  type AttachedApp,
+  SessionStore,
+  listRestorableSessions,
+  newId,
+  persistedSession,
+} from './store.js'
 import {
   clearRegistry,
   dataDirId,
@@ -157,7 +180,10 @@ interface SnapshotWire {
   version: string
   state: 'active' | 'ended'
   endedBy?: SessionEndedBy
-  targetOrigin: string
+  /** The dev-server origin on the App tab. Absent until one is attached. */
+  app?: string
+  /** The tabs and the active one. */
+  canvas: CanvasSnapshotWire
   annotations: Annotation[]
   conversation: unknown[]
   agentOnline: boolean
@@ -260,6 +286,9 @@ function acpPrompt(
   history: string[] = [],
   effort: DesignEffort = 'high',
   language: string = replyLanguageLine([]),
+  /** `canvasBrief(...)`: which tab the user is on and which canvases exist.
+   *  Empty without canvas tools, so the prompt is otherwise unchanged. */
+  canvas: string[] = [],
 ): string {
   if (feedback.setup) return setupPrompt(truth, feedback.url, language)
   // The markers the composer left behind, spent now that the agent is known. The
@@ -292,6 +321,7 @@ function acpPrompt(
     })(),
     ...(history.length ? [...history, ''] : []),
     'The user reviewed the running app in their browser and sent this feedback batch.',
+    ...canvas,
     // With a file missing, the brief above already names them.
     ...(harnessReady(truth)
       ? [
@@ -319,7 +349,7 @@ function acpPrompt(
   ].join('\n')
 }
 
-function setupPrompt(truth: Truth, page: string, language: string): string {
+function setupPrompt(truth: Truth, page: string | undefined, language: string): string {
   return [
     ...setupBrief(truth, SKILL_DIR, inspireAccess(), page),
     language,
@@ -607,18 +637,32 @@ function agentSwitchNote(command: string): string {
  *  keystroke is also not the kind of thing that arrives in floods; the note this
  *  sits beside is de-duplicated because a dev daemon restarts on every file save,
  *  which is a machine repeating itself, not a person changing their mind. */
+/** One named SSE event, for shell clients only. */
+function sseEvent(event: CanvasEventWire): string {
+  return `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`
+}
+
 function configChangeNote(option: SessionConfigOption, value: AcpConfigValue): string {
   const label = configLabel(option)
   if (typeof value === 'boolean') return `${label}已${value ? '開啟' : '關閉'}`
   return `已切換${label}：${configValueName(option, value)}`
 }
 
-class SessionRuntime {
+class SessionRuntime implements ProjectRuntime {
   readonly store: SessionStore
   readonly bus = new EventEmitter()
   /** The explore rounds this session is taking variants for, and the tool the
    *  agent sends them through. */
   readonly exploreMcp = new ExploreMcp()
+  /** The project's canvases. */
+  readonly canvases: CanvasWorkspace
+  /** The agent's canvas tools. Built here, before any agent attaches, because
+   *  `mcpServers` is read once per ACP session open and a server added later is
+   *  never seen. It gets the agent's port only. */
+  private readonly canvasMcp: CanvasMcp
+  /** Where the user was when they sent the batch being answered; see
+   *  `activeSkills`. */
+  private activeView: BatchView | undefined = undefined
   /** The ask for a round whose branch is still opening. Held rather than sent,
    *  because a prompt to a session that is not up yet is a prompt that is
    *  dropped - see `deliverToAcp`. */
@@ -630,11 +674,15 @@ class SessionRuntime {
   private pageCookies: string | null = null
   private pageStorage: PageStorage | null = null
   private readonly pageStateToken = randomBytes(32).toString('base64url')
+  /** The dev-server proxy and the live attachment. */
+  private readonly appProxy: AppProxy
   port = 0
   private server!: Server
   private sseClients = new Set<Response>()
-  /** Sockets the proxy upgraded to websockets; see `stop`. */
-  private readonly upgraded = new Set<Socket>()
+  /** The subset of `sseClients` that are review shells (`/events?shell=1`): the
+   *  ones canvas events go to. Overlays connect without it and are spared every
+   *  canvas. */
+  private readonly shellClients = new Set<Response>()
   private pollWaiters = new Set<(r: PollResult | null) => void>()
   /** Set when a batch is handed to the agent, cleared when it polls again.
    *  Acks can't drive this: the agent acks on receipt, before it does the work. */
@@ -660,12 +708,27 @@ class SessionRuntime {
   lastActivity = Date.now()
 
   constructor(
-    readonly targetOrigin: string,
     readonly project: string,
     private readonly version: string,
     private readonly updater: Updater,
   ) {
-    this.store = new SessionStore(targetOrigin, project)
+    this.store = new SessionStore(project)
+    // Starts detached: which origin this runtime shows is the directory's call,
+    // because only it can see who else holds it.
+    this.appProxy = new AppProxy(`${URL_PREFIX}/shell`, (req) => {
+      this.pageCookies = req.headers.cookie ?? null
+    })
+    this.canvases = openCanvasWorkspace({
+      project,
+      view: this.store,
+      frameOrigin: () => `http://${FRAME_HOST}:${this.port}`,
+      overlay: () => ({ version: this.version, shellOrigin: this.shellOrigin }),
+      hasApp: () => this.app.kind === 'attached',
+      onChange: (change) => this.canvasChanged(change),
+      // eslint-disable-next-line no-console
+      log: (message) => console.error(message),
+    })
+    this.canvasMcp = new CanvasMcp(this.canvases.agent)
     // Session start is the one moment no composer can be holding a fresh upload,
     // which is what makes an unreferenced attachment safe to judge by age alone.
     this.store.sweepAttachments()
@@ -701,9 +764,68 @@ class SessionRuntime {
     // those are tracked and destroyed here by hand.
     const closed = new Promise<void>((resolve) => this.server.close(() => resolve()))
     this.server.closeAllConnections()
-    for (const socket of this.upgraded) socket.destroy()
-    this.upgraded.clear()
+    this.appProxy.detach()
+    this.canvases.close()
     await closed
+  }
+
+  /** The dev server on the App tab. The proxy is the live truth; the store is
+   *  where a user attach is remembered. */
+  get app(): AppAttachment {
+    return this.appProxy.attachment
+  }
+
+  get state(): 'active' | 'ended' {
+    return this.store.session.state
+  }
+
+  /** The shell's, the api's and the proxied app's origin - the only one
+   *  `refuseCrossSite` lets act. */
+  get shellOrigin(): string {
+    return `http://127.0.0.1:${this.port}`
+  }
+
+  get endedByUser(): boolean {
+    const session = this.store.session
+    return session.state === 'ended' && session.endedBy === 'user'
+  }
+
+  attachApp(app: AttachedApp, opts: { userAttached: boolean }): void {
+    const before = this.app
+    if (before.kind !== 'attached' || before.origin !== app.origin) this.forgetPageState()
+    this.appProxy.attach(app)
+    if (opts.userAttached) this.store.attachApp(app.origin, app.attachedAt)
+    // They ran `ezdesign <url>` to look at it.
+    this.canvases.appChanged({ show: opts.userAttached, create: this.shellClients.size > 0 })
+    this.broadcast()
+  }
+
+  detachApp(): void {
+    this.appProxy.detach()
+    this.store.detachApp()
+    this.forgetPageState()
+    this.canvases.appChanged({ show: false, create: this.shellClients.size > 0 })
+    this.broadcast()
+  }
+
+  /** What the browser signed the old app in with means nothing to the next one. */
+  private forgetPageState(): void {
+    this.pageCookies = null
+    this.pageStorage = null
+  }
+
+  reopen(): void {
+    this.store.reopen()
+    this.broadcast()
+  }
+
+  setRestoreOnStart(on: boolean): void {
+    this.store.setRestoreOnStart(on)
+  }
+
+  resumeAgent(): void {
+    const agent = this.store.session.agent
+    if (agent) this.restoreAcpAgent(agent)
   }
 
   /** Off the live agent, not the record: the record holds what was asked for. */
@@ -742,7 +864,8 @@ class SessionRuntime {
       version: this.version,
       state: s.state,
       endedBy: s.endedBy,
-      targetOrigin: this.targetOrigin,
+      ...(this.app.kind === 'attached' ? { app: this.app.origin } : {}),
+      canvas: this.canvases.read.snapshot(this.agentHasCanvasTools),
       annotations: this.store.annotations,
       conversation: this.store.visibleConversation,
       agentOnline:
@@ -793,6 +916,42 @@ class SessionRuntime {
   broadcast(): void {
     const data = `data: ${JSON.stringify(this.snapshot())}\n\n`
     for (const res of this.sseClients) res.write(data)
+  }
+
+  /** The workspace wrote, or a frame's file was found changed. Shell clients get
+   *  the one canvas that changed as a named event - the snapshot never carries
+   *  frames, so a streaming turn does not resend forty of them per token - and
+   *  everyone gets the snapshot, whose summaries and active tab moved with it. */
+  private canvasChanged(change: CanvasChange): void {
+    if (change.kind === 'updated') {
+      const canvas = this.canvases.read.wire(change.canvasId)
+      if (canvas) this.toShells({ type: SSE_CANVAS, canvas })
+    } else if (change.kind === 'removed') {
+      this.toShells({ type: SSE_CANVAS_REMOVED, canvasId: change.canvasId })
+    }
+    this.broadcast()
+  }
+
+  /** Whether the attached agent can be handed the canvas tools: an ACP agent
+   *  that takes HTTP MCP servers. A poll-mode agent cannot. */
+  get agentHasCanvasTools(): boolean {
+    return !!this.acp?.servesMcpHttp && this.acp.snapshot().state !== 'exited'
+  }
+
+  /** The per-turn canvas brief: the view sealed on the batch being delivered,
+   *  and the inventory as it is now. */
+  private canvasLines(): string[] {
+    return canvasBrief({
+      inventory: this.canvases.read.inventory(),
+      view: this.activeView,
+      app: this.app.kind === 'attached' ? this.app.origin : null,
+      tools: this.agentHasCanvasTools,
+    })
+  }
+
+  private toShells(event: CanvasEventWire): void {
+    const data = sseEvent(event)
+    for (const res of this.shellClients) res.write(data)
   }
 
   /** Bring back the agent a previous daemon was driving.
@@ -878,8 +1037,13 @@ class SessionRuntime {
       // Whatever rounds are taking variants when this session opens. The port is
       // read now rather than captured, because a restored session can come back
       // on a different one.
-      mcpServers: () => this.exploreMcp.serverEntries(this.port),
-      ownTool: isExploreTool,
+      // The canvas server first and always: it is the one server an agent must
+      // see from its first `session/new`, because nothing can add it later.
+      mcpServers: () => [
+        ...(this.canvasMcp.serverEntries(this.port) ?? []),
+        ...this.exploreMcp.serverEntries(this.port),
+      ],
+      ownTool: (name) => isExploreTool(name) || isCanvasTool(name),
       env: {
         EZDESIGN_PAGE_STATE: `http://127.0.0.1:${this.port}${URL_PREFIX}/api/page-state`,
         EZDESIGN_PAGE_STATE_TOKEN: this.pageStateToken,
@@ -1426,6 +1590,7 @@ class SessionRuntime {
         history,
         this.designEffort,
         replyLanguageLine(this.store.userWords()),
+        this.canvasLines(),
       ),
     )
     if (truth.enabled) this.store.markHarnessSeen()
@@ -1450,13 +1615,14 @@ class SessionRuntime {
     this.agentBusy = true
     this.activeBatch = batch.batchId
     this.activeSkills = batch.skills ?? []
+    this.activeView = batch.view
     const attachments = toAgentAttachments(batch.attachments, this.store)
     return {
       type: 'feedback',
       batchId: batch.batchId,
-      url: this.targetOrigin,
+      ...(this.app.kind === 'attached' ? { url: this.app.origin } : {}),
       note: batch.note,
-      items: batch.items.map((a) => toAgentItem(a, this.store)),
+      items: batch.items.map((a) => toAgentItem(a, this.store, this.canvases.read.names)),
       ...(attachments ? { attachments } : {}),
       ...(batch.references?.length ? { references: batch.references } : {}),
       ...(batch.setup ? { setup: true as const } : {}),
@@ -1492,6 +1658,9 @@ class SessionRuntime {
 
   private apiRouter(): Router {
     const api = Router()
+    // First: a page on any other origin gets nothing from here, not even a
+    // bodiless POST. The CLI and the agent send neither header and pass.
+    api.use(refuseCrossSite(() => this.shellOrigin))
     api.use((_req, _res, next) => {
       this.touch()
       next()
@@ -1518,12 +1687,21 @@ class SessionRuntime {
       },
     )
 
+    // Ahead of the shared parser, with its own: an oversize frame must come back
+    // as the tool's refusal, not as the attachment handler's 413. Ahead of
+    // `MCP_ROUTE` too, which would take `canvas` for an explore id.
+    api.post(CANVAS_MCP_ROUTE, ...this.canvasMcp.handlers())
+
     api.use(express.json({ limit: '2mb' }))
 
     // The agent's own end of the review: one url per live explore round, each
     // behind its own token. Mounted on this session's app because a round
     // belongs to a session, so a url cannot reach across to another one's.
     api.post(MCP_ROUTE, this.exploreMcp.handler())
+
+    // The shell's end of canvases: tabs, archive and the view. The user's port
+    // only - no route here can write a frame document.
+    api.use(canvasApiRouter({ user: this.canvases.user, read: this.canvases.read }))
 
     api.get('/state', (_req, res) => res.json(this.snapshot()))
 
@@ -1535,9 +1713,15 @@ class SessionRuntime {
     })
     api.get('/page-state', (req, res) => {
       if (!this.holdsPageStateToken(req.get('authorization'))) return res.sendStatus(401)
+      // No App tab: an empty state, and the agent's browser opens the page
+      // signed out, which is the truth.
       res
         .set('cache-control', 'no-store')
-        .json(storageState(this.targetOrigin, this.pageCookies, this.pageStorage))
+        .json(
+          this.app.kind === 'attached'
+            ? storageState(this.app.origin, this.pageCookies, this.pageStorage)
+            : { cookies: [], origins: [] },
+        )
     })
 
     api.get('/events', (req, res) => {
@@ -1547,12 +1731,26 @@ class SessionRuntime {
         connection: 'keep-alive',
       })
       res.flushHeaders()
+      const shell = req.query.shell === '1'
+      // A shell with nothing to show gets an empty canvas, created now rather
+      // than at start or restore: never a write into a project nobody is looking at.
+      if (shell) this.canvases.shellConnected()
+      // Every open canvas in the first flush, in tab order and ahead of the
+      // snapshot, so a board opens with no fetch and the queue's first paint
+      // can already name the frames its annotations are in.
+      if (shell) {
+        this.shellClients.add(res)
+        for (const canvas of this.canvases.read.openWires() ?? []) {
+          res.write(sseEvent({ type: SSE_CANVAS, canvas }))
+        }
+      }
       res.write(`data: ${JSON.stringify(this.snapshot())}\n\n`)
       this.sseClients.add(res)
       const heartbeat = setInterval(() => res.write(': hb\n\n'), 25_000)
       req.on('close', () => {
         clearInterval(heartbeat)
         this.sseClients.delete(res)
+        this.shellClients.delete(res)
       })
     })
 
@@ -1571,6 +1769,12 @@ class SessionRuntime {
       // comment is only required when nothing came with it.
       if (!comment && files.length === 0) {
         return res.status(400).json({ error: 'comment or attachment is required' })
+      }
+      // The shell stamped it from the window the comment came from, but the body
+      // crossed the wire: a frame that does not exist is refused, not stored.
+      const frame = (anchor as Anchor).frame
+      if (frame && !this.canvases.read.hasFrame(frame)) {
+        return res.status(400).json({ error: 'unknown canvas frame' })
       }
       const annotation: Annotation = {
         id: newId(),
@@ -1664,7 +1868,9 @@ class SessionRuntime {
       if (skills.some((name) => !known.has(name))) {
         return res.status(400).json({ error: 'unknown skill' })
       }
-      const batch = this.store.sendBatch(req.body?.note ?? null, files, refs, skills)
+      const view = parseBatchView(req.body?.view)
+      if (view === null) return res.status(400).json({ error: 'view must be a tab' })
+      const batch = this.store.sendBatch(req.body?.note ?? null, files, refs, skills, view)
       if (!batch) return res.status(400).json({ error: 'nothing to send' })
       this.store.appendConversation({
         role: 'user',
@@ -2055,63 +2261,58 @@ class SessionRuntime {
   async start(): Promise<number> {
     const app = express()
 
+    // One listener, two origins: `localhost:<port>` serves frame documents and
+    // nothing else, and frame documents are served nowhere else.
+    app.use(frameHost(this.canvases.read, () => this.shellOrigin))
+
     const rk = Router()
     rk.get('/shell', (_req, res) => res.type('html').send(SHELL_HTML))
     // Never cached. These assets are the daemon's, and the daemon is replaceable
     // under an open shell - by a self-update, or by a `@latest` CLI run. The
     // reload that follows has to fetch the new code, and a heuristically cached
     // copy would leave the previous version's UI driving the new daemon.
+    // A canvas frame asks for `?v=<version>`: forty frames then fetch the overlay
+    // once, and a replaced daemon is a different url.
     for (const file of ['overlay.js', 'overlay.css', 'shell.js', 'shell.css']) {
       const type = file.endsWith('.css') ? 'text/css' : 'text/javascript'
-      rk.get(`/${file}`, (_req, res) =>
-        res.type(type).set('cache-control', 'no-store').send(asset(file)),
+      rk.get(`/${file}`, (req, res) =>
+        res
+          .type(type)
+          .set(
+            'cache-control',
+            req.query.v === this.version ? 'public, max-age=31536000, immutable' : 'no-store',
+          )
+          .send(asset(file)),
       )
     }
     rk.use('/api', this.apiRouter())
+    // Ours, whether or not anything answers it: never handed to the user's app.
+    rk.use((_req, res) => res.sendStatus(404))
     app.use(URL_PREFIX, rk)
 
-    const htmlProxy = createProxyMiddleware({
-      target: this.targetOrigin,
-      changeOrigin: true,
-      selfHandleResponse: true,
-      on: {
-        proxyRes: responseInterceptor(async (buffer, proxyRes, _req, res) => {
-          res.removeHeader('content-security-policy')
-          res.removeHeader('x-frame-options')
-          const type = String(proxyRes.headers['content-type'] ?? '')
-          if (!type.includes('text/html')) return buffer
-          return injectOverlay(buffer.toString('utf8'))
-        }),
-      },
-    })
-    const rawProxy = createProxyMiddleware({
-      target: this.targetOrigin,
-      changeOrigin: true,
-      ws: true,
-    })
-    app.use((req, res, next) => {
-      this.pageCookies = req.headers.cookie ?? null
-      return wantsHtml(req.headers.accept) ? htmlProxy(req, res, next) : rawProxy(req, res, next)
-    })
+    // Everything else is the user's app, through a proxy whose target can be
+    // attached later and taken away. See `AppProxy`.
+    app.use(this.appProxy.middleware())
 
     // Prefer the port this session last held so an already-open shell tab only
     // needs a reload after a daemon restart, but never fail over a taken port.
     const preferred = this.store.session.port
     this.server = await listenOn(app, preferred ? [preferred, 0] : [0])
-    this.server.on('upgrade', (req, socket, head) => {
-      if (req.url?.startsWith(URL_PREFIX)) return socket.destroy()
-      this.upgraded.add(socket as Socket)
-      socket.once('close', () => this.upgraded.delete(socket as Socket))
-      rawProxy.upgrade(req, socket as Socket, head)
-    })
+    this.server.on('upgrade', (req, socket, head) =>
+      this.appProxy.upgrade(req, socket as Socket, head),
+    )
     const address = this.server.address()
     this.port = typeof address === 'object' && address ? address.port : 0
     this.store.setPort(this.port)
+    // After the bind: frame urls carry the port.
+    this.canvases.start()
     return this.port
   }
 
-  shellUrl(path: string): string {
-    return `http://127.0.0.1:${this.port}${URL_PREFIX}/shell?path=${encodeURIComponent(path)}`
+  /** `?path=` only when there is an app to be on a page of. */
+  shellUrl(path?: string): string {
+    const base = `http://127.0.0.1:${this.port}${URL_PREFIX}/shell`
+    return path === undefined ? base : `${base}?path=${encodeURIComponent(path)}`
   }
 }
 
@@ -2210,9 +2411,11 @@ export async function daemonMain(version: string, opts: DaemonOptions = {}): Pro
     if (adopted) return adopt(adopted)
   }
 
-  const sessions = new Map<string, SessionRuntime>()
+  /** One runtime per project, one project per origin. Assigned below, once the
+   *  updater the runtimes share exists. */
+  let sessions!: SessionDirectory<SessionRuntime>
   const broadcastAll = () => {
-    for (const s of sessions.values()) s.broadcast()
+    for (const s of sessions.list()) s.broadcast()
   }
 
   let stopping = false
@@ -2229,29 +2432,22 @@ export async function daemonMain(version: string, opts: DaemonOptions = {}): Pro
     onChange: broadcastAll,
   })
 
-  /** Rebuild the session map from disk. Without this a restarted daemon answers
-   *  `/sessions/find` with 404 and a reconnecting `poll` gives up on a session
-   *  whose queued feedback is sitting right there on disk. */
-  const restoreSessions = async () => {
-    for (const persisted of listRestorableSessions()) {
-      try {
-        const runtime = new SessionRuntime(
-          persisted.targetOrigin,
-          persisted.project,
-          version,
-          updater,
-        )
-        await runtime.start()
-        if (persisted.agent) runtime.restoreAcpAgent(persisted.agent)
-        sessions.set(persisted.targetOrigin, runtime)
-      } catch (err) {
-        // eslint-disable-next-line no-console
-        console.error(
-          `could not restore session for ${persisted.targetOrigin}: ${err instanceof Error ? err.message : String(err)}`,
-        )
-      }
-    }
-  }
+  sessions = new SessionDirectory(
+    (project) => new SessionRuntime(project, version, updater),
+    {
+      restorable: listRestorableSessions,
+      get: persistedSession,
+      migrate: () => {
+        const { merged } = migrateLegacySessions()
+        if (merged.size) {
+          // eslint-disable-next-line no-console
+          console.error(`migrated legacy sessions into ${merged.size} project session(s)`)
+        }
+      },
+    },
+    // eslint-disable-next-line no-console
+    (message) => console.error(message),
+  )
 
   const control = express()
   control.use(express.json())
@@ -2287,51 +2483,44 @@ export async function daemonMain(version: string, opts: DaemonOptions = {}): Pro
 
   control.get('/control/sessions', (_req, res) => {
     res.json(
-      [...sessions.values()].map((s) => ({
-        targetOrigin: s.targetOrigin,
+      sessions.list().map((s) => ({
         project: s.project,
+        ...(s.app.kind === 'attached' ? { app: s.app.origin } : {}),
         port: s.port,
-        state: s.store.session.state,
+        state: s.state,
+        canvases: s.canvases.read.inventory().canvases.filter((c) => !c.archived).length,
       })),
     )
   })
 
+  /** Open or resume the project's session; with `url`, attach that origin to
+   *  it. Body `{project, url?, reopen?, agent?}`. */
   control.post('/control/sessions', async (req, res) => {
     const { url, reopen, project, agent } = req.body ?? {}
-    let parsed: URL
-    try {
-      parsed = new URL(String(url))
-    } catch {
-      return res.status(400).json({ error: `invalid url: ${url}` })
-    }
     if (typeof project !== 'string' || !project) {
       return res.status(400).json({ error: 'missing project' })
     }
-    const origin = parsed.origin
-    let runtime = sessions.get(origin)
-    // A dev server that was this origin's is gone the moment another project
-    // binds the port, so its review does not carry over to the new one.
-    if (runtime && runtime.project !== project) {
-      await runtime.stop()
-      sessions.delete(origin)
-      runtime = undefined
-    }
-    if (!runtime) {
-      runtime = new SessionRuntime(origin, project, version, updater)
-      await runtime.start()
-      sessions.set(origin, runtime)
-    }
-    const session = runtime.store.session
-    if (session.state === 'ended') {
-      if (session.endedBy === 'user' && !reopen) {
-        return res.status(409).json({
-          error: 'session was ended by the user',
-          hint: 'pass --reopen only when the user asks for further review',
-        })
+    let parsed: URL | null = null
+    if (url !== undefined) {
+      try {
+        parsed = new URL(String(url))
+      } catch {
+        return res.status(400).json({ error: `invalid url: ${url}` })
       }
-      runtime.store.reopen()
-      runtime.broadcast()
     }
+    const opened = await sessions.open({
+      project,
+      ...(parsed ? { origin: parsed.origin } : {}),
+      reopen: reopen === true,
+      now: Date.now(),
+    })
+    if (!opened.ok) {
+      return res.status(409).json({
+        error: 'session was ended by the user',
+        hint: 'pass --reopen only when the user asks for further review',
+      })
+    }
+    const runtime = opened.runtime
     runtime.touch()
     // SPIKE: ACP mode - this session spawns and drives its own agent.
     if (typeof agent === 'string' && agent) {
@@ -2348,18 +2537,30 @@ export async function daemonMain(version: string, opts: DaemonOptions = {}): Pro
     }
     res.json({
       port: runtime.port,
-      shellUrl: runtime.shellUrl(parsed.pathname + parsed.search),
-      state: runtime.store.session.state,
+      shellUrl: runtime.shellUrl(parsed ? parsed.pathname + parsed.search : undefined),
+      state: runtime.state,
+      project: runtime.project,
+      ...(runtime.app.kind === 'attached' ? { app: runtime.app.origin } : {}),
       // What the session runs, not what this call passed: a restored session keeps its agent.
       ...(runtime.acpCommand ? { agent: runtime.acpCommand } : {}),
     })
   })
 
-  control.get('/control/sessions/find', (req, res) => {
-    const origin = String(req.query.origin ?? '')
-    const runtime = sessions.get(origin)
-    if (!runtime) return res.status(404).json({ error: `no active session for ${origin}` })
-    res.json({ port: runtime.port, state: runtime.store.session.state })
+  /** `?project=<abs path>`, the only handle. An origin is at most a hint the
+   *  CLI checks the answer against, never a way in: resolving by origin is how
+   *  one project's agent could be handed another's feedback. Wakes a persisted
+   *  active session, so a poll that reconnects after an idle exit still finds
+   *  its queued feedback. */
+  control.get('/control/sessions/find', async (req, res) => {
+    const project = String(req.query.project ?? '')
+    const runtime = project ? await sessions.find(project) : null
+    if (!runtime) return res.status(404).json({ error: `no active session for ${project}` })
+    res.json({
+      port: runtime.port,
+      state: runtime.state,
+      project: runtime.project,
+      ...(runtime.app.kind === 'attached' ? { app: runtime.app.origin } : {}),
+    })
   })
 
   control.post('/control/stop', (_req, res) => {
@@ -2422,7 +2623,9 @@ export async function daemonMain(version: string, opts: DaemonOptions = {}): Pro
     // eslint-disable-next-line no-console
     console.error(`predecessor pid ${opts.succeed} is still running; restoring sessions anyway`)
   }
-  await restoreSessions()
+  // The migration moves directories a live predecessor's stores may still be
+  // writing, so it waits for a start whose predecessor is confirmed gone.
+  await sessions.restore({ migrate: predecessorGone })
   ready()
   // Only once the daemon we replaced is gone. It serves its shell assets by
   // reading them per request, so pruning the version it runs from while it is
@@ -2434,10 +2637,12 @@ export async function daemonMain(version: string, opts: DaemonOptions = {}): Pro
 
   setInterval(() => {
     const now = Date.now()
-    const anyBusy = [...sessions.values()].some(
-      (s) => s.inUse || now - s.lastActivity < IDLE_STOP_MS,
-    )
-    if (sessions.size > 0 && !anyBusy) cleanup()
+    const anyBusy = sessions.list().some((s) => s.inUse || now - s.lastActivity < IDLE_STOP_MS)
+    if (sessions.size > 0 && !anyBusy) {
+      // The one exit after which nothing needs rebuilding: no shell is open.
+      sessions.retireIdle()
+      cleanup()
+    }
   }, 60_000).unref()
 
   // eslint-disable-next-line no-console

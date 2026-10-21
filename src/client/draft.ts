@@ -20,6 +20,9 @@ export interface AnchorWire {
   rect?: { x: number; y: number; width: number; height: number }
   viewport?: { width: number; height: number; preset?: string }
   page?: string
+  /** See `Anchor.frame`. Set by the shell (`attributeAnchor`), never trusted
+   *  from the frame that sent it. */
+  frame?: { canvasId: string; frameId: string }
 }
 
 /** An element the user pointed the agent *at* from inside a comment. What the

@@ -1,17 +1,32 @@
 import assert from 'node:assert/strict'
-import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, test } from 'node:test'
-import { DaemonWorld, FAKE_AGENT, PKG_VERSION, waitFor } from './helpers/daemon.js'
+import { DaemonWorld, FAKE_AGENT, PKG_VERSION, sessionKey, waitFor } from './helpers/daemon.js'
 
 const world = await DaemonWorld.create()
 after(() => world.dispose())
 
 // Nothing listens here; the proxy is never exercised, only the session machinery.
 const TARGET = 'http://127.0.0.1:9/'
-const PROJECT = world.dataDir
+
+/** One project per test: the project is the session, so tests sharing one would
+ *  share a review. */
+function project(name: string): string {
+  const dir = join(world.dataDir, 'projects', name)
+  mkdirSync(dir, { recursive: true })
+  return dir
+}
+
+async function findPort(controlPort: number, dir: string): Promise<number> {
+  const found = await world.control(controlPort, `/control/sessions/find?project=${encodeURIComponent(dir)}`)
+  assert.equal(found.status, 200)
+  return ((await found.json()) as { port: number }).port
+}
+
+const AGENT_RESTART = project('agent-restart')
 
 interface State {
   version: string
@@ -32,7 +47,7 @@ test('a restarted daemon brings the ACP agent back and says so in the thread', a
   const first = await world.liveDaemon()
   const opened = await world.openSession(first.port, {
     url: TARGET,
-    project: PROJECT,
+    project: AGENT_RESTART,
     agent: FAKE_AGENT,
   })
   const before = await acpIdle(opened.port)
@@ -42,10 +57,9 @@ test('a restarted daemon brings the ACP agent back and says so in the thread', a
   // Something in the thread, so there is context whose loss is worth reporting.
   await world.sendFeedback(opened.port, 'make the hero bigger')
 
-  const sessionDirs = readdirSync(join(world.dataDir, 'sessions'))
-  assert.equal(sessionDirs.length, 1)
+  assert.deepEqual(readdirSync(join(world.dataDir, 'sessions')), [sessionKey(AGENT_RESTART)])
   const persisted = JSON.parse(
-    readFileSync(join(world.dataDir, 'sessions', sessionDirs[0]!, 'session.json'), 'utf8'),
+    readFileSync(join(world.dataDir, 'sessions', sessionKey(AGENT_RESTART), 'session.json'), 'utf8'),
   ) as { agent?: string; port?: number }
   assert.equal(persisted.agent, FAKE_AGENT)
 
@@ -54,12 +68,7 @@ test('a restarted daemon brings the ACP agent back and says so in the thread', a
   const second = await world.liveDaemon()
   assert.notEqual(second.pid, first.pid)
 
-  const found = await world.control(
-    second.port,
-    `/control/sessions/find?origin=${encodeURIComponent(new URL(TARGET).origin)}`,
-  )
-  assert.equal(found.status, 200)
-  const { port } = (await found.json()) as { port: number }
+  const port = await findPort(second.port, AGENT_RESTART)
   assert.equal(port, opened.port)
 
   const after = await acpIdle(port)
@@ -70,11 +79,7 @@ test('a restarted daemon brings the ACP agent back and says so in the thread', a
 
 test('ending the session drops the agent, so a restore does not resurrect it', async () => {
   const live = await world.liveDaemon()
-  const found = await world.control(
-    live.port,
-    `/control/sessions/find?origin=${encodeURIComponent(new URL(TARGET).origin)}`,
-  )
-  const { port } = (await found.json()) as { port: number }
+  const port = await findPort(live.port, AGENT_RESTART)
   const res = await fetch(`http://127.0.0.1:${port}/__ezdesign/api/end`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -82,9 +87,8 @@ test('ending the session drops the agent, so a restore does not resurrect it', a
   })
   assert.equal(res.status, 200)
 
-  const sessionDirs = readdirSync(join(world.dataDir, 'sessions'))
   const persisted = JSON.parse(
-    readFileSync(join(world.dataDir, 'sessions', sessionDirs[0]!, 'session.json'), 'utf8'),
+    readFileSync(join(world.dataDir, 'sessions', sessionKey(AGENT_RESTART), 'session.json'), 'utf8'),
   ) as { agent?: string; state: string }
   assert.equal(persisted.state, 'ended')
   assert.equal(persisted.agent, undefined)
@@ -93,7 +97,8 @@ test('ending the session drops the agent, so a restore does not resurrect it', a
 test('a session whose last port is taken comes back on another one, not on none', async () => {
   const live = await world.liveDaemon()
   const origin = 'http://127.0.0.1:10'
-  const opened = await world.openSession(live.port, { url: `${origin}/`, project: PROJECT })
+  const dir = project('taken-port')
+  const opened = await world.openSession(live.port, { url: `${origin}/`, project: dir })
   await world.stopDaemon(live.port)
 
   const squatter = createServer().listen(opened.port, '127.0.0.1')
@@ -101,15 +106,10 @@ test('a session whose last port is taken comes back on another one, not on none'
   try {
     world.spawnDaemon()
     const next = await world.liveDaemon()
-    const found = await world.control(
-      next.port,
-      `/control/sessions/find?origin=${encodeURIComponent(origin)}`,
-    )
-    assert.equal(found.status, 200)
-    const { port } = (await found.json()) as { port: number }
+    const port = await findPort(next.port, dir)
     assert.notEqual(port, opened.port)
     const state = await world.state(port)
-    assert.equal(state.targetOrigin, origin)
+    assert.equal(state.app, origin)
   } finally {
     squatter.close()
   }
@@ -119,7 +119,7 @@ test('the update endpoint takes only the JSON requests the shell makes', async (
   const live = await world.liveDaemon()
   const { port } = await world.openSession(live.port, {
     url: 'http://127.0.0.1:11/',
-    project: PROJECT,
+    project: project('update'),
   })
   const url = `http://127.0.0.1:${port}/__ezdesign/api/update`
   const formPost = await fetch(url, {
@@ -140,7 +140,7 @@ test('the restart notice is not repeated, and an empty thread never gets one', a
   const live = await world.liveDaemon()
   const opened = await world.openSession(live.port, {
     url: `${origin}/`,
-    project: PROJECT,
+    project: project('notice'),
     agent: FAKE_AGENT,
   })
 
@@ -196,12 +196,7 @@ test('a restored session whose project is gone reports a dead agent, not a dead 
   assert.equal(others.status, 200)
   assert.ok(((await others.json()) as unknown[]).length > 1)
 
-  const found = await world.control(
-    next.port,
-    `/control/sessions/find?origin=${encodeURIComponent(origin)}`,
-  )
-  assert.equal(found.status, 200)
-  const { port } = (await found.json()) as { port: number }
+  const port = await findPort(next.port, gone)
   const state = await waitFor(async () => {
     const s = (await world.state(port)) as unknown as State & { acp?: { error?: string } }
     return s.acp?.state === 'exited' ? s : null
@@ -214,21 +209,17 @@ test('a restored session whose project is gone reports a dead agent, not a dead 
 // round comes back closed - and the one that had nothing yet does not come back
 // on the strip at all.
 test('an explore mid-turn when the daemon went down is over when the session returns', async () => {
-  const origin = 'http://127.0.0.1:11'
+  const origin = 'http://127.0.0.1:16'
   const live = await world.liveDaemon()
+  const exploring = project('explore')
   const opened = await world.openSession(live.port, {
     url: `${origin}/`,
-    project: PROJECT,
+    project: exploring,
     agent: FAKE_AGENT,
   })
   await acpIdle(opened.port)
 
-  const dir = readdirSync(join(world.dataDir, 'sessions')).find((d) => {
-    const s = JSON.parse(
-      readFileSync(join(world.dataDir, 'sessions', d, 'session.json'), 'utf8'),
-    ) as { targetOrigin: string }
-    return s.targetOrigin === origin
-  })!
+  const dir = sessionKey(exploring)
   const round = (id: string, variants: unknown[]) => ({
     id,
     chatId: 'c',
@@ -250,11 +241,7 @@ test('an explore mid-turn when the daemon went down is over when the session ret
   await world.stopDaemon(live.port)
   world.spawnDaemon()
   const second = await world.liveDaemon()
-  const found = await world.control(
-    second.port,
-    `/control/sessions/find?origin=${encodeURIComponent(origin)}`,
-  )
-  const { port } = (await found.json()) as { port: number }
+  const port = await findPort(second.port, exploring)
   const state = (await world.state(port)) as { explores?: { id: string; status: string }[] }
   assert.deepEqual(
     state.explores?.map((e) => [e.id, e.status]),
@@ -266,8 +253,8 @@ test('an explore mid-turn when the daemon went down is over when the session ret
 test('opening a session reports the agent it actually runs, flag or no flag', async () => {
   world.spawnDaemon()
   const first = await world.liveDaemon()
-  // Its own origin: the shared data dir may hold another test's session.
   const origin = 'http://127.0.0.1:14/'
+  const PROJECT = project('report-agent')
 
   const withoutAgent = await world.openSession(first.port, { url: origin, project: PROJECT })
   assert.equal(withoutAgent.agent, undefined, 'nothing is running one yet')
@@ -309,7 +296,7 @@ test('a restore into a branch whose round was cut off holding nothing opens on t
   const origin = 'http://127.0.0.1:15/'
   const opened = await world.openSession(live.port, {
     url: origin,
-    project: PROJECT,
+    project: world.dataDir,
     agent: FAKE_AGENT,
   })
   await acpIdle(opened.port)

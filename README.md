@@ -6,12 +6,15 @@ ezdesign turns any locally running dev server into an annotatable review surface
 agent iteration. The user marks up the **real page** - click an element, frame a region, select
 some text, leave a comment - and the feedback flows to a local coding agent (Claude Code, Codex,
 anything that can run a CLI) as structured items that resolve to **exact source locations**. The
-agent edits the code, HMR updates the page in place, the user reviews the next round.
+agent edits the code, HMR updates the page in place, the user reviews the next round. Beside the
+app, **canvases** hold HTML designs the agent draws, for exploring ideas before (or instead of)
+changing the real thing.
 
 ```
 $ npx -y @cychien/ezdesign@latest http://localhost:5173/pricing --agent claude  # managed ACP agent
 $ npx -y @cychien/ezdesign@latest http://localhost:5173/pricing                 # portable poll mode
-$ npx -y @cychien/ezdesign@latest poll http://localhost:5173/                   # agent waits for feedback
+$ npx -y @cychien/ezdesign@latest poll                                          # agent waits for feedback
+$ npx -y @cychien/ezdesign@latest --agent claude                                # no dev server: canvases only
 ```
 
 - **Zero config.** A local daemon reverse-proxies your dev server and injects the annotation
@@ -21,9 +24,12 @@ $ npx -y @cychien/ezdesign@latest poll http://localhost:5173/                   
   guessing which part of the page you meant. Paste or drop a screenshot into any comment and the
   agent gets a path to it; `/element` points a comment at a second element, so "make this match
   that one" arrives as a `file:line` too.
-- **Every screen at once.** Review on one device or lay all three out on a canvas - desktop,
+- **Every screen at once.** Review on one device or lay all three out on a grid - desktop,
   iPad and iPhone side by side at their real viewports, scrolling together. An annotation stays on
   the screen it was made on, and reaches the agent tagged with the width it was made at.
+- **Canvases beside the app.** Tabs next to the App hold boards of frames - complete HTML pages
+  at real viewport widths that the agent adds, you arrange, and both of you annotate. `/element`
+  crosses tabs, so "build [ref 1] into the app" points at a frame from an App comment.
 - **Built for the loop.** In ACP mode, ezdesign owns the agent and keeps its live work, questions,
   and permission prompts in the review shell. Poll mode keeps the blocking structured-JSON contract
   for any external agent or automation. HMR keeps iterations in place; the review chrome lives
@@ -103,7 +109,7 @@ Two modes, and the toolbar shows which one is armed. Both leave the page live un
   which is what tells two instances of the same component apart. This is the mode for "this whole
   block", "these four cards", "the spacing through here".
 
-One comment is composed at a time - across every preview on the canvas, not just the one you are
+One comment is composed at a time - across every preview on the grid, not just the one you are
 in - so a box drawn in one screen cannot open a second comment box behind the one you are writing.
 
 ## The comment box
@@ -220,36 +226,36 @@ half of what a responsive review is looking at:
 | `3` | 電腦 | 1440×788 - a 1440×900 laptop screen, less the menu bar and the browser's own |
 
 The sizes are the **page area** a browser leaves on that device, not the screen it leaves it on -
-so a card on the canvas stops showing the page exactly where the real thing stops showing it. On
+so a card on the grid stops showing the page exactly where the real thing stops showing it. On
 its own a size takes only its width from the table and the height from your screen: one preview
-gets the whole stage to show the page in, and the canvas is where the fold is what you are
+gets the whole stage to show the page in, and the grid is where the fold is what you are
 checking.
 
 The names are shelves, not machines - a 手機 row naming a handset would claim a precision the
 row does not have, when phone widths run from 360 up past 430. The sizes are still taken from
 real machines; the comments in `devices.ts` say which.
 
-**`4` lays them out on one canvas** - phone and tablet side by side, the desktop on the row below.
+**`4` lays them out on one grid** - phone and tablet side by side, the desktop on the row below.
 The control in the stage's top corner picks which sizes are on it: the three above, plus a portrait
 tablet (834×1018) that is off by default.
 
-The canvas is drawn at **true size**, always. A 375 card is 375 pixels whether it is standing alone
+The grid is drawn at **true size**, always. A 375 card is 375 pixels whether it is standing alone
 or with three others beside it - a scaled 375 is not 375 to a media query, and a page measured at a
 size nobody browses at is not a measurement. Turning a size off does not resize or rearrange the
 ones that are left. What does not fit is what the dragging is for.
 
-Every card is the device it names, at its own height. What keeps the canvas short enough to work
+Every card is the device it names, at its own height. What keeps the grid short enough to work
 on is the two-row layout, not a cap on the cards - a card cut to a shared height would be lying
 about where the fold falls, which is half of what the preview is for.
 
-**Drag a card by its label to rearrange the canvas.** A card cannot stop just anywhere: it lands
+**Drag a card by its label to rearrange the grid.** A card cannot stop just anywhere: it lands
 top-aligned in an existing row, or on a row of its own, and a line marks where it would go -
 upright between two cards, flat between two rows. The arrangement is remembered, and a size turned
 on later joins as its own row at the bottom rather than reshuffling what you laid out.
 
-**Drag the background to move the canvas.** The frames are the app: a press inside one belongs to
-the page, so the backdrop and the gaps are what the canvas is panned by. That is also why the
-canvas does not have to fit - what is off the edge is a drag away.
+**Drag the background to move the grid.** The frames are the app: a press inside one belongs to
+the page, so the backdrop and the gaps are what the grid is panned by. That is also why the
+grid does not have to fit - what is off the edge is a drag away.
 
 Scrolling inside any one preview scrolls the others to the same point in the page, and navigating
 one - a link, back, forward - takes all of them: annotations are filtered by path, and three
@@ -258,7 +264,56 @@ previews on three pages is three separate reviews.
 An annotation belongs to the screen it was made on: mark up the iPhone card and the pin lives
 there, not on all three. The agent gets `@mobile 390x844` in the anchor either way. Everything the
 overlay draws - the comment box, the element label, the pins - is drawn back up to full size, so a
-canvas scaled to 60% is still one you can read and type into.
+grid scaled to 60% is still one you can read and type into.
+
+## Canvases
+
+A canvas is an infinite board of frames. Each frame is one complete, self-contained HTML document -
+its own `<head>`, its own styles, scripts and CDN assets allowed - rendered in its own iframe at a
+real viewport width, so a 390 frame is a phone to its media queries however far the board is zoomed
+out. No CSS is shared between frames: exploration directions diverge, and that is the point.
+
+**Tabs.** The strip above the stage has an **App** tab while a dev server is attached, then one tab
+per open canvas. `+` makes a new one, a double-click on a tab renames it, and closing a tab
+archives the canvas: the tab goes, the files stay. **所有 canvas** lists every canvas, open and
+archived, and reopens or permanently deletes one (after asking). A session has one active tab:
+two shell windows follow each other, and every batch tells the agent which tab you sent it from.
+
+Run `ezdesign` with no url in a project without a dev server and the shell opens on that
+project's canvases - one empty `未命名 canvas` the first time. Run `ezdesign <url>` later and the
+App tab joins the same shell; the conversation carries on.
+
+**The board.** Drag the background or hold Space to pan, scroll to pan, pinch or Cmd/Ctrl+scroll to
+zoom around the pointer, `⇧1` (全部顯示) to fit everything, `⇧0` to go back to 100%. Click a frame to
+select it, Shift+click to add, `⌘A` for all; drag to move, with guides that snap to other frames'
+edges and centres; drag a handle to resize; `⌘D` duplicates, `⌫` deletes, arrows nudge (`⇧` for
+10). Every step undoes and redoes (`⌘Z`, `⌘⇧Z`). Double-click a frame to scroll it or click
+through its controls; Escape hands the pointer back. Positions, the open tabs, the active tab and
+each canvas's camera survive a reload and a daemon restart.
+
+**Annotating.** `元素` and `範圍` work inside frames as they do on the app, and an annotation in a
+frame reaches the agent as a line of that frame's file -
+`.ezdesign/canvases/<canvas>/frames/<frame>.html:14 · [canvas frame "Hero A" on canvas "首頁探索"]`.
+`/element` crosses tabs both ways: start it in an App comment, switch to a canvas, Cmd+click the
+frame you mean, and the comment comes back with the ref in it - or the reverse.
+
+**The agent.** An ACP agent gets the `ezdesign-canvas` tools - `list_canvases`, `create_canvas`,
+`read_canvas`, `reopen_canvas`, `add_frame`, `update_frame`, `remove_frame` - from its first turn,
+granted without asking. A canvas it creates becomes the active tab and its frames appear as each
+call returns. A frame's HTML is the agent's: it changes it through the tools or by editing the
+file, and the open shell reloads that frame either way. Where a frame sits and how big it is are
+yours; the tools refuse geometry on a frame that exists. Poll mode has no canvas tools.
+
+**On disk.** Canvases live in the project, in `.ezdesign/canvases/<canvas>/`: `canvas.json` (name,
+frames), `layout.json` (where each frame is) and `frames/<frame>.html`. ezdesign writes the two
+JSON files and never reads back an edit made to them by hand; frame files are yours to edit. It
+does not touch your `.gitignore`: committing canvases is your call.
+
+**Isolation.** Frame documents are agent-written pages running third-party scripts, so they are
+served from `http://localhost:<port>` while the shell stays on `http://127.0.0.1:<port>` - another
+site. A frame cannot read the shell's storage, script it, or call the session's api, and the
+overlay inside it reaches the review through the shell. Two shortcuts do not fire while focus is
+inside a frame: send (`⌘↵`) and stop (`⌘.`).
 
 ## Configuration
 
@@ -277,17 +332,29 @@ port in it. `npm run dev` sets both.
 Sessions outlive the daemon that served them. On start, the daemon picks each session back up
 from disk and re-binds it to the port it last held, so a review shell tab you already have open
 only needs a reload, and feedback you queued before the restart is still waiting. If that port has
-since been taken, the session moves to a free one and the CLI re-resolves it. A session that was
+since been taken, the session moves to a free one and the CLI re-resolves it. A daemon brings back
+the sessions that were live when it went down; one that stopped itself after half an hour with no
+shell open brings back none, and the next `ezdesign` or `poll` in a project wakes that project's
+session. A session that was
 driving an ACP agent starts that agent again **and asks it to resume the conversation they were
 having**, so the review carries on where it stopped. Whether that works is the agent's answer to
 give - a transcript it no longer has, or an agent that cannot resume at all, leaves the review in a
 fresh context, and only then does the thread say so.
 
-A session belongs to one project on one origin, not to the origin alone. Dev servers all default
-to the same port, so reviewing a second project on `localhost:5173` would otherwise inherit the
-first one's conversation and hand its undelivered feedback to the wrong agent. The project is the
-nearest `.git` or `package.json` ancestor of the directory you run `ezdesign` from, so switching
-projects on a port starts a clean review and switching back finds the old one intact.
+A session belongs to a project, not to a dev-server origin. The project is the nearest `.git` or
+`package.json` ancestor of the directory you run `ezdesign` from. A dev server that comes back on
+another port keeps the review: `ezdesign http://localhost:5174/` in the same project points the
+open shell at the new port, with the conversation and the queue intact. Dev servers all default to
+the same port, so one origin is attached to one project at a time: opening a second project on
+`localhost:5173` moves the origin to it, and the first project keeps its conversation and queue and
+only loses its app until you attach one again. `poll`, `progress` and `end` find the session by the
+project they run from; a url passed to them is only checked against the attached app, with a note
+when it differs.
+
+Sessions from versions before this one were per origin. The first daemon of this version folds them
+into project sessions, keeping every queued annotation, batch and conversation, and moves the old
+directories to `sessions-legacy/` in the data dir, never deleting them. A daemon older than this
+version does not read the new format, so going back to one starts with no sessions.
 
 ## Agent modes
 
@@ -427,10 +494,11 @@ Without `--agent`, the review uses the existing CLI contract:
 
 ```
 npx -y @cychien/ezdesign@latest http://localhost:5173/
-npx -y @cychien/ezdesign@latest poll http://localhost:5173/
+npx -y @cychien/ezdesign@latest poll
 ```
 
-`poll` blocks until the user sends feedback, prints the structured batch as JSON, and exits. This
+`poll` blocks until the user sends feedback, prints the structured batch as JSON, and exits. Run it
+from the project, like the command that opened the session. This
 mode remains available for scripts and integrations that consume the CLI contract directly.
 
 ## Inspiration

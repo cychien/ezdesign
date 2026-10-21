@@ -1,4 +1,4 @@
-import { delay, devTargetUrl, runCli } from './dev-env.mjs'
+import { FIXTURE_ROOT, delay, devTargetUrl, runCli } from './dev-env.mjs'
 
 /** Stands in for a real coding agent: polls, prints every anchor field the agent
  *  would have to work from, then replies and polls again. Lets one person walk
@@ -43,12 +43,14 @@ function printExtras(carrier, indent) {
   }
 }
 
+// The session is the project's, so the agent works from the fixture, as `npm run dev` opens it.
 const url = process.argv[2] ?? devTargetUrl()
+const inFixture = { cwd: FIXTURE_ROOT }
 console.log(dim(`fake agent polling ${url} - annotate in the browser and hit send`))
 
 let reply = '假 agent 已連線，開始 review 吧'
 for (;;) {
-  const raw = await runCli(['poll', url, '--agent-reply', reply], { capture: true })
+  const raw = await runCli(['poll', url, '--agent-reply', reply], { ...inFixture, capture: true })
   const result = JSON.parse(raw)
 
   if (result.type === 'session-ended') {
@@ -62,7 +64,7 @@ for (;;) {
   result.items.forEach(describe)
 
   for (const [i, item] of result.items.entries()) {
-    await runCli(['progress', url, `改 #${i + 1} ${item.label} 中…`])
+    await runCli(['progress', url, `改 #${i + 1} ${item.label} 中…`], inFixture)
     await delay(1500)
   }
 

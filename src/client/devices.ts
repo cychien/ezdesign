@@ -13,7 +13,7 @@ export interface Device {
   width: number
   height: number
   /** Takes the stage's own size when it is the only device on screen: the
-   *  user's monitor is the real desktop, so the size below is what the canvas
+   *  user's monitor is the real desktop, so the size below is what the grid
    *  needs to draw a card, not a box to put the single view in. */
   fluid?: boolean
 }
@@ -34,7 +34,7 @@ export const DESKTOP: Device = {
  *  on its side it clears the desktop breakpoint most layouts switch on. */
 export const TABLET: Device = { id: 'tablet', name: '平板', width: 1112, height: 740 }
 
-/** The same tablet stood up: 834x1112, less the same bars. Off the canvas by
+/** The same tablet stood up: 834x1112, less the same bars. Off the grid by
  *  default - it sits between the phone and the landscape tablet and usually only
  *  confirms what they already showed - and worth turning on for a layout with
  *  something specific to say in that band. */
@@ -52,38 +52,38 @@ export const TABLET_PORTRAIT: Device = {
 export const MOBILE: Device = { id: 'mobile', name: '手機', width: 375, height: 629 }
 
 /** The order of the picker, and of the number keys that go with it. Only the
- *  sizes a single preview is worth opening at: the portrait tablet is a canvas
+ *  sizes a single preview is worth opening at: the portrait tablet is a grid
  *  comparison rather than a size anyone reviews a page in on its own. */
 export const DEVICES: Device[] = [MOBILE, TABLET, DESKTOP]
 
-/** Everything the canvas can show, and the order its picker lists them in.
- *  Narrowest first, the way the canvas itself is stacked. */
-export const CANVAS_DEVICES: Device[] = [MOBILE, TABLET_PORTRAIT, TABLET, DESKTOP]
+/** Everything the grid can show, and the order its picker lists them in.
+ *  Narrowest first, the way the grid itself is stacked. */
+export const GRID_DEVICES: Device[] = [MOBILE, TABLET_PORTRAIT, TABLET, DESKTOP]
 
 /** What it starts with. The portrait tablet is left off - three sizes is the
  *  comparison most reviews are making, and a fourth is a choice worth making
  *  rather than one to be given. */
-export const CANVAS_DEFAULT: string[] = [DESKTOP.id, TABLET.id, MOBILE.id]
+export const GRID_DEFAULT: string[] = [DESKTOP.id, TABLET.id, MOBILE.id]
 
-/** The widest row the canvas will ever lay out: the widest card it can show,
+/** The widest row the grid will ever lay out: the widest card it can show,
  *  with the narrowest beside it.
  *
- *  Taken from every size the canvas offers, not from the ones currently on it -
+ *  Taken from every size the grid offers, not from the ones currently on it -
  *  it is what the scale is set by, and a size has to be drawn the same whatever
- *  else is on the canvas beside it. Scaling to whichever row happens to be
+ *  else is on the grid beside it. Scaling to whichever row happens to be
  *  widest today would mean turning one size off resized all the others. */
-export function canvasLimit(devices: Device[], gap: number): number {
+export function gridLimit(devices: Device[], gap: number): number {
   if (devices.length === 0) return 1
   const widths = devices.map((d) => d.width)
   return Math.max(...widths) + Math.min(...widths) + gap
 }
 
-/** The canvas laid out, narrowest first, one entry per row. A row takes another
- *  card only while it stays inside `limit` - which is also what the canvas is
+/** The grid laid out, narrowest first, one entry per row. A row takes another
+ *  card only while it stays inside `limit` - which is also what the grid is
  *  scaled to, so the widest row exactly fills the stage and no row can overflow
  *  it. A pairing saves a whole row of dragging and costs only the width the
  *  limit already allows for. */
-export function canvasRows(devices: Device[], gap: number, limit: number): Device[][] {
+export function gridRows(devices: Device[], gap: number, limit: number): Device[][] {
   if (devices.length === 0) return []
   const order = [...devices].sort((a, b) => a.width - b.width)
   const rows: Device[][] = []
@@ -103,11 +103,11 @@ export function rowWidth(row: Device[], gap: number): number {
 /** Between cards in a row. Lives here because the packing that pairs cards
  *  into rows has to account for it: the gap is drawn at its own size, not the
  *  cards'. */
-export const CANVAS_GAP = 14
+export const GRID_GAP = 14
 
 /** Between rows. Roomier than the card gap because the next row's labels live
  *  inside it, and a label flush against the row above reads as its caption. */
-export const CANVAS_ROW_GAP = 26
+export const GRID_ROW_GAP = 26
 
 export function deviceById(id: string): Device {
   return DEVICES.find((d) => d.id === id) ?? DESKTOP
@@ -126,7 +126,7 @@ export const MIN_ZOOM = 0.2
  *  height: the device says how wide the page is laid out, the screen says how
  *  much of it you can see at once. Fitting the height too would cut the frame
  *  off at the device's own and leave the rest of the screen empty for no reason
- *  - the canvas is where cards stop where the device stops.
+ *  - the grid is where cards stop where the device stops.
  *
  *  Never scales up: one device on its own is being previewed rather than laid
  *  out against anything, and at true size a pixel is a pixel. Floored to a
@@ -136,14 +136,14 @@ export function fitWidth(width: number, boxWidth: number): number {
   return scale(boxWidth / width, 1)
 }
 
-/** The canvas is drawn at true size, always.
+/** The grid is drawn at true size, always.
  *
  *  Nothing about it answers to the stage or to what is on it: a 375 card is 375
  *  pixels whether it stands alone or with three others beside it, and a size you
  *  turn off does not resize the ones that are left. What does not fit is dragged
- *  to, which is what a canvas is for - shrinking the page to make a row fit
+ *  to, which is what a grid is for - shrinking the page to make a row fit
  *  would be measuring the layout at a size nobody is browsing at. */
-export const CANVAS_ZOOM = 1
+export const GRID_ZOOM = 1
 
 /** Floored to a hundredth, so a scale that only just fits cannot round back up
  *  into an overflow, and the number stays one a human could read out. */

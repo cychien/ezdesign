@@ -1,0 +1,18 @@
+{
+  "description": "Fixture session plus two canvases in fixtures/playground/.ezdesign/canvases: 首頁探索 (Hero A with <h1> on line 14 and three cards on lines 20-32, Hero B, Mobile) and 備用方向 (one frame).",
+  "sessions": [],
+  "canvases": [
+    {
+      "name": "首頁探索",
+      "frames": [
+        { "title": "Hero A", "file": "canvas-frames/hero-a.html", "x": 0, "y": 0, "width": 1280, "height": 900 },
+        { "title": "Hero B", "file": "canvas-frames/hero-b.html", "x": 1400, "y": 0, "width": 1280, "height": 900 },
+        { "title": "Mobile", "file": "canvas-frames/mobile.html", "x": 2800, "y": 0, "width": 390, "height": 844 }
+      ]
+    },
+    {
+      "name": "備用方向",
+      "frames": [{ "title": "Hero B", "file": "canvas-frames/hero-b.html", "x": 0, "y": 0, "width": 1280, "height": 900 }]
+    }
+  ]
+}
