@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict'
 import { spawn, spawnSync } from 'node:child_process'
-import { existsSync, mkdtempSync } from 'node:fs'
+import { existsSync, mkdtempSync, realpathSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, test } from 'node:test'
 import type { PollResult } from '../src/protocol.js'
-import { CLI_SRC, DaemonWorld, waitFor } from './helpers/daemon.js'
+import { CLI_SRC, DaemonWorld, TSX, waitFor } from './helpers/daemon.js'
 
 const world = await DaemonWorld.create()
 after(() => world.dispose())
@@ -73,15 +73,16 @@ test('Ctrl+D at the login prompt is no token given', () => {
 test('an interrupted poll is no longer a connected agent and is handed nothing', async () => {
   world.spawnDaemon()
   const { port: control } = await world.liveDaemon()
+  const project = realpathSync(world.dataDir)
   const { port } = await world.openSession(control, {
     url: 'http://localhost:9995',
-    project: world.dataDir,
+    project,
   })
-  const poll = spawn(
-    process.execPath,
-    ['--import', 'tsx', CLI_SRC, 'poll', 'http://localhost:9995/'],
-    { env: world.env, stdio: 'ignore' },
-  )
+  const poll = spawn(process.execPath, ['--import', TSX, CLI_SRC, 'poll'], {
+    env: world.env,
+    cwd: project,
+    stdio: 'ignore',
+  })
   await waitFor(async () => (await world.state(port)).agentOnline === true, 'the poll to connect')
 
   poll.kill('SIGINT')
@@ -98,7 +99,9 @@ test('an interrupted poll is no longer a connected agent and is handed nothing',
   assert.equal(state.agentBusy, false, 'no agent is working on it')
   assert.equal(state.agentQueued, true, 'it waits for the next poll')
 
-  const next = JSON.parse(await world.cli('poll', 'http://localhost:9995/')) as PollResult
+  const polled = await world.run(['poll'], { cwd: project })
+  assert.equal(polled.code, 0, polled.stderr)
+  const next = JSON.parse(polled.stdout) as PollResult
   assert.ok(next.type === 'feedback', `the next poll is handed the batch, got ${next.type}`)
   assert.deepEqual(next.items.map((i) => i.comment), ['bigger heading'])
 })

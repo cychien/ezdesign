@@ -170,18 +170,26 @@ function evidenceDir() {
   return join(tmpdir(), `ezdesign-verify-evidence-${REPO_HASH}`)
 }
 
-function sessionKey(origin, project) {
-  return createHash('sha1').update(`${origin}\n${project}`).digest('hex').slice(0, 12)
+function sessionKey(project) {
+  return createHash('sha1').update(project).digest('hex').slice(0, 12)
 }
 
 const hexId = (seed) => createHash('sha1').update(seed).digest('hex').slice(0, 12)
 
 function writeSession(dataDir, files) {
-  const dir = join(dataDir, 'sessions', sessionKey(files.session.targetOrigin, files.session.project))
+  const dir = join(dataDir, 'sessions', sessionKey(files.session.project))
   mkdirSync(dir, { recursive: true })
   for (const [name, value] of Object.entries(files)) {
     writeFileSync(join(dir, `${name}.json`), JSON.stringify(value, null, 2))
   }
+}
+
+/** An active session is attached to its dev server and comes back when the
+ *  daemon starts, as one a long-lived daemon was serving does. */
+function sessionLife(origin, state, epoch) {
+  return state === 'ended'
+    ? { app: { kind: 'none' }, state, endedBy: 'user' }
+    : { app: { kind: 'attached', origin, attachedAt: epoch }, restoreOnStart: true, state }
 }
 
 function loadDataset(name, state) {
@@ -247,10 +255,8 @@ function loadDataset(name, state) {
       }
     })
     const session = {
-      targetOrigin: origin,
       project,
-      state: s.state ?? 'active',
-      ...(s.state === 'ended' ? { endedBy: 'user' } : {}),
+      ...sessionLife(origin, s.state ?? 'active', epoch),
       createdAt: epoch,
       chats,
       currentChatId: chats[chats.length - 1].id,
@@ -272,10 +278,8 @@ function loadDataset(name, state) {
       }))
       writeSession(state.dataDir, {
         session: {
-          targetOrigin: origin,
           project,
-          state: g.state,
-          ...(g.state === 'ended' ? { endedBy: 'user' } : {}),
+          ...sessionLife(origin, g.state, epoch),
           createdAt: epoch,
           chats: [{ id: chatId, startedAt: epoch }],
           currentChatId: chatId,
@@ -487,8 +491,8 @@ async function cmdDoctor() {
   )
   check(health?.version === PKG.version, 'daemon version matches package.json', `${health?.version} vs ${PKG.version}`)
   const sessions = reg ? await getJson(`http://127.0.0.1:${reg.port}/control/sessions`) : null
-  const mine = sessions?.find((s) => s.targetOrigin === state.fixtureOrigin)
-  check(mine?.state === 'active' && mine.project === FIXTURE, 'fixture session active and scoped to fixtures/playground', mine ? `${mine.port} ${mine.project}` : 'none')
+  const mine = sessions?.find((s) => s.project === FIXTURE)
+  check(mine?.state === 'active' && mine.app === state.fixtureOrigin, 'fixture session active and attached to the fixture', mine ? `${mine.port} ${mine.app}` : 'none')
   check(mine?.port === state.sessionPort, 'session port matches the recorded shell url', `${mine?.port} vs ${state.sessionPort}`)
   const shell = await getText(state.shellUrl, 'text/html')
   check(shell.status === 200 && shell.body.includes('shell.js'), 'shell url serves the shell', state.shellUrl)
@@ -524,7 +528,7 @@ function cmdStatus() {
 function derived(state) {
   return {
     ...state,
-    sessionDir: join(state.dataDir, 'sessions', sessionKey(state.fixtureOrigin, FIXTURE)),
+    sessionDir: join(state.dataDir, 'sessions', sessionKey(FIXTURE)),
     axiSession: `vz-${REPO_HASH}`,
     evidenceDir: evidenceDir(),
     fixtureRoot: FIXTURE,

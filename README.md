@@ -11,7 +11,7 @@ agent edits the code, HMR updates the page in place, the user reviews the next r
 ```
 $ npx -y @cychien/ezdesign@latest http://localhost:5173/pricing --agent claude  # managed ACP agent
 $ npx -y @cychien/ezdesign@latest http://localhost:5173/pricing                 # portable poll mode
-$ npx -y @cychien/ezdesign@latest poll http://localhost:5173/                   # agent waits for feedback
+$ npx -y @cychien/ezdesign@latest poll                                          # agent waits for feedback
 ```
 
 - **Zero config.** A local daemon reverse-proxies your dev server and injects the annotation
@@ -277,17 +277,29 @@ port in it. `npm run dev` sets both.
 Sessions outlive the daemon that served them. On start, the daemon picks each session back up
 from disk and re-binds it to the port it last held, so a review shell tab you already have open
 only needs a reload, and feedback you queued before the restart is still waiting. If that port has
-since been taken, the session moves to a free one and the CLI re-resolves it. A session that was
+since been taken, the session moves to a free one and the CLI re-resolves it. A daemon brings back
+the sessions that were live when it went down; one that stopped itself after half an hour with no
+shell open brings back none, and the next `ezdesign` or `poll` in a project wakes that project's
+session. A session that was
 driving an ACP agent starts that agent again **and asks it to resume the conversation they were
 having**, so the review carries on where it stopped. Whether that works is the agent's answer to
 give - a transcript it no longer has, or an agent that cannot resume at all, leaves the review in a
 fresh context, and only then does the thread say so.
 
-A session belongs to one project on one origin, not to the origin alone. Dev servers all default
-to the same port, so reviewing a second project on `localhost:5173` would otherwise inherit the
-first one's conversation and hand its undelivered feedback to the wrong agent. The project is the
-nearest `.git` or `package.json` ancestor of the directory you run `ezdesign` from, so switching
-projects on a port starts a clean review and switching back finds the old one intact.
+A session belongs to a project, not to a dev-server origin. The project is the nearest `.git` or
+`package.json` ancestor of the directory you run `ezdesign` from. A dev server that comes back on
+another port keeps the review: `ezdesign http://localhost:5174/` in the same project points the
+open shell at the new port, with the conversation and the queue intact. Dev servers all default to
+the same port, so one origin is attached to one project at a time: opening a second project on
+`localhost:5173` moves the origin to it, and the first project keeps its conversation and queue and
+only loses its app until you attach one again. `poll`, `progress` and `end` find the session by the
+project they run from; a url passed to them is only checked against the attached app, with a note
+when it differs.
+
+Sessions from versions before this one were per origin. The first daemon of this version folds them
+into project sessions, keeping every queued annotation, batch and conversation, and moves the old
+directories to `sessions-legacy/` in the data dir, never deleting them. A daemon older than this
+version does not read the new format, so going back to one starts with no sessions.
 
 ## Agent modes
 
@@ -427,10 +439,11 @@ Without `--agent`, the review uses the existing CLI contract:
 
 ```
 npx -y @cychien/ezdesign@latest http://localhost:5173/
-npx -y @cychien/ezdesign@latest poll http://localhost:5173/
+npx -y @cychien/ezdesign@latest poll
 ```
 
-`poll` blocks until the user sends feedback, prints the structured batch as JSON, and exits. This
+`poll` blocks until the user sends feedback, prints the structured batch as JSON, and exits. Run it
+from the project, like the command that opened the session. This
 mode remains available for scripts and integrations that consume the CLI contract directly.
 
 ## Inspiration

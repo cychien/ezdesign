@@ -7,6 +7,9 @@ export const URL_PREFIX = '/__ezdesign'
 const ENV_PREFIX = APP_NAME.toUpperCase()
 export const DATA_DIR = process.env[`${ENV_PREFIX}_DATA_DIR`] ?? join(homedir(), `.${APP_NAME}`)
 export const SESSIONS_DIR = join(DATA_DIR, 'sessions')
+/** Where `(origin, project)` directories go once folded into project sessions:
+ *  moved, never deleted, so a downgrade or a bad merge can be undone by hand. */
+export const LEGACY_SESSIONS_DIR = join(DATA_DIR, 'sessions-legacy')
 export const REGISTRY_FILE = join(DATA_DIR, 'daemon.json')
 export const DAEMON_LOG = join(DATA_DIR, 'daemon.log')
 /** Where a self-updating daemon installs the version it hands over to. */
@@ -14,10 +17,19 @@ export const VERSIONS_DIR = join(DATA_DIR, 'versions')
 export const UPDATE_CHECK_FILE = join(DATA_DIR, 'update-check.json')
 export const NO_UPDATE_CHECK_ENV = `${ENV_PREFIX}_NO_UPDATE_CHECK`
 export const DESIGN_HARNESS_ENV = `${ENV_PREFIX}_DESIGN_HARNESS`
+/** Canvas tabs, the no-url start and the agent's canvas tools. The
+ *  project-keyed session is not behind it. */
+export const CANVAS_ENV = `${ENV_PREFIX}_CANVAS`
 
 /** Unset, empty, `0` and `false` are off; anything else is on. */
 export function envFlagOn(raw: string | undefined): boolean {
   return raw !== undefined && raw !== '' && raw !== '0' && raw.toLowerCase() !== 'false'
+}
+
+/** Read by the daemon per runtime and by the CLI per command. A running daemon
+ *  keeps the value it was started with, as it does for the harness flag. */
+export function canvasEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+  return envFlagOn(env[CANVAS_ENV])
 }
 
 export const DEFAULT_CONTROL_PORT = 4400

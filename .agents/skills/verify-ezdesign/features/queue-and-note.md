@@ -28,7 +28,7 @@ Preconditions:
 - **Edit a row.** Choose the pencil. Run `npx -y chrome-devtools-axi click @<button "改這則標註（送出前都還能改）">`. The row shows `textbox "想怎麼調整？輸入 / 用指令（⌘+Enter 儲存）"` with the comment as its value, `button "儲存（⌘+Enter）"` and `button "取消（Esc）"`, and keeps its number and source label.
 - **Save the edit.** Run `npx -y chrome-devtools-axi fill @<that textbox> "標題改成兩行"` and `npx -y chrome-devtools-axi press Meta+Enter`. The row reads `標題改成兩行`; `queue.json` holds the new comment, trimmed.
 - **Cancel an edit.** Open the pencil again, type something, `npx -y chrome-devtools-axi press Escape`. The row keeps `標題改成兩行`.
-- **Batch note.** `npx -y chrome-devtools-axi fill @<textbox "整體想法或補充說明，輸入 / 用指令（選填）"> "整體字重偏輕"`, start `$V/vz.mjs cli -- poll <origin> > $E/poll.json` in the background, then `npx -y chrome-devtools-axi press Meta+Enter` with focus in the note box. `poll.json` has `"note": "整體字重偏輕"` and the edited item.
+- **Batch note.** `npx -y chrome-devtools-axi fill @<textbox "整體想法或補充說明，輸入 / 用指令（選填）"> "整體字重偏輕"`, start `$V/vz.mjs cli -- poll > $E/poll.json` in the background, then `npx -y chrome-devtools-axi press Meta+Enter` with focus in the note box. `poll.json` has `"note": "整體字重偏輕"` and the edited item.
 - **Volume.** `$V/vz.mjs seed large`, open the new shell url. `eval "() => document.body.innerText.split('queued #').length - 1"` returns `40`; the thread shows `"第 180 批改好了，順便統一了按鈕圓角"` as its last reply; pins up to 40 are drawn on the page. Screenshot `$E/large.png`.
 
 ## Gotchas

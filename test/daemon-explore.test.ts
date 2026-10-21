@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict'
+import { mkdtempSync } from 'node:fs'
+import { join } from 'node:path'
 import { after, test } from 'node:test'
 import type { ExploreState } from '../src/protocol.js'
 import { DaemonWorld, FAKE_AGENT, waitFor } from './helpers/daemon.js'
@@ -20,7 +22,8 @@ async function ready(env?: Record<string, string>): Promise<number> {
   const { port: control } = await world.liveDaemon()
   const { port } = await world.openSession(control, {
     url: `http://localhost:${nextPort++}`,
-    project: world.dataDir,
+    // A project per round of tests: the project is the session.
+    project: mkdtempSync(join(world.dataDir, 'project-')),
     agent: env
       ? `${Object.entries(env)
           .map(([k, v]) => `${k}=${v}`)

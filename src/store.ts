@@ -45,11 +45,14 @@ export function newId(): string {
   return randomBytes(6).toString('hex')
 }
 
-/** Origin alone is not an identity: dev servers default to the same port, so
- *  two projects reviewed on `localhost:5173` would share one store and the
- *  first one's undelivered feedback would be handed to the second one's agent. */
-export function sessionKey(targetOrigin: string, project: string): string {
-  return createHash('sha1').update(`${targetOrigin}\n${project}`).digest('hex').slice(0, 12)
+/** The project is the identity. Origin alone never was one - dev servers
+ *  default to the same port, so two projects on `localhost:5173` would share a
+ *  store - and origin + project made a dev server that moved from 5173 to 5174
+ *  start a fresh review of the same project. The origin is a property of the
+ *  session (`PersistedSession.app`), attachable later. Legacy `(origin,
+ *  project)` directories are folded in by `session-migrate.ts`. */
+export function sessionKey(project: string): string {
+  return createHash('sha1').update(project).digest('hex').slice(0, 12)
 }
 
 const MIME_EXT: Record<string, string> = {
@@ -99,10 +102,38 @@ function dedupeName(name: string, taken: Set<string>): string {
   }
 }
 
+/** The dev server on the App tab. Not identity (see `sessionKey`): attached by
+ *  `ezdesign <url>`, attached later to a session opened without one, and taken
+ *  away when another project's session attaches the same origin. */
+export type AppAttachment =
+  | { kind: 'none' }
+  | {
+      kind: 'attached'
+      origin: string
+      /** When the user last ran `ezdesign <url>` for it. Written by that act
+       *  alone - never by restore or a wake - so it cannot renew itself; restore
+       *  hands a contested origin to the newest. */
+      attachedAt: number
+    }
+
+export type AttachedApp = Extract<AppAttachment, { kind: 'attached' }>
+
+/** `session.json`. A pre-project `(origin, project)` record has a string
+ *  `targetOrigin` instead of `app`; `session-migrate.ts` folds those in, and an
+ *  older daemon skips this shape because it requires `targetOrigin`. */
 export interface PersistedSession {
-  targetOrigin: string
-  /** Absolute path of the project being reviewed on this origin. */
+  /** Absolute path of the project, by `projectRoot`. The identity. */
   project: string
+  app: AppAttachment
+  /** Rebuild this session at the next daemon start. Set when a runtime starts,
+   *  cleared for every session only by the idle exit - the one exit nobody is
+   *  watching - and left set by a crash, a stop, a version replacement or a
+   *  self-update, the exits an open shell tab has to survive. Bounds restore by
+   *  what was live, not by every project ever opened. */
+  restoreOnStart?: true
+  /** Legacy directory keys already folded into this one: a key listed here is
+   *  never merged again, which makes the migration safe to re-run. */
+  migratedFrom?: string[]
   state: 'active' | 'ended'
   endedBy?: SessionEndedBy
   createdAt: number
@@ -187,7 +218,19 @@ export interface ConversationClear {
   at: number
 }
 
-/** Every session on disk. */
+function isProjectSession(value: unknown): value is PersistedSession {
+  const record = value as Partial<PersistedSession> & { targetOrigin?: unknown }
+  return (
+    typeof record?.project === 'string' &&
+    typeof record.app?.kind === 'string' &&
+    record.targetOrigin === undefined
+  )
+}
+
+/** Every project session on disk. Legacy `(origin, project)` records are not
+ *  listed: the migration folds them in before anything reads this, and one
+ *  without a `project` stays inert, because guessing its project is the mix-up
+ *  the key exists to prevent. */
 export function listPersistedSessions(): PersistedSession[] {
   let keys: string[]
   try {
@@ -199,12 +242,8 @@ export function listPersistedSessions(): PersistedSession[] {
   for (const key of keys) {
     try {
       const raw = readFileSync(join(SESSIONS_DIR, key, 'session.json'), 'utf8')
-      const parsed = JSON.parse(raw) as PersistedSession
-      // Pre-`project` directories are inert: without knowing which project they
-      // belong to, reusing one is the very mix-up `sessionKey` exists to stop.
-      if (typeof parsed?.targetOrigin === 'string' && typeof parsed?.project === 'string') {
-        sessions.push(parsed)
-      }
+      const parsed: unknown = JSON.parse(raw)
+      if (isProjectSession(parsed)) sessions.push(parsed)
     } catch {
       /* half-written or foreign directory - skip it */
     }
@@ -212,43 +251,75 @@ export function listPersistedSessions(): PersistedSession[] {
   return sessions
 }
 
-/** The sessions a starting daemon should rebuild proxies for. Only one project
- *  can hold a given origin at a time, so when several are on record for one
- *  origin the newest is the one whose dev server is plausibly still there. */
-export function listRestorableSessions(): PersistedSession[] {
-  const newestPerOrigin = new Map<string, PersistedSession>()
-  for (const session of listPersistedSessions()) {
-    if (session.state !== 'active') continue
-    const held = newestPerOrigin.get(session.targetOrigin)
-    if (!held || session.createdAt > held.createdAt) {
-      newestPerOrigin.set(session.targetOrigin, session)
-    }
+/** One project's record, read from its own directory - no listing. Null for a
+ *  project with no session, or a record that is not of this shape. */
+export function persistedSession(project: string): PersistedSession | null {
+  try {
+    const raw = readFileSync(join(SESSIONS_DIR, sessionKey(project), 'session.json'), 'utf8')
+    const parsed: unknown = JSON.parse(raw)
+    return isProjectSession(parsed) && parsed.project === project ? parsed : null
+  } catch {
+    return null
   }
-  return [...newestPerOrigin.values()]
+}
+
+const attachedAt = (s: PersistedSession): number =>
+  s.app.kind === 'attached' ? s.app.attachedAt : -1
+
+/** The sessions a starting daemon rebuilds: `active` and `restoreOnStart`,
+ *  newest `app.attachedAt` first (unattached last). That is the order origins
+ *  are handed out in by `SessionDirectory.restore`, so of two records naming
+ *  one origin the one the user attached last keeps it. */
+export function listRestorableSessions(): PersistedSession[] {
+  return listPersistedSessions()
+    .filter((s) => s.state === 'active' && s.restoreOnStart)
+    .sort((a, b) => attachedAt(b) - attachedAt(a))
 }
 
 /**
- * Disk-backed state for one review session (one target origin). Files are tiny
- * and every mutation rewrites the file synchronously — queued feedback must
- * survive daemon restarts and crashes.
+ * Disk-backed state for one review session (one project). Files are tiny and
+ * every mutation rewrites the file synchronously — queued feedback must survive
+ * daemon restarts and crashes.
  */
 export class SessionStore {
   readonly dir: string
 
-  constructor(
-    readonly targetOrigin: string,
-    readonly project: string,
-  ) {
-    this.dir = join(SESSIONS_DIR, sessionKey(targetOrigin, project))
+  constructor(readonly project: string) {
+    this.dir = join(SESSIONS_DIR, sessionKey(project))
     mkdirSync(this.dir, { recursive: true })
     if (!this.readJson<PersistedSession>('session.json')) {
       this.writeJson('session.json', {
-        targetOrigin,
         project,
+        app: { kind: 'none' },
         state: 'active',
         createdAt: Date.now(),
       } satisfies PersistedSession)
     }
+  }
+
+  // ------------------------------------------------------------------ origin
+
+  get app(): AppAttachment {
+    return this.session.app ?? { kind: 'none' }
+  }
+
+  /** The user ran `ezdesign <url>`: `at` becomes `attachedAt`, also when the
+   *  origin is the one already attached. */
+  attachApp(origin: string, at: number): void {
+    this.patchSession({ app: { kind: 'attached', origin, attachedAt: at } })
+  }
+
+  /** Another project took the origin. `attachedAt` goes with it, so a restore
+   *  cannot hand the origin back. Idempotent. */
+  detachApp(): void {
+    if (this.app.kind === 'none') return
+    this.patchSession({ app: { kind: 'none' } })
+  }
+
+  setRestoreOnStart(on: boolean): void {
+    const { restoreOnStart: was, ...rest } = this.session
+    if (!!was === on) return
+    this.writeJson('session.json', on ? { ...rest, restoreOnStart: true } : rest)
   }
 
   private readJson<T>(file: string): T | null {

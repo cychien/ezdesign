@@ -8,6 +8,7 @@ import {
   POLL_RETRIES,
   URL_PREFIX,
   assertControlPortEnv,
+  canvasEnabled,
 } from './constants.js'
 import { agentCommand } from './agents.js'
 import {
@@ -40,17 +41,20 @@ const HELP = `${APP_NAME} - annotate your live dev app, feedback flows to your l
 
 Usage:
   ${APP_NAME} <url> [--reopen] [--agent <name|command>]
-      open (or resume) a review session for a dev server.
+      open (or resume) this project's review session, with that dev server on
+      its App tab. A dev server that moved ports keeps the conversation.
       --agent (SPIKE) drives the agent over ACP: the session spawns it, feedback
       goes straight to it, and its stream, questions and permission prompts all
       surface in the review shell - no terminal needed. Profiles: claude, gemini,
       codex; anything else is run as an ACP agent command line.
-  ${APP_NAME} poll <url> [--agent-reply <msg>]
+  ${APP_NAME} poll [<url>] [--agent-reply <msg>]
       block until the user sends feedback; prints JSON, then exits
-  ${APP_NAME} progress <url> <msg>
+  ${APP_NAME} progress [<url>] <msg>
       update the "working on it" line in the review shell; send between edits
-  ${APP_NAME} end <url>
+  ${APP_NAME} end [<url>]
       end the session as the agent
+      (poll, progress and end find the session by the project you run them
+      from, never by url; a <url> is only checked against the attached app)
   ${APP_NAME} status | stop
       show session status / stop the background daemon
   ${APP_NAME} login [--token <t>] | logout
@@ -73,19 +77,51 @@ A restarted daemon picks its sessions back up from disk and re-binds each to the
 port it last held, so an open review shell only needs a reload and queued
 feedback is still there.
 
-A session is scoped to the project you run this from (nearest .git or
-package.json), not to the url alone, so two projects sharing a dev-server port
-never see each other's review.
+A session is the project you run this from (nearest .git or package.json),
+not the url, so two projects sharing a dev-server port never see each other's
+review, and one dev server attaches to one project at a time.
 
 Examples:
   ${APP_NAME} http://localhost:5173/
-  ${APP_NAME} poll http://localhost:5173/ --agent-reply "改好了 hero 區塊，請再看一次"
+  ${APP_NAME} poll --agent-reply "改好了 hero 區塊，請再看一次"
 `
 
 function fail(message: string, hint?: string): never {
   console.error(`error: ${message}`)
   if (hint) console.error(`hint: ${hint}`)
   process.exit(1)
+}
+
+/** Which session an agent-side command acts for. The project is read from the
+ *  cwd by the one rule the daemon and the Vite plugin share and is the only
+ *  handle; a url the caller still passes is checked against the session's
+ *  attached origin and only ever warned about, never used to find a session. */
+interface SessionHandle {
+  project: string
+  url: URL | null
+}
+
+const VALUE_FLAGS = new Set(['--agent-reply'])
+
+/** `[<url>]` off the front of a subcommand's words. Positional by count, not by
+ *  shape: `progress` takes one more word than the others, so with
+ *  `positionals = 1` a lone word is the message even when it looks like a host,
+ *  and only a second word makes the first one a url. */
+function parseSessionArgs(
+  words: string[],
+  positionals: number,
+): { handle: SessionHandle; rest: string[] } {
+  const plain: string[] = []
+  for (let i = 0; i < words.length; i++) {
+    const word = words[i]!
+    if (word.startsWith('--')) {
+      if (VALUE_FLAGS.has(word)) i++
+      continue
+    }
+    plain.push(word)
+  }
+  const url = plain.length > positionals ? parseTarget(plain.shift()) : null
+  return { handle: { project: projectRoot(process.cwd()), url }, rest: plain }
 }
 
 function parseTarget(raw: string | undefined): URL {
@@ -120,22 +156,47 @@ async function failOnVersionSkew(res: Response): Promise<void> {
   fail(body.error ?? 'version mismatch with the daemon', body.hint)
 }
 
-/** `quiet` keeps a mid-poll reconnect from exiting while retries remain. */
-async function findSessionPort(target: URL, opts?: { quiet?: boolean }): Promise<number> {
-  const bail = (message: string): number => {
-    if (opts?.quiet) return 0
-    fail(message, `run \`${APP_NAME} ${target.href}\` first to open a session`)
-  }
+interface SessionListing {
+  project: string
+  app?: string
+  port: number
+  state: string
+}
+
+async function openSessionsHint(daemonPort: number): Promise<string> {
+  const start = `run \`${APP_NAME} <url>\` in this project first to open a session`
+  const res = await controlFetch(daemonPort, '/control/sessions').catch(() => null)
+  if (!res?.ok) return start
+  const open = ((await res.json()) as SessionListing[]).filter((s) => s.state === 'active')
+  if (!open.length) return start
+  const lines = open.map((s) => `  ${s.project}${s.app ? ` (${s.app})` : ''}`)
+  return [`${start}; open sessions:`, ...lines].join('\n')
+}
+
+/** `quiet` keeps a mid-poll reconnect from exiting while retries remain, and
+ *  from repeating the url note. */
+async function findSessionPort(handle: SessionHandle, opts?: { quiet?: boolean }): Promise<number> {
   const daemon = await findRunningDaemon()
-  if (!daemon) return bail('daemon is not running')
+  if (!daemon) {
+    if (opts?.quiet) return 0
+    fail('daemon is not running', `run \`${APP_NAME} <url>\` in this project first to open a session`)
+  }
   const res = await controlFetch(
     daemon.port,
-    `/control/sessions/find?origin=${encodeURIComponent(target.origin)}`,
+    `/control/sessions/find?project=${encodeURIComponent(handle.project)}`,
   )
   await failOnVersionSkew(res)
-  if (!res.ok) return bail(`no session for ${target.origin}`)
-  const { port } = (await res.json()) as { port: number }
-  return port
+  if (!res.ok) {
+    if (opts?.quiet) return 0
+    fail(`no session for ${handle.project}`, await openSessionsHint(daemon.port))
+  }
+  const found = (await res.json()) as { port: number; app?: string }
+  if (handle.url && handle.url.origin !== found.app && !opts?.quiet) {
+    console.error(
+      `note: ${handle.url.origin} is not this project's app (attached: ${found.app ?? 'none'}); using the project session`,
+    )
+  }
+  return found.port
 }
 
 const sessionApi = (port: number, path: string) =>
@@ -157,27 +218,33 @@ async function openShell(shellUrl: string): Promise<void> {
 }
 
 
+/** `ezdesign [<url>]`. With a url the dev server is probed first; without one
+ *  (only with `EZDESIGN_CANVAS=1`) nothing is probed and the shell opens with
+ *  no App tab. Both go through the same control call. */
 async function cmdOpen(
   rawUrl: string | undefined,
   flags: Set<string>,
   agentArg: string | undefined,
 ): Promise<void> {
-  const target = parseTarget(rawUrl)
-  try {
-    await fetch(target.origin, { signal: AbortSignal.timeout(3000) })
-  } catch {
-    fail(
-      `nothing is listening at ${target.origin}`,
-      'start your dev server first, then re-run this command',
-    )
+  const target = rawUrl === undefined && canvasEnabled() ? null : parseTarget(rawUrl)
+  if (target) {
+    try {
+      await fetch(target.origin, { signal: AbortSignal.timeout(3000) })
+    } catch {
+      fail(
+        `nothing is listening at ${target.origin}`,
+        'start your dev server first, then re-run this command',
+      )
+    }
   }
   const daemon = await ensureDaemon(cliEntry, pkg.version)
+  const project = projectRoot(process.cwd())
   const res = await controlFetch(daemon.port, '/control/sessions', {
     method: 'POST',
     body: JSON.stringify({
-      url: target.href,
+      ...(target ? { url: target.href } : {}),
       reopen: flags.has('--reopen'),
-      project: projectRoot(process.cwd()),
+      project,
       ...(agentArg ? { agent: agentCommand(agentArg) } : {}),
     }),
   })
@@ -186,22 +253,23 @@ async function cmdOpen(
     error?: string
     hint?: string
     agent?: string
+    app?: string
   }
   if (!res.ok) fail(body.error ?? `daemon returned ${res.status}`, body.hint)
   await openShell(body.shellUrl!)
-  console.log(`session: ${target.origin}`)
+  console.log(`session: ${project}`)
+  if (body.app) console.log(`app:     ${body.app}`)
   console.log(`shell:   ${body.shellUrl}`)
   // The daemon's answer, not the flag: a restored session keeps its agent.
   if (body.agent) {
     console.log(`agent:   ${body.agent} (ACP) - review runs in the shell`)
   } else {
-    console.log(`next:    run \`${APP_NAME} poll ${target.origin}/\` and wait for feedback`)
+    console.log(`next:    run \`${APP_NAME} poll\` in this project and wait for feedback`)
   }
 }
 
-async function cmdPoll(rawUrl: string | undefined, reply: string | undefined): Promise<void> {
-  const target = parseTarget(rawUrl)
-  let port = await findSessionPort(target)
+async function cmdPoll(handle: SessionHandle, reply: string | undefined): Promise<void> {
+  let port = await findSessionPort(handle)
   if (reply?.trim()) {
     const res = await fetch(sessionApi(port, '/agent/reply'), {
       method: 'POST',
@@ -225,13 +293,13 @@ async function cmdPoll(rawUrl: string | undefined, reply: string | undefined): P
       if (++attempt > POLL_RETRIES) {
         fail(
           'lost connection to the daemon',
-          `re-run \`${APP_NAME} poll ${target.origin}/\` - queued feedback is never lost`,
+          `re-run \`${APP_NAME} poll\` - queued feedback is never lost`,
         )
       }
       await new Promise((r) => setTimeout(r, Math.min(4000, 400 * 2 ** (attempt - 1))))
       // A restarted daemon only prefers the port this session last held, so the
       // port may have moved - re-resolve instead of retrying a dead URL.
-      port = await findSessionPort(target, { quiet: attempt <= POLL_RETRIES })
+      port = await findSessionPort(handle, { quiet: attempt <= POLL_RETRIES })
       continue
     }
     if (result.type === 'timeout') continue
@@ -247,10 +315,9 @@ async function cmdPoll(rawUrl: string | undefined, reply: string | undefined): P
   }
 }
 
-async function cmdProgress(rawUrl: string | undefined, message: string | undefined): Promise<void> {
-  if (!message?.trim()) fail('missing <message>', `e.g. ${APP_NAME} progress <url> "adjusting the hero spacing"`)
-  const target = parseTarget(rawUrl)
-  const port = await findSessionPort(target)
+async function cmdProgress(handle: SessionHandle, message: string | undefined): Promise<void> {
+  if (!message?.trim()) fail('missing <message>', `e.g. ${APP_NAME} progress "adjusting the hero spacing"`)
+  const port = await findSessionPort(handle)
   const res = await fetch(sessionApi(port, '/agent/progress'), {
     method: 'POST',
     headers: versionedHeaders,
@@ -260,15 +327,14 @@ async function cmdProgress(rawUrl: string | undefined, message: string | undefin
   if (!res.ok) fail(`failed to deliver progress (${res.status})`)
 }
 
-async function cmdEnd(rawUrl: string | undefined): Promise<void> {
-  const target = parseTarget(rawUrl)
-  const port = await findSessionPort(target)
+async function cmdEnd(handle: SessionHandle): Promise<void> {
+  const port = await findSessionPort(handle)
   await fetch(sessionApi(port, '/end'), {
     method: 'POST',
     headers: versionedHeaders,
     body: JSON.stringify({ by: 'agent' }),
   })
-  console.log(`session for ${target.origin} ended`)
+  console.log(`session for ${handle.project} ended`)
 }
 
 async function cmdStatus(): Promise<void> {
@@ -280,16 +346,11 @@ async function cmdStatus(): Promise<void> {
   console.log(`daemon: running (v${daemon.version}, pid ${daemon.pid}, control port ${daemon.port})`)
   const res = await controlFetch(daemon.port, '/control/sessions')
   await failOnVersionSkew(res)
-  const sessions = (await res.json()) as {
-    targetOrigin: string
-    project: string
-    port: number
-    state: string
-  }[]
+  const sessions = (await res.json()) as SessionListing[]
   if (sessions.length === 0) console.log('sessions: none')
   for (const s of sessions) {
-    console.log(`session: ${s.targetOrigin} → 127.0.0.1:${s.port} (${s.state})`)
-    console.log(`         project: ${s.project}`)
+    console.log(`session: ${s.project} → 127.0.0.1:${s.port} (${s.state})`)
+    if (s.app) console.log(`         app: ${s.app}`)
   }
 }
 
@@ -379,7 +440,7 @@ async function main(): Promise<void> {
   const [first, ...rest] = argv
   const flags = new Set(argv.filter((a) => a.startsWith('--')))
 
-  if (!first || first === '--help' || first === '-h' || first === 'help') {
+  if (first === '--help' || first === '-h' || first === 'help') {
     console.log(HELP)
     return
   }
@@ -398,12 +459,14 @@ async function main(): Promise<void> {
     case 'poll': {
       const replyIdx = rest.indexOf('--agent-reply')
       const reply = replyIdx >= 0 ? rest[replyIdx + 1] : undefined
-      return cmdPoll(rest[0], reply)
+      return cmdPoll(parseSessionArgs(rest, 0).handle, reply)
     }
-    case 'progress':
-      return cmdProgress(rest[0], rest[1])
+    case 'progress': {
+      const parsed = parseSessionArgs(rest, 1)
+      return cmdProgress(parsed.handle, parsed.rest[0])
+    }
     case 'end':
-      return cmdEnd(rest[0])
+      return cmdEnd(parseSessionArgs(rest, 0).handle)
     case 'status':
       return cmdStatus()
     case 'stop':
@@ -418,7 +481,8 @@ async function main(): Promise<void> {
       const agentIdx = argv.indexOf('--agent')
       const agentArg = agentIdx >= 0 ? argv[agentIdx + 1] : undefined
       if (agentIdx >= 0 && !agentArg) fail('missing value for --agent', 'e.g. --agent claude')
-      return cmdOpen(first, flags, agentArg)
+      // A first argument that is a flag, or none, is an open with no url.
+      return cmdOpen(first === undefined || first.startsWith('--') ? undefined : first, flags, agentArg)
     }
   }
 }

@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict'
 import { mkdirSync, mkdtempSync, existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
 import { join } from 'node:path'
 import { after, test } from 'node:test'
-import { sessionKey } from '../src/store.js'
 import { DaemonWorld, FAKE_AGENT, waitFor } from './helpers/daemon.js'
 
 const FLAG = 'EZDESIGN_DESIGN_HARNESS'
@@ -135,12 +135,11 @@ test('C4 a chat that had the harness on is told it is off when the daemon restar
   const [first] = await prompts(world, port)
   assert.ok(first!.includes(ON), 'the flag-on run exposed the chat to the harness')
 
-  const origin = (await world.state(port)).targetOrigin as string
   await world.stopDaemon(control)
   delete world.env[FLAG]
   world.spawnDaemon()
   const next = await world.liveDaemon()
-  const found = await world.control(next.port, `/control/sessions/find?origin=${encodeURIComponent(origin)}`)
+  const found = await world.control(next.port, `/control/sessions/find?project=${encodeURIComponent(dir)}`)
   const { port: restored } = (await found.json()) as { port: number }
   await idle(world, restored)
 
@@ -155,7 +154,9 @@ test('C5 without the flag a setup that never started is settled instead of deliv
   const world = await newWorld(false)
   const dir = project(world, ['product'])
   const origin = 'http://localhost:9790'
-  const sessionDir = join(world.dataDir, 'sessions', sessionKey(origin, dir))
+  // A pre-project `(origin, project)` directory, which the daemon migrates.
+  const legacyKey = createHash('sha1').update(`${origin}\n${dir}`).digest('hex').slice(0, 12)
+  const sessionDir = join(world.dataDir, 'sessions', legacyKey)
   mkdirSync(sessionDir, { recursive: true })
   writeFileSync(
     join(sessionDir, 'session.json'),
@@ -181,7 +182,7 @@ test('C5 without the flag a setup that never started is settled instead of deliv
 
   world.spawnDaemon()
   const { port: control } = await world.liveDaemon()
-  const found = await world.control(control, `/control/sessions/find?origin=${encodeURIComponent(origin)}`)
+  const found = await world.control(control, `/control/sessions/find?project=${encodeURIComponent(dir)}`)
   const { port } = (await found.json()) as { port: number }
   await idle(world, port)
 

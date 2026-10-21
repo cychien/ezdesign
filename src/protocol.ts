@@ -259,22 +259,14 @@ export interface ConversationEntry {
 
 export type SessionEndedBy = 'user' | 'agent'
 
-export interface SessionState {
-  id: string
-  targetOrigin: string
-  /** port of this session's proxy+shell+api server */
-  port: number
-  state: 'active' | 'ended'
-  endedBy?: SessionEndedBy
-  createdAt: number
-}
-
 /** What `poll` prints to stdout (one JSON document, then exit). */
 export type PollResult =
   | {
       type: 'feedback'
       batchId: string
-      url: string
+      /** The dev-server origin, when the session has an App tab. Absent for a
+       *  session opened without one. */
+      url?: string
       note: string | null
       items: AgentItem[]
       /** files that came with the note rather than with any one item */

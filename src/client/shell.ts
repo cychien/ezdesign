@@ -144,7 +144,8 @@ interface SnapshotWire {
   /** The batch the agent is answering right now. */
   activeBatchId?: string
   endedBy?: 'user' | 'agent'
-  targetOrigin: string
+  /** The dev-server origin the previews show. Absent while no app is attached. */
+  app?: string
   annotations: AnnotationWire[]
   conversation: ConversationWire[]
   agentOnline: boolean
@@ -270,6 +271,12 @@ const EDIT_ICON = 10
 const TICK_ICON = 14
 
 let snapshot: SnapshotWire | null = null
+/** The app the previews are of: `null` with none attached, `undefined` until the
+ *  first snapshot says. The stage mounts on load without waiting for it, since
+ *  nearly every review has an app, and is rebuilt only if that guess was wrong
+ *  or the app changes under it. */
+let stagedApp: string | null | undefined = undefined
+
 let annotateMode: Mode = 'off'
 let deviceId = DESKTOP.id
 /** Every device on one grid instead of one at a time. */
@@ -901,7 +908,14 @@ const stage = h('div', 'ez-stage')
  *  wider than the stage overflows in the one direction the stage can scroll to
  *  reach, instead of being centred half-way out of view. */
 const grid = h('div', 'ez-grid')
-stage.appendChild(grid)
+/** In place of the previews while no dev server is attached to the review. */
+const noApp = h('div', 'ez-no-app')
+noApp.append(
+  h('div', 'ez-no-app-title', '還沒有連上 dev server'),
+  h('div', 'ez-no-app-hint', '在專案目錄執行 ezdesign <url>，app 就會出現在這裡'),
+)
+noApp.hidden = true
+stage.append(grid, noApp)
 
 /** The variant strip: what the agent produced, across the bottom of the stage.
  *
@@ -1368,7 +1382,7 @@ let shownMenuOpen = false
 
 function paintShown(): void {
   shownWrap.toggleAttribute('data-open', shownMenuOpen)
-  shownWrap.toggleAttribute('data-hidden', !multi)
+  shownWrap.toggleAttribute('data-hidden', !multi || stagedApp === null)
   shownBtn.setAttribute('aria-expanded', String(shownMenuOpen))
   const on = shownDevices()
   for (const item of shownItems) {
@@ -1389,7 +1403,7 @@ function toggleShown(id: string): void {
   layout = next
   saveView()
   paintShown()
-  if (!multi) return
+  if (!multi || stagedApp === null) return
   const mounted = frames.get(id)
   if (mounted) {
     // A pick could be armed in the frame about to go; adding one cannot strand
@@ -1536,7 +1550,12 @@ window.addEventListener('popstate', (e) => {
  *  rather than from the opening path, and painted here rather than only in
  *  `render()`: a navigation is not a snapshot, so nothing else would repaint. */
 function paintPage(): void {
-  const origin = snapshot?.targetOrigin.replace(/^https?:\/\//, '') ?? ''
+  if (stagedApp === null) {
+    target.textContent = '沒有 app'
+    document.title = 'ezdesign'
+    return
+  }
+  const origin = snapshot?.app?.replace(/^https?:\/\//, '') ?? ''
   target.textContent = `${origin}${nav.url}`
   document.title = `ezdesign · ${nav.url}`
 }
@@ -1708,6 +1727,15 @@ function paintStageClasses(): void {
   stage.classList.toggle('ez-framed', multi || !deviceById(deviceId).fluid)
 }
 
+function stageApp(app: string | null): void {
+  if (app === stagedApp) return
+  const presumed = stagedApp === undefined
+  stagedApp = app
+  deviceRow.hidden = app === null
+  if (presumed && app !== null) return
+  rebuildStage()
+}
+
 /** Switching between one device and all of them replaces the frames, so a pick
  *  still out is called off first: the overlay holding it is about to go. */
 function rebuildStage(): void {
@@ -1715,7 +1743,16 @@ function rebuildStage(): void {
   popupFrame = null
   grid.replaceChildren()
   frames.clear()
-  if (multi) {
+  const showing = stagedApp !== null
+  noApp.hidden = showing
+  grid.hidden = !showing
+  paintShown()
+  if (!showing) {
+    // The overlays that reported the mode are gone with their frames.
+    annotateMode = 'off'
+    paintAnnotateMode()
+    paintPage()
+  } else if (multi) {
     for (const row of gridLayout()) {
       for (const d of row) mountFrame(d.id, d, grid)
     }
@@ -2896,6 +2933,7 @@ resizer.addEventListener('keydown', (e) => {
 // ---------------------------------------------------------------- behavior
 
 function sendMode(mode: Mode): void {
+  if (stagedApp === null && mode !== 'off') return
   // A pick and a mode change cannot both be in flight: `setMode` in the overlay
   // tears the popup down, and the pick is what would be answering into it.
   abortPick('mode')
@@ -4057,6 +4095,7 @@ function render(): void {
   if (!snapshot) return
   const s = snapshot
 
+  stageApp(s.app ?? null)
   paintPage()
 
   const ended = s.state === 'ended'
@@ -4065,7 +4104,7 @@ function render(): void {
   if (ended) abortPick('ended')
   paintBanner()
   paintUpdate(s)
-  for (const { btn } of annotateBtns) btn.disabled = ended
+  for (const { btn } of annotateBtns) btn.disabled = ended || stagedApp === null
   paintSendState()
   paintConfig(s.acp)
   paintLimit(s.acp)

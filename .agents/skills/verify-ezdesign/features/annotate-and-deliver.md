@@ -20,7 +20,7 @@ A user arms a mode in the review shell, picks an element (or drags a box) on the
 - Press `r` or choose `範圍`, drag a box over the page.
 - Choose `加入待送清單` or press `⌘+Enter` in the comment box.
 - Choose `送出給 agent` or press `⌘+Enter` outside the comment box.
-- As the agent: `ezdesign poll <url>`, `ezdesign progress <url> <msg>`, `ezdesign poll <url> --agent-reply <msg>`, `ezdesign end <url>`.
+- As the agent, from the project: `ezdesign poll`, `ezdesign progress <msg>`, `ezdesign poll --agent-reply <msg>`, `ezdesign end`.
 
 ## Driving it with chrome-devtools-axi and vz.mjs
 
@@ -35,11 +35,11 @@ Preconditions:
 - **Write the comment.** Run `npx -y chrome-devtools-axi fill @<that textbox> "把標題字級放大一點"`, then `npx -y chrome-devtools-axi screenshot $E/01-comment-box.png`. The heading is framed and the box shows the text.
 - **Queue it.** Choose 加入待送清單. Run `npx -y chrome-devtools-axi click @<button "加入待送清單">`. The sidebar shows `"1"`, `"src/sections/Hero.tsx:13 · hero · "週報不用開會寫。讓進度自己浮出來。""` and the comment; `<session>/queue.json` holds one item with `anchor.source` `src/sections/Hero.tsx:13`.
 - **Oracle for the line.** Run `grep -n '<h1>' fixtures/playground/src/sections/Hero.tsx`. It prints `13:`; the anchor must match it.
-- **Start the agent.** Run `$V/vz.mjs cli -- poll <origin> > $E/poll.json; echo $? > $E/poll.exit` in the background. Within a second the sidebar reads `"Agent 已連線"`.
+- **Start the agent.** Run `$V/vz.mjs cli -- poll > $E/poll.json; echo $? > $E/poll.exit` in the background. Within a second the sidebar reads `"Agent 已連線"`.
 - **Send.** Choose 送出給 agent. Run `npx -y chrome-devtools-axi click @<button "送出給 agent">`. The thread shows `"1."` and the comment, and `status "Agent 修改中"` appears; `poll.exit` is `0` and `poll.json` is `{"type":"feedback", ...}` whose item has `label` starting `src/sections/Hero.tsx:13 · <Hero ← App> · [section: hero]` and `anchor.source` `src/sections/Hero.tsx:13`. `<session>/outbox.json` has the batch with `ackedAt` set.
-- **Progress.** Run `$V/vz.mjs cli -- progress <origin> "正在調整 hero 標題字級"`. Exit 0; the snapshot shows `status "正在調整 hero 標題字級"`.
-- **Reply.** Run `$V/vz.mjs cli -- poll <origin> --agent-reply "已把 hero 標題放大到 56px" > $E/poll2.json` in the background. The thread shows the reply under the batch, the status returns to `"Agent 已連線"`, and `<session>/conversation.json` ends with `{"role":"agent","text":"已把 hero 標題放大到 56px"}`. Screenshot `$E/02-thread-after-reply.png`.
-- **End.** Run `$V/vz.mjs cli -- end <origin>`. It prints `session for http://localhost:NNNN ended`; the pending poll exits 0 with `{"type":"session-ended","endedBy":"agent"}`; the thread adds `"Session ended by agent"` and `"Agent 已結束這次 review。要繼續的話，請 agent 重新開啟 session"`; `元素`, `範圍` and `送出給 agent` are `disabled`.
+- **Progress.** Run `$V/vz.mjs cli -- progress "正在調整 hero 標題字級"`. Exit 0; the snapshot shows `status "正在調整 hero 標題字級"`.
+- **Reply.** Run `$V/vz.mjs cli -- poll --agent-reply "已把 hero 標題放大到 56px" > $E/poll2.json` in the background. The thread shows the reply under the batch, the status returns to `"Agent 已連線"`, and `<session>/conversation.json` ends with `{"role":"agent","text":"已把 hero 標題放大到 56px"}`. Screenshot `$E/02-thread-after-reply.png`.
+- **End.** Run `$V/vz.mjs cli -- end`. It prints `session for <repo>/fixtures/playground ended`; the pending poll exits 0 with `{"type":"session-ended","endedBy":"agent"}`; the thread adds `"Session ended by agent"` and `"Agent 已結束這次 review。要繼續的話，請 agent 重新開啟 session"`; `元素`, `範圍` and `送出給 agent` are `disabled`.
 - **Region.** After `$V/vz.mjs seed baseline` and reopening the shell, press `r`, then `npx -y chrome-devtools-axi drag @<"4.5 小時"> @<"正在使用的團隊">` with both refs from one snapshot (see SKILL.md). A comment box opens on the one element the box enclosed whole: the queued row reads `src/sections/Stats.tsx:15 · stats · "92%"` (oracle: `grep -n 'stat-value' fixtures/playground/src/sections/Stats.tsx` prints `15:`).
 - **Browser health.** Run `npx -y chrome-devtools-axi console --type error`. Expect only the `/favicon.ico` 404 noted below.
 

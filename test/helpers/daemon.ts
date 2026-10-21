@@ -1,4 +1,5 @@
 import { type ChildProcess, execFile, spawn } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import { mkdtempSync, readFileSync } from 'node:fs'
 import { type Server, createServer } from 'node:net'
 import { tmpdir } from 'node:os'
@@ -8,10 +9,16 @@ import { promisify } from 'node:util'
 
 const ROOT = dirname(dirname(dirname(fileURLToPath(import.meta.url))))
 export const CLI_SRC = join(ROOT, 'src', 'cli.ts')
+/** Absolute, so the CLI also runs from a cwd outside this repo. */
+export const TSX = import.meta.resolve('tsx')
 export const FAKE_AGENT = `node ${join(ROOT, 'test', 'helpers', 'fake-acp-agent.mjs')}`
 export const PKG_VERSION = (
   JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')) as { version: string }
 ).version
+
+/** The session directory name of a project, as the daemon computes it. */
+export const sessionKey = (project: string) =>
+  createHash('sha1').update(project).digest('hex').slice(0, 12)
 
 export const delay = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
@@ -133,11 +140,29 @@ export class DaemonWorld {
 
   /** Runs the CLI from source with this world's environment. */
   async cli(...args: string[]): Promise<string> {
-    const run = promisify(execFile)
-    const { stdout } = await run(process.execPath, ['--import', 'tsx', CLI_SRC, ...args], {
-      env: this.env,
-    })
+    const { stdout, stderr, code } = await this.run(args)
+    if (code !== 0) throw new Error(`ezdesign ${args.join(' ')} exited ${code}: ${stderr}`)
     return stdout
+  }
+
+  /** The CLI from `cwd`, which is the project its session commands act for. */
+  async run(
+    args: string[],
+    opts: { cwd?: string; env?: NodeJS.ProcessEnv } = {},
+  ): Promise<{ stdout: string; stderr: string; code: number }> {
+    const run = promisify(execFile)
+    try {
+      const { stdout, stderr } = await run(
+        process.execPath,
+        ['--import', TSX, CLI_SRC, ...args],
+        { env: { ...this.env, ...opts.env }, cwd: opts.cwd },
+      )
+      return { stdout, stderr, code: 0 }
+    } catch (err) {
+      const e = err as { stdout?: string; stderr?: string; code?: number }
+      if (typeof e.code !== 'number') throw err
+      return { stdout: e.stdout ?? '', stderr: e.stderr ?? '', code: e.code }
+    }
   }
 
   async control(port: number, path: string, init?: RequestInit): Promise<Response> {
@@ -153,14 +178,14 @@ export class DaemonWorld {
 
   async openSession(
     controlPort: number,
-    body: { url: string; project: string; agent?: string; reopen?: boolean },
-  ): Promise<{ port: number; shellUrl: string; agent?: string }> {
+    body: { url?: string; project: string; agent?: string; reopen?: boolean },
+  ): Promise<{ port: number; shellUrl: string; agent?: string; app?: string }> {
     const res = await this.control(controlPort, '/control/sessions', {
       method: 'POST',
       body: JSON.stringify(body),
     })
     if (!res.ok) throw new Error(`open session failed: ${res.status} ${await res.text()}`)
-    return (await res.json()) as { port: number; shellUrl: string; agent?: string }
+    return (await res.json()) as { port: number; shellUrl: string; agent?: string; app?: string }
   }
 
   async state(sessionPort: number): Promise<Record<string, unknown>> {

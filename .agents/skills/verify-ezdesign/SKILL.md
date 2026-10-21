@@ -51,7 +51,7 @@ ready    run `vz.mjs doctor` next
 
 ## Seed
 
-Datasets live in `datasets/*.json` and are written straight into the daemon's on-disk format (`<data>/sessions/<sha1(origin + "\n" + project)[:12]>/{session,queue,outbox,conversation}.json`), never through the daemon's API. Loading wipes the run's data dir first and uses a fixed epoch and position-derived ids, so loading twice gives the same state.
+Datasets live in `datasets/*.json` and are written straight into the daemon's on-disk format (`<data>/sessions/<sha1(project)[:12]>/{session,queue,outbox,conversation}.json`, one directory per project), never through the daemon's API. Loading wipes the run's data dir first and uses a fixed epoch and position-derived ids, so loading twice gives the same state.
 
 ```
 $V/vz.mjs seed baseline
