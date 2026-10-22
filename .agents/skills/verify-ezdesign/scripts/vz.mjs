@@ -642,7 +642,9 @@ async function cmdConsumer() {
   const info = JSON.parse(pack.stdout)[0]
   const files = info.files.map((f) => f.path)
   writeFileSync(join(out, 'tarball-files.txt'), files.join('\n') + '\n')
-  const required = ['dist/cli.mjs', 'dist/vite.mjs', 'dist/vite.d.ts', 'dist/shell.js', 'dist/shell.css', 'dist/overlay.js', 'dist/overlay.css', 'dist/events-worker.js', 'skills/ezdesign/SKILL.md', 'README.md', 'LICENSE', 'package.json']
+  const extension = JSON.parse(readFileSync(join(REPO, 'dist/extension/manifest.json'), 'utf8'))
+  const extensionFiles = [extension.background.service_worker, ...(extension.web_accessible_resources ?? []).flatMap((w) => w.resources)]
+  const required = ['dist/cli.mjs', 'dist/vite.mjs', 'dist/vite.d.ts', 'dist/shell.js', 'dist/shell.css', 'dist/overlay.js', 'dist/overlay.css', 'dist/events-worker.js', 'dist/native-host.mjs', 'dist/extension/manifest.json', ...extensionFiles.map((f) => `dist/extension/${f}`), 'skills/ezdesign/SKILL.md', 'README.md', 'LICENSE', 'package.json']
   const missing = required.filter((f) => !files.includes(f))
   const stray = files.filter((f) => /^(src|test|fixtures|scripts|\.agents|\.claude)\//.test(f))
   transcript.push(`# tarball ${info.filename} (${info.name}@${info.version}): ${files.length} files; missing: ${missing.join(', ') || 'none'}; stray: ${stray.join(', ') || 'none'}`, '')
@@ -662,6 +664,9 @@ async function cmdConsumer() {
     expect: (r) => r.status === 1 && r.stderr.includes('EZDESIGN_CONTROL_PORT must be an integer'),
   })
   step('import @cychien/ezdesign/vite', 'node', ['--input-type=module', '-e', "import { ezdesignSource } from '@cychien/ezdesign/vite'; const p = ezdesignSource(); if (p.name !== 'ezdesign:source' || p.apply !== 'serve' || typeof p.transform !== 'function') process.exit(1); const out = p.transform('export const A = () => <div>hi</div>', process.cwd() + '/A.tsx'); console.log(out && out.code); if (!out || !out.code.includes('data-ez-source=\"A.tsx:1\"')) process.exit(1)"])
+  step('bin extension status (nothing installed)', bin, ['extension', 'status'], {
+    expect: (r) => r.status === 1 && r.stdout.startsWith('host: not installed') && !existsSync(join(home, '.ezdesign')),
+  })
   const state = readState()
   if (state && alive(state.vitePid)) {
     let installedDaemon = null

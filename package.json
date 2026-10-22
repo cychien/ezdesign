@@ -33,7 +33,7 @@
     "dev:agent": "node scripts/dev-agent.mjs",
     "dev:cli": "node scripts/dev-cli.mjs",
     "check": "npm run build && npm run typecheck && npm test",
-    "typecheck": "tsc --noEmit && tsc -p fixtures/playground --noEmit",
+    "typecheck": "tsc --noEmit && tsc -p src/extension --noEmit && tsc -p fixtures/playground --noEmit",
     "test": "node scripts/test.mjs",
     "version": "node scripts/sync-skill-version.mjs && git add skills/ezdesign/SKILL.md",
     "prepublishOnly": "npm run check"
@@ -42,7 +42,7 @@
     "access": "public"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=22.13"
   },
   "keywords": [
     "agent",

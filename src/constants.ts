@@ -15,6 +15,9 @@ export const DAEMON_LOG = join(DATA_DIR, 'daemon.log')
 /** Where a self-updating daemon installs the version it hands over to. */
 export const VERSIONS_DIR = join(DATA_DIR, 'versions')
 export const UPDATE_CHECK_FILE = join(DATA_DIR, 'update-check.json')
+export const libraryDir = (dataDir: string = DATA_DIR): string => join(dataDir, 'library')
+export const nativeHostDir = (dataDir: string = DATA_DIR): string => join(dataDir, 'native-host')
+export const installedExtensionDir = (dataDir: string = DATA_DIR): string => join(dataDir, 'extension')
 export const NO_UPDATE_CHECK_ENV = `${ENV_PREFIX}_NO_UPDATE_CHECK`
 export const DESIGN_HARNESS_ENV = `${ENV_PREFIX}_DESIGN_HARNESS`
 

@@ -133,7 +133,7 @@ Run `ezdesign <url>` itself from `fixtures/playground` (`cd fixtures/playground`
 $V/vz.mjs consumer
 ```
 
-Builds, `npm pack`s, checks the tarball holds `dist/{cli,vite}.mjs`, `dist/vite.d.ts`, `dist/{shell,overlay}.{js,css}`, `skills/ezdesign/SKILL.md`, README, LICENSE and nothing from `src/ test/ fixtures/ scripts/`, installs it into a fresh temp project with an isolated `HOME`, its own data dir and control range, then drives the installed bin (`--version`, `--help`, `status`, a bad `EZDESIGN_CONTROL_PORT`), imports `@cychien/ezdesign/vite` and transforms a JSX snippet, and - when a stack is up - opens a session on the fixture from the installed bin and fetches the shell and `shell.js` from its daemon before `stop`. Writes `consumer/transcript.txt` and `consumer/tarball-files.txt` into the evidence dir; exit 0 only when every step passed.
+Builds, `npm pack`s, checks the tarball holds `dist/{cli,vite,native-host}.mjs`, `dist/vite.d.ts`, `dist/{shell,overlay}.{js,css}`, `dist/extension/manifest.json` and every file it names, `skills/ezdesign/SKILL.md`, README, LICENSE and nothing from `src/ test/ fixtures/ scripts/`, installs it into a fresh temp project with an isolated `HOME`, its own data dir and control range, then drives the installed bin (`--version`, `--help`, `status`, a bad `EZDESIGN_CONTROL_PORT`, `extension status` with nothing installed), imports `@cychien/ezdesign/vite` and transforms a JSX snippet, and - when a stack is up - opens a session on the fixture from the installed bin and fetches the shell and `shell.js` from its daemon before `stop`. Writes `consumer/transcript.txt` and `consumer/tarball-files.txt` into the evidence dir; exit 0 only when every step passed.
 
 The feature map in `features/` has the per-feature recipes.
 

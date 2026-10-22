@@ -1,12 +1,15 @@
 import { build, context } from 'esbuild'
 import { execSync } from 'node:child_process'
-import { chmodSync, mkdirSync } from 'node:fs'
+import { chmodSync, mkdirSync, readFileSync } from 'node:fs'
 import { pathToFileURL } from 'node:url'
+import { buildExtension } from './build-extension.mjs'
+
+const { version } = JSON.parse(readFileSync('package.json', 'utf8'))
 
 const node = {
   platform: 'node',
   format: 'esm',
-  target: 'node20',
+  target: 'node22',
   bundle: true,
   packages: 'external',
   sourcemap: false,
@@ -35,6 +38,16 @@ export const targets = [
   },
   { group: 'node', config: { ...node, entryPoints: ['src/vite.ts'], outfile: 'dist/vite.mjs' } },
   {
+    group: 'node',
+    config: {
+      ...node,
+      packages: 'bundle',
+      entryPoints: ['src/native-host/main.ts'],
+      outfile: 'dist/native-host.mjs',
+      define: { __EZDESIGN_VERSION__: JSON.stringify(version) },
+    },
+  },
+  {
     group: 'client',
     config: { ...browser, entryPoints: ['src/client/overlay.ts'], outfile: 'dist/overlay.js' },
   },
@@ -59,7 +72,7 @@ export const targets = [
 
 export async function buildAll() {
   mkdirSync('dist', { recursive: true })
-  await Promise.all(targets.map((t) => build(t.config)))
+  await Promise.all([...targets.map((t) => build(t.config)), buildExtension({ version, browser })])
   chmodSync('dist/cli.mjs', 0o755)
 }
 

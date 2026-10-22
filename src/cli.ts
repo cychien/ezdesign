@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import open, { apps } from 'open'
 import {
@@ -10,6 +10,14 @@ import {
   assertControlPortEnv,
 } from './constants.js'
 import { agentCommand } from './agents.js'
+import {
+  type CaptureStatus,
+  CaptureInstallError,
+  type HostProblem,
+  captureStatus,
+  installCapture,
+  uninstallCapture,
+} from './capture-install/index.js'
 import {
   clearInspireToken,
   credentialsFile,
@@ -35,6 +43,14 @@ const cliEntry = fileURLToPath(import.meta.url)
 const pkg = JSON.parse(readFileSync(join(dirname(cliEntry), '../package.json'), 'utf8')) as {
   version: string
 }
+
+const EXTENSION_HELP = `  ${APP_NAME} extension install [--user-data-dir <dir>] | uninstall | status
+      install the native host the Chrome capture extension saves through, and
+      print the folder to load in chrome://extensions. Saving needs no daemon
+      and no session; items go to the design library in the data dir.
+      --user-data-dir installs into that one browser profile only. uninstall
+      removes the host and the extension folder, never the library
+`
 
 const HELP = `${APP_NAME} - annotate your live dev app, feedback flows to your local agent
 
@@ -63,7 +79,7 @@ Usage:
       search the inspiration database by a description of what the piece has to
       show, by tags, or both. Each result's images and code are cached locally
       and printed as paths
-  ${APP_NAME} --version | --help
+${EXTENSION_HELP}  ${APP_NAME} --version | --help
 
 Environment:
   ${APP_NAME.toUpperCase()}_DATA_DIR       session state, daemon registry and log (default: ~/.${APP_NAME})
@@ -436,6 +452,86 @@ async function cmdInspire(args: string[]): Promise<void> {
   }
 }
 
+function describeProblem(problem: HostProblem): string {
+  switch (problem.type) {
+    case 'not-installed':
+      return `the capture host is not installed; run \`${APP_NAME} extension install\``
+    case 'record-unreadable':
+      return problem.message
+    case 'node-missing':
+      return `the host's node ${problem.node} is gone; run \`${APP_NAME} extension install\` again`
+    case 'node-too-old':
+      return `the host's node ${problem.node} is ${problem.version}, below 22.13; run \`${APP_NAME} extension install\` with a newer node`
+    case 'stale':
+      return `the host is ${problem.installed}, this ezdesign is ${problem.running}; it updates the next time the daemon starts`
+    case 'files-missing':
+      return `${problem.path} is missing; run \`${APP_NAME} extension install\` again`
+    case 'manifest-missing':
+      return `${problem.manifestPath} is missing; run \`${APP_NAME} extension install\` again`
+    case 'manifest-foreign':
+      return `${problem.manifestPath} points at ${problem.points ?? 'nothing readable'}, another install's host`
+  }
+}
+
+function printStatus(status: CaptureStatus): void {
+  const record = status.record
+  console.log(record ? `host: ${record.version}, node ${record.node}` : 'host: not installed')
+  for (const { target, installed } of status.targets) {
+    console.log(`  ${installed ? 'installed' : 'not installed'}  ${target.browser?.name ?? target.userDataDir}`)
+  }
+  console.log(`extension folder: ${status.extensionDir}`)
+  console.log(`library: ${status.libraryDir}`)
+  for (const problem of status.problems) console.log(`problem: ${describeProblem(problem)}`)
+}
+
+async function cmdExtension(args: string[]): Promise<void> {
+  const [verb, ...rest] = args
+  const userDataDirs: string[] = []
+  for (let i = 0; i < rest.length; i++) {
+    if (rest[i] !== '--user-data-dir') fail(`unknown option: ${rest[i]}`, `${APP_NAME} extension install [--user-data-dir <dir>]`)
+    const dir = rest[++i]
+    if (!dir) fail('missing value for --user-data-dir')
+    userDataDirs.push(resolve(dir))
+  }
+  const placement = { distDir: dirname(cliEntry), version: pkg.version }
+  try {
+    switch (verb) {
+      case 'install': {
+        const report = await installCapture({ ...placement, userDataDirs: userDataDirs.length ? userDataDirs : undefined })
+        console.log('installed the capture host for:')
+        for (const target of report.targets) {
+          console.log(`  ${target.browser ? `${target.browser.name}  ` : ''}${target.userDataDir}`)
+        }
+        console.log(`host node: ${report.node}`)
+        console.log(`load the extension once: chrome://extensions > 開發人員模式 > 載入未封裝項目 > ${report.extensionDir}`)
+        return
+      }
+      case 'uninstall': {
+        if (userDataDirs.length) fail('uninstall takes no --user-data-dir; it removes every manifest it installed')
+        const report = await uninstallCapture()
+        for (const path of report.removedManifests) console.log(`removed ${path}`)
+        for (const path of report.keptManifests) console.log(`kept ${path} (another install's host)`)
+        console.log('removed the capture host and the extension folder; the library stays')
+        return
+      }
+      case 'status': {
+        const status = await captureStatus(placement)
+        printStatus(status)
+        if (status.problems.length) process.exitCode = 1
+        return
+      }
+      default:
+        fail(
+          verb ? `unknown extension command: ${verb}` : 'missing extension command',
+          `${APP_NAME} extension install | uninstall | status`,
+        )
+    }
+  } catch (error) {
+    if (error instanceof CaptureInstallError) fail(error.message, error.hint)
+    throw error
+  }
+}
+
 async function main(): Promise<void> {
   assertControlPortEnv()
   const argv = process.argv.slice(2)
@@ -479,6 +575,8 @@ async function main(): Promise<void> {
       return cmdLogout()
     case 'inspire':
       return cmdInspire(rest)
+    case 'extension':
+      return cmdExtension(rest)
     default: {
       const agentIdx = argv.indexOf('--agent')
       const agentArg = agentIdx >= 0 ? argv[agentIdx + 1] : undefined
