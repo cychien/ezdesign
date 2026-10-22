@@ -102,6 +102,7 @@ import {
   servesThisDataDir,
   writeRegistry,
 } from './registry.js'
+import { refreshCaptureInstall } from './capture-install/index.js'
 import { installVersion, pruneInstalledVersions } from './installer.js'
 import { latestVersion, updateChecksDisabled } from './update-check.js'
 import { Updater, type UpdateWire } from './updater.js'
@@ -2631,6 +2632,9 @@ export async function daemonMain(version: string, opts: DaemonOptions = {}): Pro
   // reading them per request, so pruning the version it runs from while it is
   // still answering would break every session it has not handed over.
   if (predecessorGone) pruneInstalledVersions(join(distDir, 'cli.mjs'))
+  void refreshCaptureInstall({ distDir, version }).catch((err: unknown) =>
+    console.error(`capture extension refresh failed: ${err instanceof Error ? err.message : String(err)}`),
+  )
 
   void updater.check()
   setInterval(() => void updater.check(), UPDATE_CHECK_TTL_MS / 4).unref()

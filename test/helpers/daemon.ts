@@ -93,11 +93,11 @@ export class DaemonWorld {
   }
 
   /** Runs the daemon from source, the way the CLI would from `dist`. */
-  spawnDaemon(extraArgs: string[] = []): ChildProcess {
+  spawnDaemon(extraArgs: string[] = [], options: { log?: boolean } = {}): ChildProcess {
     this.release()
     const child = spawn(process.execPath, ['--import', 'tsx', CLI_SRC, '__daemon', ...extraArgs], {
       env: this.env,
-      stdio: 'ignore',
+      stdio: options.log ? ['ignore', 'pipe', 'pipe'] : 'ignore',
     })
     this.children.add(child)
     child.on('exit', () => this.children.delete(child))

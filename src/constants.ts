@@ -16,12 +16,19 @@ export const DAEMON_LOG = join(DATA_DIR, 'daemon.log')
 export const VERSIONS_DIR = join(DATA_DIR, 'versions')
 export const UPDATE_CHECK_FILE = join(DATA_DIR, 'update-check.json')
 export const libraryDir = (dataDir: string = DATA_DIR): string => join(dataDir, 'library')
+export const nativeHostDir = (dataDir: string = DATA_DIR): string => join(dataDir, 'native-host')
+export const installedExtensionDir = (dataDir: string = DATA_DIR): string => join(dataDir, 'extension')
 export const NO_UPDATE_CHECK_ENV = `${ENV_PREFIX}_NO_UPDATE_CHECK`
 export const DESIGN_HARNESS_ENV = `${ENV_PREFIX}_DESIGN_HARNESS`
+export const CAPTURE_ENV = `${ENV_PREFIX}_CAPTURE`
 
 /** Unset, empty, `0` and `false` are off; anything else is on. */
 export function envFlagOn(raw: string | undefined): boolean {
   return raw !== undefined && raw !== '' && raw !== '0' && raw.toLowerCase() !== 'false'
+}
+
+export function captureEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+  return envFlagOn(env[CAPTURE_ENV])
 }
 
 export const DEFAULT_CONTROL_PORT = 4400
