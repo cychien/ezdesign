@@ -414,7 +414,7 @@ class SqliteStore implements Store {
 
 function mergeNote(existing: string, incoming: string): string {
   if (incoming.trim() === '' || incoming === existing) return existing
-  if (existing.trim() === '') return incoming
+  if (existing.trim() === '' || incoming.startsWith(existing)) return incoming
   return `${existing}\n\n${incoming}`
 }
 

@@ -7,8 +7,14 @@ const SRC = 'src/extension'
 
 export const extensionFiles = [
   { name: 'worker.js', bundle: `${SRC}/worker/main.ts` },
+  { name: 'page.js', bundle: `${SRC}/page/main.ts` },
+  { name: 'dialog.js', bundle: `${SRC}/dialog/main.ts` },
+  { name: 'dialog.css', bundle: `${SRC}/dialog/dialog.css` },
+  { name: 'media.js', bundle: `${SRC}/media/main.ts` },
   { name: 'setup.js', bundle: `${SRC}/setup/main.ts` },
   { name: 'setup.css', bundle: `${SRC}/setup/setup.css` },
+  { name: 'dialog.html', copy: `${SRC}/pages/dialog.html` },
+  { name: 'media.html', copy: `${SRC}/pages/media.html` },
   { name: 'setup.html', copy: `${SRC}/pages/setup.html` },
 ]
 

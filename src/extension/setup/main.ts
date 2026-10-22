@@ -63,6 +63,7 @@ function render(state: HostState): void {
           el('dt', { textContent: '收藏位置' }),
           el('dd', { textContent: state.libraryDir }),
         ),
+        el('p', { className: 'how', textContent: '在網頁的圖片或影片上按右鍵，選「儲存至 ezdesign」。' }),
       )
       return
     case 'missing':

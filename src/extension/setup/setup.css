@@ -181,3 +181,8 @@ button:disabled {
   outline: 3px solid var(--ring-halo);
   outline-offset: 0;
 }
+
+.how {
+  margin: 14px 0 0;
+  color: var(--ink-muted);
+}

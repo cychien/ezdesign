@@ -1,9 +1,17 @@
 /** Listeners are registered synchronously at the top level, as MV3 requires
  *  for a worker that Chrome restarts to deliver an event. */
 
-import type { HostState, WorkerRequest } from '../shared/messages.js'
-import { type CaptureSeam, SEAM_GLOBAL } from '../shared/seam.js'
+import type { CaptureId, HostState, PageCommand, PageReplies, WorkerRequest } from '../shared/messages.js'
+import { DIALOG_PORT_PREFIX } from '../shared/messages.js'
+import type { TabRef } from '../shared/plan.js'
+import { type CaptureSeam, SEAM_GLOBAL, type SeamClickData, type SeamTab } from '../shared/seam.js'
+import { createCaptures } from './capture.js'
 import { createHostLink, extensionVersion } from './host-link.js'
+import { MEDIA_DOCUMENT, createMediaClient } from './media.js'
+import type { BrowserOps, DialogPort, PageAgent } from './ports.js'
+
+export const MENU_ID = 'ez-save'
+export const REGION_COMMAND = 'capture-region'
 
 function asset(name: string): string {
   const worker = chrome.runtime.getManifest().background?.service_worker ?? ''
@@ -11,11 +19,60 @@ function asset(name: string): string {
 }
 
 const host = createHostLink()
+const media = createMediaClient(asset(MEDIA_DOCUMENT))
+
+const page: PageAgent = {
+  async ensure(tab, frameId) {
+    try {
+      await chrome.scripting.executeScript({ target: { tabId: tab.id, frameIds: [frameId] }, files: [asset('page.js')] })
+      return true
+    } catch {
+      return false
+    }
+  },
+  async send<C extends PageCommand>(tab: TabRef, frameId: number, command: C) {
+    const reply = await chrome.tabs.sendMessage<PageReplies[C['type']] | { error: string } | undefined>(tab.id, command, {
+      frameId,
+    })
+    if (!reply || 'error' in reply) {
+      throw new Error(`the page did not answer ${command.type}${reply ? `: ${reply.error}` : ''}`)
+    }
+    return reply as PageReplies[C['type']]
+  },
+}
+
+const DIALOG_WINDOW = { width: 480, height: 640 }
+
+const browser: BrowserOps = {
+  captureVisibleTab: (windowId, format) => chrome.tabs.captureVisibleTab(windowId, { format }),
+  dialogPath: (captureId) => `${asset('dialog.html')}#${captureId}`,
+  openDialogWindow: async (captureId) => {
+    const url = chrome.runtime.getURL(`${asset('dialog.html')}#${captureId}`)
+    return (await chrome.windows.create({ url, type: 'popup', ...DIALOG_WINDOW, focused: true })).id ?? -1
+  },
+  closeWindow: (windowId) => chrome.windows.remove(windowId),
+  async fetchWithCookies(url, signal) {
+    const response = await fetch(url, { credentials: 'include', signal })
+    if (!response.ok) throw new Error(`the source answered ${response.status}`)
+    return new Uint8Array(await response.arrayBuffer())
+  },
+  userAgent: navigator.userAgent,
+  now: () => performance.timeOrigin + performance.now(),
+}
 
 const RELOADED_FOR = 'reloadedForHostVersion'
 
+const captures = createCaptures({
+  host,
+  media,
+  page,
+  browser,
+  newId: () => crypto.randomUUID().replace(/-/g, '') as CaptureId,
+  onIdle: () => void host.state().then(reloadWhenStale),
+})
+
 async function reloadWhenStale(state: HostState): Promise<void> {
-  if (state.type !== 'ready' || state.version === extensionVersion()) return
+  if (state.type !== 'ready' || state.version === extensionVersion() || captures.busy()) return
   const stored = await chrome.storage.local.get(RELOADED_FOR)
   if (stored[RELOADED_FOR] === state.version) return
   await chrome.storage.local.set({ [RELOADED_FOR]: state.version })
@@ -29,9 +86,39 @@ function hostState(options?: { recheck?: boolean }): Promise<HostState> {
   })
 }
 
+const tabRef = (tab: SeamTab): TabRef | null =>
+  tab.id === undefined ? null : { id: tab.id, windowId: tab.windowId, url: tab.url, title: tab.title }
+
+const listeners: CaptureSeam['listeners'] = {
+  async contextMenuClicked(info: SeamClickData, tab?: SeamTab) {
+    const ref = tab && tabRef(tab)
+    if (info.menuItemId !== MENU_ID || !ref) return null
+    return captures.start({ type: 'menu', click: info, tab: ref })
+  },
+}
+
+chrome.contextMenus.onClicked.addListener(listeners.contextMenuClicked)
+// Chrome grants activeTab for a shortcut only to an extension listening for it; the region capture it starts comes in phase 4.
+chrome.commands.onCommand.addListener(() => {})
+
 chrome.runtime.onInstalled.addListener(({ reason }) => {
+  void chrome.contextMenus
+    .removeAll()
+    .then(() => chrome.contextMenus.create({ id: MENU_ID, title: '儲存至 ezdesign', contexts: ['image', 'video'] }))
   if (reason === 'install') void chrome.tabs.create({ url: chrome.runtime.getURL(asset('setup.html')) })
 })
+
+chrome.runtime.onConnect.addListener((port) => {
+  const sender = port.sender?.url ? new URL(port.sender.url) : null
+  const fromDialog = port.sender?.id === chrome.runtime.id && sender?.pathname === `/${asset('dialog.html')}`
+  if (!port.name.startsWith(DIALOG_PORT_PREFIX) || !fromDialog) {
+    port.disconnect()
+    return
+  }
+  captures.attachDialog(port as unknown as DialogPort)
+})
+
+chrome.tabs.onRemoved.addListener((tabId) => captures.tabClosed(tabId))
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   const request = message as WorkerRequest
@@ -40,5 +127,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   return true
 })
 
-const seam: CaptureSeam = { host: hostState }
+const seam: CaptureSeam = {
+  listeners,
+  settled: (id) => captures.settled(id),
+  timeline: (id) => captures.timeline(id),
+  latest: () => captures.latest(),
+  host: hostState,
+}
 Object.defineProperty(globalThis, SEAM_GLOBAL, { value: seam })

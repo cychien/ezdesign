@@ -6,10 +6,38 @@
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAlzPjnyRVvSB2AjSq+2QWTRzxUAqXp52c1XP3C9YSNVNzzOIpt6gnnoaOikfn0wcNWQCV7Llp9giVbhRrQRwTiWj24U3cAM0NNGLZoBByBQtB45T9mM7NNdUpNT6ITtpELVCylsUF5LcEzbB/DjUDVmXAiN3cncH5ZFP2XPb+c8Nr89UmDFyjAfONfkNzY7dYkzIb32w+GNX8P2UhsT73+g3jtT7YJvV0SziLzn+xSl1KEBTPcIZcsZDc4tIdIvzsb2K8GSrvTNY2ACRu77gtiSCMjfAgk83OxSrS6QZfp3Q3jse7E6CPvqM2C1FPS7HkcRTejBORO1tewvU9VJbUiQIDAQAB",
   "minimum_chrome_version": "116",
   "permissions": [
+    "activeTab",
+    "contextMenus",
     "nativeMessaging",
+    "offscreen",
+    "scripting",
     "storage"
   ],
   "background": {
     "service_worker": "worker.js"
-  }
+  },
+  "optional_host_permissions": [
+    "<all_urls>"
+  ],
+  "commands": {
+    "capture-region": {
+      "suggested_key": {
+        "default": "Alt+Shift+S"
+      },
+      "description": "截取區域存至 ezdesign"
+    }
+  },
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "dialog.html",
+        "dialog.js",
+        "dialog.css"
+      ],
+      "matches": [
+        "<all_urls>"
+      ],
+      "use_dynamic_url": true
+    }
+  ]
 }

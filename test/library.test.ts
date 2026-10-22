@@ -225,6 +225,8 @@ test('CX-duplicate: staging saved bytes reports the item, and confirming merges 
 
   const third = await (await stageBytes(library, bytes)).commit({ tags: [], note: '' })
   assert.equal(third.item.note, '字距好\n\n顏色也好', 'an empty note keeps the one there')
+  const fourth = await (await stageBytes(library, bytes)).commit({ tags: [], note: '字距好\n\n顏色也好\n留白也好' })
+  assert.equal(fourth.item.note, '字距好\n\n顏色也好\n留白也好', 'a pre-filled note that was extended replaces the old one')
   library.close()
 })
 

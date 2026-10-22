@@ -116,8 +116,8 @@ export function createHostLink(): HostLinkHandle {
     return id
   }
 
-  const send = <K extends AnsweredType>(target: chrome.runtime.Port, ask: Ask<K>, options: RequestOptions = {}) =>
-    new Promise<ReplyOf<K>>((resolve, reject) => {
+  const send = <A extends Ask<AnsweredType>>(target: chrome.runtime.Port, ask: A, options: RequestOptions = {}) =>
+    new Promise<ReplyOf<A['t']>>((resolve, reject) => {
       const entry: Pending = {
         type: ask.t,
         resolve: resolve as (value: unknown) => void,
@@ -144,7 +144,7 @@ export function createHostLink(): HostLinkHandle {
       })
     })
     opened.onMessage.addListener(onMessage)
-    const hello = send<'hello'>(opened, { t: 'hello', protocol: PROTOCOL, extension: { version: extensionVersion() } }).then(
+    const hello = send(opened, { t: 'hello', protocol: PROTOCOL, extension: { version: extensionVersion() } }).then(
       (welcome): HostState => {
         greeted = true
         hostVersion = welcome.host.version
@@ -194,16 +194,16 @@ export function createHostLink(): HostLinkHandle {
       const release = link.hold()
       try {
         const sha256 = await sha256Hex(bytes)
-        await send<'upload'>(target, { t: 'upload', capture: input.capture, kind: input.kind, size: bytes.length, context: input.context })
+        await send(target, { t: 'upload', capture: input.capture, kind: input.kind, size: bytes.length, context: input.context })
         for (let offset = 0; offset < bytes.length && !options.signal?.aborted; offset += EXTENSION_CHUNK_BYTES) {
           const data = toBase64(bytes.subarray(offset, offset + EXTENSION_CHUNK_BYTES))
           target.postMessage({ t: 'chunk', capture: input.capture, offset, data })
         }
         if (options.signal?.aborted) {
-          await send<'discard'>(target, { t: 'discard', capture: input.capture })
+          await send(target, { t: 'discard', capture: input.capture })
           throw new HostFailure({ code: 'cancelled', message: 'the upload was cancelled' })
         }
-        return await send<'upload-end'>(target, { t: 'upload-end', capture: input.capture, sha256 })
+        return await send(target, { t: 'upload-end', capture: input.capture, sha256 })
       } finally {
         release()
       }
