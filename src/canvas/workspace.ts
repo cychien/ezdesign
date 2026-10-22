@@ -115,8 +115,9 @@ export interface UserCanvasPort {
   archive(canvasId: string): Outcome<'archived' | 'deleted'>
   /** Becomes the active tab. */
   reopen(canvasId: string): Outcome<CanvasWire>
-  /** Permanent, archived canvases only (`CANVAS_OPEN` otherwise): the whole
-   *  directory, and its saved camera. The shell confirms first; this does not. */
+  /** Permanent, open or archived: the whole directory, and its saved camera.
+   *  The active tab moves as on `archive`. The shell confirms first; this does
+   *  not. */
   delete(canvasId: string): Outcome<void>
   /** One undo step from the board. Ops naming frames that are gone are skipped;
    *  a step whose `opId` was applied recently is answered with the canvas as
@@ -675,8 +676,7 @@ class Workspace {
     if (!held) return this.notFound(canvasId)
     const id = held.manifest.id
     if (held.manifest.archivedAt !== undefined) return ok('archived')
-    const wasActive = this.opts.view.view.activeTab === id
-    const next = wasActive ? this.neighbour(id) : undefined
+    const leave = this.leaveTab(id)
     const empty = held.manifest.frames.every((f) => f.deletedAt !== undefined)
     const untitled = held.manifest.name === UNTITLED || held.manifest.name.startsWith(`${UNTITLED} `)
     let result: 'archived' | 'deleted'
@@ -689,12 +689,20 @@ class Workspace {
       this.opts.onChange({ kind: 'updated', canvasId: id })
       result = 'archived'
     }
-    if (wasActive && next !== undefined) {
-      this.opts.view.setActiveTab(next)
-      this.opts.onChange({ kind: 'view' })
-    }
-    this.ensureTab(true)
+    leave()
     return ok(result)
+  }
+
+  /** Taken before `leaving` closes, run after: moves the active tab off it. */
+  private leaveTab(leaving: CanvasId): () => void {
+    const next = this.opts.view.view.activeTab === leaving ? this.neighbour(leaving) : undefined
+    return () => {
+      if (next !== undefined) {
+        this.opts.view.setActiveTab(next)
+        this.opts.onChange({ kind: 'view' })
+      }
+      this.ensureTab(true)
+    }
   }
 
   private reopen(canvasId: string): Outcome<CanvasWire> {
@@ -725,10 +733,9 @@ class Workspace {
   private delete(canvasId: string): Outcome<void> {
     const held = this.held(canvasId)
     if (!held) return this.notFound(canvasId)
-    if (held.manifest.archivedAt === undefined) {
-      return { ok: false, problem: { code: 'CANVAS_OPEN', canvasId: held.manifest.id, name: held.manifest.name } }
-    }
+    const leave = this.leaveTab(held.manifest.id)
     this.remove(held)
+    leave()
     return ok(undefined)
   }
 
@@ -744,12 +751,12 @@ class Workspace {
     let movedFrames = false
     const live = (frameId: FrameId) => held.manifest.frames.find((f) => f.id === frameId && f.deletedAt === undefined)
     for (const op of step.ops) {
-      if (op.t === 'place') {
-        for (const { id: frameId, rect } of op.frames) {
-          if (!live(frameId)) continue
-          const next = normalizeRect(rect)
+      if (op.t === 'move') {
+        for (const { id: frameId, x, y } of op.frames) {
           const was = held.layout.rects[frameId]
-          if (was && was.x === next.x && was.y === next.y && was.width === next.width && was.height === next.height) continue
+          if (!live(frameId) || !was) continue
+          const next = normalizeRect({ ...was, x, y })
+          if (was.x === next.x && was.y === next.y) continue
           held.layout.rects[frameId] = next
           movedRects = true
         }
@@ -795,9 +802,8 @@ class Workspace {
       return { ok: false, problem: { code: 'FRAME_NOT_FOUND', canvasId: id, frameId: input.from } }
     }
     const sourceRect = held.layout.rects[source.id] ?? NO_RECT
-    const rect = normalizeRect(
-      input.rect ?? { ...placeBeside(sourceRect, live.map((f) => held.layout.rects[f.id] ?? NO_RECT)), width: sourceRect.width, height: sourceRect.height },
-    )
+    const at = input.at ?? placeBeside(sourceRect, live.map((f) => held.layout.rects[f.id] ?? NO_RECT))
+    const rect = normalizeRect({ ...at, width: sourceRect.width, height: sourceRect.height })
     const file = `frames/${input.id}.html`
     writeAtomic(join(this.dir(id), file), bytes.toString('utf8'))
     held.layout.rects[input.id] = rect

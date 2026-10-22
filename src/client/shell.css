@@ -44,8 +44,16 @@
   --mark: #e56d41;
   --mark-foreground: #fff;
 
+  /* The board's arrangement chrome: a selected or live frame's border, and the
+     guides it snaps to. The blue design tools use for selection, kept apart
+     from --mark, which means feedback. */
+  --arrange: #0d99ff;
+
   /* 增強設計's sparkle only. Brightness chosen over contrast: 2.2:1 on --paper. */
   --premium: #d6a21e;
+
+  /* The App tab's window glyph: the live page, told apart from canvases at a glance. */
+  --app-accent: #ee7a2a;
 
   /* Attachments get a green kept soft enough to sit beside the warm surfaces
      without fighting them. The chip carries no border, so the fill alone has to
@@ -436,6 +444,18 @@ body.ez-arranging .ez-frame {
 
 /* ---------------------------------------------------------------- sidebar */
 
+/* Clipped only while closed: open, the sidebar's menus are free to hang past
+   its edge. */
+.ez-sidebar-slot {
+  display: flex;
+  flex-shrink: 0;
+}
+
+.ez-sidebar-slot[data-collapsed] {
+  width: 0;
+  overflow: hidden;
+}
+
 /* Width is owned by shell.ts - it is user-resizable and restored from storage,
    so there is no useful value to declare here. */
 .ez-sidebar {
@@ -448,14 +468,75 @@ body.ez-arranging .ez-frame {
   min-height: 0;
 }
 
+/* The first button lines up with the tab strip's: the bar's top padding puts
+   its centre on the strip's 21px midline. */
+.ez-activity {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  width: 44px;
+  padding-top: 5px;
+  background: var(--background);
+  border-left: 1px solid var(--border);
+}
+
+.ez-activity-btn {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted-foreground);
+  cursor: pointer;
+  transition:
+    background 0.12s ease,
+    color 0.12s ease;
+}
+
+.ez-activity-btn path {
+  stroke-width: 1.75;
+}
+
+.ez-activity-btn:hover {
+  background: var(--muted);
+  color: var(--foreground);
+}
+
+.ez-activity-btn[aria-pressed='true'] {
+  background: var(--muted);
+  color: var(--foreground);
+}
+
+/* The header's working dot, carried out here while the header is out of view:
+   watching the page while the agent edits it is the reason to fold it away. */
+.ez-activity-btn[aria-pressed='false'][data-working]::after {
+  content: '';
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: oklch(70% 0.16 70);
+  box-shadow: 0 0 0 2px var(--background);
+  animation: ez-pulse 1.2s ease-in-out infinite;
+}
+
 /* The grab band straddles the border instead of sitting beside it: a 1px border
    is not a pointer target, and the room to widen it is on the stage side, where
-   nothing else is clickable. */
+   nothing else is clickable. The margins give back its width, so it takes no
+   room of its own in the row. */
 .ez-resizer {
-  position: absolute;
-  inset-block: 0;
-  left: -4px;
+  position: relative;
+  flex-shrink: 0;
   width: 9px;
+  margin-inline: -4px -5px;
   z-index: 4;
   cursor: col-resize;
   touch-action: none;
@@ -3724,29 +3805,31 @@ body.ez-arranging .ez-frame {
   gap: 8px;
   height: 42px;
   flex-shrink: 0;
-  padding: 0 10px;
+  padding: 0 10px 0 0;
   border-bottom: 1px solid var(--border);
   background: var(--background);
 }
 
 .ez-tabs {
   display: flex;
-  align-items: center;
-  gap: 2px;
+  align-self: stretch;
   flex: 1;
   min-width: 0;
   overflow-x: auto;
   scrollbar-width: none;
 }
 
+/* Neighbours overlap by a pixel, so a shared edge is one line however both
+   sides are drawn; the stacking order picks whose line it is. */
 .ez-tab {
+  position: relative;
   display: inline-flex;
   align-items: center;
-  gap: 2px;
-  height: 28px;
   max-width: 220px;
-  padding: 0 4px 0 10px;
-  border-radius: 7px;
+  margin-right: -1px;
+  padding: 0 14px;
+  --tab-bg: var(--background);
+  background: var(--tab-bg);
   font-size: 12.5px;
   font-weight: 500;
   color: var(--muted-foreground);
@@ -3754,22 +3837,45 @@ body.ez-arranging .ez-frame {
   cursor: pointer;
   user-select: none;
   flex-shrink: 0;
-}
-
-.ez-tab[data-tab='app'] {
-  padding-right: 10px;
+  transition:
+    background-color var(--t-pop) var(--ease-out),
+    box-shadow var(--t-pop) var(--ease-out),
+    color var(--t-pop) var(--ease-out);
 }
 
 .ez-tab:hover {
-  background: var(--muted);
+  z-index: 1;
+  --tab-bg: color-mix(in srgb, var(--panel) 55%, var(--background));
+  color: var(--foreground);
+  box-shadow:
+    inset 1px 0 color-mix(in srgb, var(--border) 85%, transparent),
+    inset -1px 0 color-mix(in srgb, var(--border) 85%, transparent);
 }
 
 .ez-tab[aria-selected='true'] {
-  background: var(--panel);
+  z-index: 2;
+  --tab-bg: var(--panel);
   color: var(--foreground);
   box-shadow:
-    0 0 0 1px var(--border),
-    0 1px 2px oklch(0% 0 0 / 0.04);
+    inset 1px 0 var(--border),
+    inset -1px 0 var(--border);
+}
+
+.ez-tab-label {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.ez-tab-label svg {
+  flex-shrink: 0;
+  translate: 0 0.5px;
+  margin-right: 6px;
+  color: var(--app-accent);
+}
+
+.ez-tab-label svg path {
+  stroke-width: 1.9;
 }
 
 .ez-tab-name {
@@ -3778,53 +3884,71 @@ body.ez-arranging .ez-frame {
 }
 
 .ez-tab-close {
-  display: inline-grid;
+  position: absolute;
+  top: 50%;
+  right: 6px;
+  translate: 0 -50%;
+  display: grid;
   place-items: center;
   width: 18px;
   height: 18px;
   padding: 0;
   border: none;
   border-radius: 5px;
-  background: transparent;
+  background: var(--tab-bg);
   color: var(--ink-faint);
   font-size: 14px;
   line-height: 1;
   cursor: pointer;
   opacity: 0;
+  transition:
+    background-color var(--t-pop) var(--ease-out),
+    opacity var(--t-pop) var(--ease-out);
+}
+
+/* Fades the name out under the button instead of cutting it. */
+.ez-tab-close::before {
+  content: '';
+  position: absolute;
+  inset: 0 100% 0 auto;
+  width: 14px;
+  background: linear-gradient(to right, transparent, var(--tab-bg));
+  pointer-events: none;
 }
 
 .ez-tab:hover .ez-tab-close,
-.ez-tab[aria-selected='true'] .ez-tab-close,
 .ez-tab-close:focus-visible {
   opacity: 1;
 }
 
 .ez-tab-close:hover {
-  background: var(--muted);
+  background: color-mix(in srgb, var(--tab-bg), var(--foreground) 8%);
   color: var(--foreground);
 }
 
-.ez-tab-rename {
-  width: 150px;
-  padding: 2px 5px;
-  border: 1px solid var(--ring);
-  border-radius: 5px;
-  font: inherit;
-  color: var(--foreground);
-  background: var(--panel);
+.ez-tab[data-renaming] .ez-tab-name {
+  text-overflow: clip;
+  cursor: text;
   outline: none;
+}
+
+.ez-tab[data-renaming] .ez-tab-close {
+  display: none;
 }
 
 .ez-tabs-tail {
   display: flex;
   align-items: center;
-  gap: 2px;
   flex-shrink: 0;
 }
 
 .ez-tab-new,
 .ez-canvas-menu {
+  display: grid;
+  place-items: center;
+  width: 28px;
   height: 28px;
+  padding: 0;
   border: none;
   border-radius: 7px;
   background: transparent;
@@ -3833,16 +3957,12 @@ body.ez-arranging .ez-frame {
   cursor: pointer;
 }
 
-.ez-tab-new {
-  width: 28px;
-  font-size: 17px;
-  line-height: 1;
+.ez-tab-new path {
+  stroke-width: 2.25;
 }
 
-.ez-canvas-menu {
-  padding: 0 10px;
-  font-size: 12.5px;
-  font-weight: 500;
+.ez-canvas-menu path {
+  stroke-width: 1.75;
 }
 
 .ez-tab-new:hover,
@@ -3857,23 +3977,30 @@ body.ez-arranging .ez-frame {
 }
 
 .ez-canvas-menu-list {
-  min-width: 260px;
+  min-width: 200px;
+  max-width: 320px;
   z-index: 20;
 }
 
 .ez-canvas-menu-item {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 2px;
 }
 
+.ez-canvas-menu-item:hover .ez-canvas-menu-open {
+  background: var(--muted);
+}
+
+/* Room for 刪除 is kept on every row, so the menu's width never moves under the pointer. */
 .ez-canvas-menu-open {
   flex: 1;
   min-width: 0;
-  justify-content: space-between;
+  padding-right: 40px;
 }
 
 .ez-canvas-menu-open .ez-menu-name {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -3883,28 +4010,28 @@ body.ez-arranging .ez-frame {
   color: var(--muted-foreground);
 }
 
-.ez-canvas-menu-meta {
-  flex-shrink: 0;
-  font-size: 11px;
-  font-weight: 400;
-  color: var(--ink-faint);
-}
-
+/* Shown on the row's hover, taking no width of its own. */
 .ez-canvas-menu-delete {
-  flex-shrink: 0;
-  padding: 5px 8px;
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  translate: 0 -50%;
+  padding: 0;
   border: none;
-  border-radius: 6px;
   background: transparent;
   color: var(--muted-foreground);
   font-family: inherit;
   font-size: 12px;
   cursor: pointer;
+  visibility: hidden;
+}
+
+.ez-canvas-menu-item:is(:hover, :has(:focus-visible)) .ez-canvas-menu-delete {
+  visibility: visible;
 }
 
 .ez-canvas-menu-delete:hover,
 .ez-canvas-menu-delete:focus-visible {
-  background: var(--muted);
   color: var(--foreground);
 }
 
@@ -3912,6 +4039,82 @@ body.ez-arranging .ez-frame {
   padding: 6px 8px;
   font-size: 12px;
   color: var(--muted-foreground);
+}
+
+.ez-dialog {
+  width: min(400px, calc(100vw - 32px));
+  max-width: none;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--panel);
+  color: var(--foreground);
+  box-shadow:
+    0 24px 64px oklch(0% 0 0 / 0.16),
+    0 2px 8px oklch(0% 0 0 / 0.06);
+  animation: ez-menu-in var(--t-menu) var(--ease-out) both;
+}
+
+.ez-dialog::backdrop {
+  background: oklch(0% 0 0 / 0.18);
+  animation: ez-fade-in var(--t-menu) var(--ease-out) both;
+}
+
+.ez-dialog-card {
+  padding: 20px;
+}
+
+.ez-dialog-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.ez-dialog-body {
+  margin: 8px 0 0;
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--muted-foreground);
+}
+
+.ez-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 20px;
+}
+
+.ez-dialog-cancel,
+.ez-dialog-go {
+  height: 36px;
+  padding: 0 16px;
+  border-radius: 7px;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.ez-dialog-cancel {
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--foreground);
+}
+
+.ez-dialog-cancel:hover {
+  background: var(--muted);
+}
+
+.ez-dialog-go {
+  border: 1px solid var(--primary);
+  background: var(--primary);
+  color: var(--primary-foreground);
+  box-shadow: inset 0 1px 0 0 oklch(100% 0 0 / 0.14);
+}
+
+.ez-dialog-go:hover {
+  opacity: 0.88;
 }
 
 /* One canvas: a viewport onto an infinite plane. Frames sit in world space on
@@ -3940,6 +4143,9 @@ body.ez-arranging .ez-frame {
   cursor: grabbing;
 }
 
+/* Never `will-change: transform`, even mid-gesture: promoted, the world is
+   re-tiled at every new zoom, and on a long zoom those tilings push the
+   shell's other visible tiles out of GPU memory, which blanks them for a frame. */
 .ez-board-world {
   position: absolute;
   left: 0;
@@ -3947,72 +4153,51 @@ body.ez-arranging .ez-frame {
   transform-origin: 0 0;
 }
 
-.ez-board.ez-moving .ez-board-world {
-  will-change: transform;
-}
-
 .ez-board-frame {
   position: absolute;
   left: 0;
   top: 0;
   background: #fff;
-  box-shadow:
-    0 0 0 calc(1px / var(--ez-zoom, 1)) var(--border),
-    0 calc(4px / var(--ez-zoom, 1)) calc(18px / var(--ez-zoom, 1)) oklch(0% 0 0 / 0.07);
+  box-shadow: 0 calc(4px / var(--ez-zoom, 1)) calc(18px / var(--ez-zoom, 1)) oklch(0% 0 0 / 0.07);
+  /* Centred on the frame's edge, over its iframe, as a guide is: so a guide
+     drawn through an edge lies on the border rather than beside it. */
+  outline: calc(1px / var(--ez-zoom, 1)) solid var(--border);
+  outline-offset: calc(-0.5px / var(--ez-zoom, 1));
 }
 
-.ez-board-frame.ez-live {
-  box-shadow: 0 0 0 calc(2px / var(--ez-zoom, 1)) var(--ink);
+.ez-board-frame.ez-live,
+.ez-board-frame[aria-selected='true'] {
+  outline-color: var(--arrange);
+}
+
+/* Frame names, in screen pixels over the world: placed by `paintHeads`. */
+.ez-board-heads {
+  position: absolute;
+  left: 0;
+  top: 0;
+  pointer-events: none;
 }
 
 /* Named above the frame at a constant screen size, whatever the zoom; the
-   handle a frame is dragged by while its page has the pointer. */
+   handle a frame is dragged by while its page has the pointer. Whole-pixel
+   line height and padding keep its -100% lift on the pixel grid. */
 .ez-board-frame-head {
   position: absolute;
   left: 0;
-  bottom: 100%;
+  top: 0;
   display: flex;
-  align-items: baseline;
-  gap: calc(6px / var(--ez-zoom, 1));
-  max-width: 100%;
-  padding-bottom: calc(6px / var(--ez-zoom, 1));
-  font-size: calc(12px / var(--ez-zoom, 1));
-  line-height: 1.2;
+  padding-bottom: 6px;
+  font-size: 12px;
+  line-height: 16px;
   white-space: nowrap;
   cursor: default;
   user-select: none;
+  pointer-events: auto;
 }
 
-.ez-board-frame[aria-selected='true'] {
-  box-shadow:
-    0 0 0 calc(2px / var(--ez-zoom, 1)) var(--ink),
-    0 calc(4px / var(--ez-zoom, 1)) calc(18px / var(--ez-zoom, 1)) oklch(0% 0 0 / 0.07);
-}
-
-.ez-board-frame[aria-selected='true'] .ez-board-frame-title {
+.ez-board-frame-head.ez-selected .ez-board-frame-title {
   color: var(--ink);
 }
-
-/* Square grips on the selection's corners and edges, a constant screen size. */
-.ez-board-handle {
-  position: absolute;
-  width: calc(10px / var(--ez-zoom, 1));
-  height: calc(10px / var(--ez-zoom, 1));
-  margin: calc(-5px / var(--ez-zoom, 1)) 0 0 calc(-5px / var(--ez-zoom, 1));
-  background: #fff;
-  border: calc(1.5px / var(--ez-zoom, 1)) solid var(--ink);
-  border-radius: calc(2px / var(--ez-zoom, 1));
-  z-index: 1;
-}
-
-.ez-board-handle[data-handle='nw'] { left: 0; top: 0; cursor: nwse-resize; }
-.ez-board-handle[data-handle='n'] { left: 50%; top: 0; cursor: ns-resize; }
-.ez-board-handle[data-handle='ne'] { left: 100%; top: 0; cursor: nesw-resize; }
-.ez-board-handle[data-handle='e'] { left: 100%; top: 50%; cursor: ew-resize; }
-.ez-board-handle[data-handle='se'] { left: 100%; top: 100%; cursor: nwse-resize; }
-.ez-board-handle[data-handle='s'] { left: 50%; top: 100%; cursor: ns-resize; }
-.ez-board-handle[data-handle='sw'] { left: 0; top: 100%; cursor: nesw-resize; }
-.ez-board-handle[data-handle='w'] { left: 0; top: 50%; cursor: ew-resize; }
 
 .ez-guides {
   position: absolute;
@@ -4022,46 +4207,37 @@ body.ez-arranging .ez-frame {
   pointer-events: none;
 }
 
-/* Ink, not --mark: that orange means "feedback is attached here". The halo
-   keeps it visible where it crosses a dark frame. */
+/* One screen pixel, centred on the aligned coordinate like a frame's border. */
 .ez-guide {
   position: absolute;
   left: 0;
   top: 0;
-  background: var(--ink);
-  box-shadow: 0 0 0 calc(1px / var(--ez-zoom, 1)) oklch(100% 0 0 / 0.85);
+  background: var(--arrange);
 }
 
 .ez-guide[data-axis='x'] {
   width: calc(1px / var(--ez-zoom, 1));
+  margin-left: calc(-0.5px / var(--ez-zoom, 1));
 }
 
 .ez-guide[data-axis='y'] {
   height: calc(1px / var(--ez-zoom, 1));
+  margin-top: calc(-0.5px / var(--ez-zoom, 1));
 }
 
 .ez-board.ez-arranging,
-.ez-board.ez-arranging .ez-board-frame {
+.ez-board.ez-arranging .ez-board-frame,
+.ez-board.ez-arranging .ez-board-frame-head {
   cursor: grabbing;
   user-select: none;
 }
 
-/* The title is what names the frame, so the size gives way first. */
 .ez-board-frame-title {
-  flex-shrink: 0;
   max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   font-weight: 500;
   color: var(--foreground);
-}
-
-.ez-board-frame-size {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  color: var(--ink-faint);
-  font-variant-numeric: tabular-nums;
 }
 
 /* The board owns the pointer unless the user is annotating, or has made one
@@ -4090,11 +4266,9 @@ body.ez-arranging .ez-frame {
 .ez-board-empty {
   position: absolute;
   inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 13px;
-  color: var(--muted-foreground);
+  display: grid;
+  place-items: center;
+  color: color-mix(in srgb, var(--paper-edge), var(--ink-ghost) 8%);
   pointer-events: none;
 }
 
@@ -4108,34 +4282,39 @@ body.ez-arranging .ez-frame {
   bottom: 12px;
   display: flex;
   align-items: center;
-  gap: 2px;
   padding: 3px;
   border-radius: 9px;
-  background: var(--panel);
-  border: 1px solid var(--border);
-  box-shadow: 0 2px 8px oklch(0% 0 0 / 0.06);
+  background: color-mix(in srgb, var(--panel) 72%, transparent);
+  box-shadow: 0 0 0 1px oklch(0% 0 0 / 0.05);
+  backdrop-filter: blur(16px) saturate(1.4);
 }
 
 .ez-board-tool {
+  display: grid;
+  place-items: center;
+  width: 26px;
   height: 26px;
-  min-width: 26px;
-  padding: 0 8px;
+  padding: 0;
   border: none;
   border-radius: 6px;
   background: transparent;
-  color: var(--foreground);
-  font-family: inherit;
-  font-size: 12px;
-  font-weight: 500;
+  color: var(--muted-foreground);
   cursor: pointer;
+}
+
+.ez-board-tool path {
+  stroke-width: 2;
 }
 
 .ez-board-tool:hover {
   background: var(--muted);
+  color: var(--foreground);
 }
 
+/* Nudged toward the plus: the percent sign's own side bearing reads as gap. */
 .ez-board-zoom {
-  min-width: 44px;
+  min-width: 38px;
+  padding-left: 2px;
   text-align: center;
   font-size: 12px;
   font-variant-numeric: tabular-nums;

@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process'
 import { once } from 'node:events'
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { createServer } from 'vite'
 import { targets, watchAll } from './build.mjs'
@@ -23,6 +23,12 @@ import {
 const noPlugin = process.argv.includes('--no-plugin')
 const log = (msg) => console.log(`\x1b[36m[dev]\x1b[0m ${msg}`)
 const warn = (msg) => console.log(`\x1b[33m[dev]\x1b[0m ${msg}`)
+
+// The verify stack seeds the same folder and deletes it on `vz.mjs down`.
+if (existsSync(join(FIXTURE_ROOT, '.ezdesign', '.vz-seeded'))) {
+  warn('a verify stack (vz.mjs) owns fixtures/playground/.ezdesign - run `vz.mjs down` first')
+  process.exit(1)
+}
 
 let shuttingDown = false
 let daemon = null

@@ -17,6 +17,7 @@ import KeyboardIcon from '@hugeicons/core-free-icons/KeyboardIcon'
 import Select01Icon from '@hugeicons/core-free-icons/Select01Icon'
 import Navigation03Icon from '@hugeicons/core-free-icons/Navigation03Icon'
 import BubbleChatAddIcon from '@hugeicons/core-free-icons/BubbleChatAddIcon'
+import BubbleChatIcon from '@hugeicons/core-free-icons/BubbleChatIcon'
 import BubbleChatOutcomeIcon from '@hugeicons/core-free-icons/BubbleChatOutcomeIcon'
 import Edit02Icon from '@hugeicons/core-free-icons/Edit02Icon'
 import type { SessionConfigOption } from '@agentclientprotocol/sdk'
@@ -87,8 +88,8 @@ import type { PickEffect, PickEvent, PickState } from './pick.js'
 import { type IconNode, icon } from './icon.js'
 import {
   SIDEBAR_DEFAULT,
-  SIDEBAR_MIN,
   clampSidebarWidth,
+  dragSidebarWidth,
   maxSidebarWidth,
 } from './sidebar-width.js'
 
@@ -298,6 +299,7 @@ let canvasUi: CanvasUi | null = null
 let stagedApp: string | null | undefined = undefined
 
 let annotateMode: Mode = 'off'
+let revealedAsk: string | null = null
 let deviceId = DESKTOP.id
 /** Every device on one grid instead of one at a time. */
 let multi = false
@@ -507,7 +509,15 @@ const SHORTCUTS: Shortcut[] = [
     keys: 'N',
     label: '寫補充說明',
     match: plain('n'),
-    run: () => note.focus(),
+    run: () => focusNote(),
+    fromCanvas: true,
+  },
+  {
+    keys: `${MOD_LABEL} \\`,
+    label: '收起或打開側邊欄',
+    match: cmd('\\'),
+    run: () => toggleSidebar(),
+    whileTyping: true,
     fromCanvas: true,
   },
   {
@@ -1091,7 +1101,7 @@ async function adoptVariant(
   if (held) held.answer = ref
   else {
     noteAttach.insertRef(ref)
-    noteAttach.editable.focus()
+    focusNote()
   }
 }
 
@@ -1147,7 +1157,7 @@ function endExploreIn(ref?: RefWire): void {
   }
   if (!ref) return
   noteAttach.insertRef(ref)
-  noteAttach.editable.focus()
+  focusNote()
 }
 
 /** The one place the held comment is given back, run on every snapshot after the
@@ -2634,12 +2644,32 @@ const resizer = h('div', 'ez-resizer')
 resizer.tabIndex = 0
 resizer.setAttribute('role', 'separator')
 resizer.setAttribute('aria-orientation', 'vertical')
-resizer.setAttribute('aria-valuemin', String(SIDEBAR_MIN))
+// Zero, not the floor: folded away is a width this separator can be at.
+resizer.setAttribute('aria-valuemin', '0')
 resizer.setAttribute('aria-label', '調整側邊欄寬度')
-resizer.title = '拖曳調整寬度，雙擊還原'
+resizer.title = '拖曳調整寬度，拖到底收起，雙擊還原'
 
-sidebar.append(resizer, sideHead, convSection, queueSection)
-root.append(stageWrap, sidebar)
+sidebar.append(sideHead, convSection, queueSection)
+
+/** Folded away, the sidebar keeps its width inside a slot that closes to
+ *  nothing, so the thread's scroll and the queue's measured height are still
+ *  there when it comes back. */
+const sidebarSlot = h('div', 'ez-sidebar-slot')
+sidebarSlot.append(sidebar)
+
+/** One button per panel the sidebar can show, and the way back to a folded-away
+ *  sidebar: pressing the panel that is showing folds it, the way an editor's
+ *  activity bar does. */
+const activityBar = h('nav', 'ez-activity')
+activityBar.setAttribute('aria-label', '側邊欄')
+const reviewPanelBtn = h('button', 'ez-activity-btn')
+reviewPanelBtn.append(icon(BubbleChatIcon as IconNode, 18))
+reviewPanelBtn.onclick = () => toggleSidebar()
+activityBar.append(reviewPanelBtn)
+
+// The resizer sits beside the sidebar rather than in it: it is one of the ways a
+// folded-away sidebar comes back, so it cannot go inert with the rest.
+root.append(stageWrap, resizer, sidebarSlot, activityBar)
 
 // ---------------------------------------------------------------- panning
 
@@ -2878,23 +2908,33 @@ function beginCardDrag(e: PointerEvent, frame: Frame): void {
 // ---------------------------------------------------------------- sidebar width
 
 const WIDTH_KEY = 'ezdesign:sidebar-width'
+const COLLAPSED_KEY = 'ezdesign:sidebar-collapsed'
 
 const maxSidebar = () => maxSidebarWidth(innerWidth)
 const clampSidebar = (w: number) => clampSidebarWidth(w, innerWidth)
 
 /** What the user asked for, which is not always what fits: a narrow window
  *  clamps the applied width without spending the preference, so widening the
- *  window brings the chosen size back. */
+ *  window brings the chosen size back. Folding the sidebar away keeps it too,
+ *  so it comes back at the width it went away at. */
 let preferredWidth = SIDEBAR_DEFAULT
+let sidebarCollapsed = false
 try {
   const stored = Number(localStorage.getItem(WIDTH_KEY))
   if (Number.isFinite(stored) && stored > 0) preferredWidth = stored
+  sidebarCollapsed = localStorage.getItem(COLLAPSED_KEY) === '1'
 } catch {}
 
 function paintSidebarWidth(): void {
   const width = clampSidebar(preferredWidth)
   sidebar.style.width = `${width}px`
-  resizer.setAttribute('aria-valuenow', String(width))
+  sidebarSlot.toggleAttribute('data-collapsed', sidebarCollapsed)
+  sidebar.inert = sidebarCollapsed
+  reviewPanelBtn.setAttribute('aria-pressed', String(!sidebarCollapsed))
+  const label = sidebarCollapsed ? '打開對話' : '收起對話'
+  reviewPanelBtn.setAttribute('aria-label', label)
+  reviewPanelBtn.title = `${label}（${MOD_LABEL} \\）`
+  resizer.setAttribute('aria-valuenow', String(sidebarCollapsed ? 0 : width))
   resizer.setAttribute('aria-valuemax', String(maxSidebar()))
   // The stage is what is left over, so its share - and the scale a device has to
   // be shown at to fit in it - moves with every one of these.
@@ -2909,8 +2949,18 @@ function paintSidebarWidth(): void {
  *  before the fade painters `capQueue` reaches for have been assigned. */
 function resizeSidebar(width: number): void {
   preferredWidth = clampSidebar(width)
+  sidebarCollapsed = false
   paintSidebarWidth()
   capQueue()
+}
+
+function collapseSidebar(): void {
+  // `inert` takes focus out of the sidebar anyway, but only on the next style
+  // pass - and a keystroke in between still lands in the composer it hid.
+  const focused = document.activeElement
+  if (focused instanceof HTMLElement && sidebar.contains(focused)) focused.blur()
+  sidebarCollapsed = true
+  paintSidebarWidth()
 }
 
 /** Left out of `resizeSidebar`: a drag calls that on every pointer move, and
@@ -2918,7 +2968,21 @@ function resizeSidebar(width: number): void {
 function persistSidebarWidth(): void {
   try {
     localStorage.setItem(WIDTH_KEY, String(preferredWidth))
+    localStorage.setItem(COLLAPSED_KEY, sidebarCollapsed ? '1' : '0')
   } catch {}
+}
+
+function toggleSidebar(): void {
+  if (sidebarCollapsed) resizeSidebar(preferredWidth)
+  else collapseSidebar()
+  persistSidebarWidth()
+}
+
+/** Whatever puts the user in the composer brings the sidebar back first: an
+ *  inert element cannot take focus, and a caret nobody can see is not one. */
+function focusNote(): void {
+  if (sidebarCollapsed) toggleSidebar()
+  note.focus()
 }
 
 paintSidebarWidth()
@@ -2931,12 +2995,22 @@ addEventListener('resize', () => {
 resizer.addEventListener('pointerdown', (e) => {
   if (e.button !== 0) return
   const startX = e.clientX
-  const startWidth = sidebar.getBoundingClientRect().width
+  const startWidth = sidebarCollapsed ? 0 : clampSidebar(preferredWidth)
+  // A drag that ends folded away gives back the width it started from, not the
+  // floor it passed on the way.
+  const keptWidth = preferredWidth
   // Capture rather than a document-level listener: the pointer spends most of
   // the drag over the iframe, which would otherwise swallow every move.
   resizer.setPointerCapture(e.pointerId)
   document.body.classList.add('ez-resizing')
-  const move = (ev: PointerEvent) => resizeSidebar(startWidth + startX - ev.clientX)
+  const move = (ev: PointerEvent) => {
+    const width = dragSidebarWidth(startWidth + startX - ev.clientX, innerWidth)
+    if (width !== null) resizeSidebar(width)
+    else if (!sidebarCollapsed) {
+      preferredWidth = keptWidth
+      collapseSidebar()
+    }
+  }
   resizer.addEventListener('pointermove', move)
   resizer.addEventListener(
     'lostpointercapture',
@@ -2955,9 +3029,16 @@ resizer.addEventListener('dblclick', () => {
 })
 
 resizer.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    toggleSidebar()
+    e.preventDefault()
+    return
+  }
+  if (sidebarCollapsed) return
   const step = e.shiftKey ? 48 : 16
-  if (e.key === 'ArrowLeft') resizeSidebar(sidebar.getBoundingClientRect().width + step)
-  else if (e.key === 'ArrowRight') resizeSidebar(sidebar.getBoundingClientRect().width - step)
+  const width = clampSidebar(preferredWidth)
+  if (e.key === 'ArrowLeft') resizeSidebar(width + step)
+  else if (e.key === 'ArrowRight') resizeSidebar(width - step)
   else return
   persistSidebarWidth()
   e.preventDefault()
@@ -3066,7 +3147,7 @@ function applyPickEffect(effect: PickEffect): void {
       return
     case 'insert-note':
       noteAttach.resolveRef(effect.ref)
-      note.focus()
+      focusNote()
       paintSendState()
       return
     case 'banner':
@@ -3156,7 +3237,6 @@ function canvasPorts(): Parameters<typeof installCanvas>[0] {
       paintPage()
     },
     escape: () => void abortPick('escape'),
-    confirm: (offer) => askConfirm({ key: 'canvas-delete', ...offer, skippable: false }),
     notice: (text) => stripNotice(text),
     annotateMode: () => annotateMode,
   }
@@ -4224,6 +4304,7 @@ function render(): void {
     agentStatus.className = 'ez-badge'
     agentStatus.textContent = 'Agent 未連線'
   }
+  reviewPanelBtn.toggleAttribute('data-working', agentStatus.classList.contains('ez-working'))
 
   paintQueue(s.annotations)
 
@@ -4270,6 +4351,12 @@ function render(): void {
   const waiting = s.agentBusy || opening
   if (waiting && !livePlaced) convList.appendChild(liveTurnEl(s, prevRole))
   if (s.acp?.ask) convList.appendChild(acpAskEl(s.acp.ask))
+  // The agent is stopped until this is answered, and it can only be answered in
+  // the sidebar. Once per ask, so folding it away again is still the user's call.
+  if (s.acp?.ask && s.acp.ask.id !== revealedAsk) {
+    revealedAsk = s.acp.ask.id
+    if (sidebarCollapsed) toggleSidebar()
+  }
   if (s.acp?.state === 'exited' && s.acp.error) {
     convList.appendChild(
       h('div', 'ez-msg-system ez-msg-system-plain', `agent 已離線：${s.acp.error}`),

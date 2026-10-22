@@ -6,7 +6,8 @@ import { test } from 'node:test'
 import type { CanvasId, FrameId, Rect, ShellView, TabId, ViewStore } from '../src/canvas/types.js'
 import type { CanvasWire, FrameWire, LayoutOp, OpId } from '../src/canvas/wire.js'
 import { openCanvasWorkspace } from '../src/canvas/workspace.js'
-import { snapMove, snapResize } from '../src/client/canvas/guides.js'
+import { parseLayoutStep } from '../src/canvas/routes.js'
+import { snapMove } from '../src/client/canvas/guides.js'
 import {
   EditHistory,
   HISTORY_LIMIT,
@@ -14,7 +15,6 @@ import {
   planDuplicate,
   planMove,
   planRemove,
-  planResize,
   withPending,
 } from '../src/client/canvas/history.js'
 
@@ -42,13 +42,12 @@ test('CV-p6-history: undo all and redo all land exactly on the literals', () => 
     }
   }
   run(planMove(frames, new Set([id(1)]), 100, 50), 0)
-  run(planResize(frames.find((f) => f.id === id(2))!, { x: 500, y: 0, width: 600, height: 700 }), 1000)
   run(planMove(frames, new Set([id(1), id(2), id(3)]), -10, 20), 2000)
   run(planRemove(new Set([id(3)])), 3000)
   const end = frames.map((f) => [f.id, f.rect])
   assert.deepEqual(end, [
     [id(1), { x: 90, y: 70, width: 400, height: 300 }],
-    [id(2), { x: 490, y: 20, width: 600, height: 700 }],
+    [id(2), { x: 490, y: 20, width: 400, height: 300 }],
   ])
   for (let ops = history.undo(); ops; ops = history.undo()) frames = applyOps(frames, ops, removed)
   assert.deepEqual(frames.map((f) => [f.id, f.rect]).sort(), start.map((f) => [f.id, f.rect]).sort())
@@ -65,7 +64,7 @@ test('CV-p6-history: nudges fold within the window, and the stack is bounded', (
   history.push(planMove(frames, new Set([id(1)]), 1, 0, { nudge: true }), 0)
   const moved = [frame(1, { x: 1, y: 0, width: 400, height: 300 })]
   history.push(planMove(moved, new Set([id(1)]), 1, 0, { nudge: true }), NUDGE_FOLD_MS - 1)
-  assert.deepEqual(history.undo(), [{ t: 'place', frames: [{ id: id(1), rect: { x: 0, y: 0, width: 400, height: 300 } }] }])
+  assert.deepEqual(history.undo(), [{ t: 'move', frames: [{ id: id(1), x: 0, y: 0 }] }])
   assert.equal(history.canUndo, false, 'two quick nudges were one step')
   history.redo()
   history.push(planMove(moved, new Set([id(1)]), 1, 0, { nudge: true }), 10 * NUDGE_FOLD_MS)
@@ -101,10 +100,6 @@ test('dragging snaps to a neighbour within the threshold and draws its guide', (
   const far = snapMove({ x: 300, y: 210, width: 400, height: 300 }, [other], 1)
   assert.deepEqual(far.guides, [])
   assert.equal(snapMove({ x: 300, y: 210, width: 400, height: 300 }, [other], 0.5).rect.y, 200, 'the threshold is in screen pixels')
-  const resized = snapResize({ x: 0, y: 0, width: 997, height: 300 }, 'e', [other], 1, { width: 240, height: 240 })
-  assert.deepEqual(resized.rect, { x: 0, y: 0, width: 1000, height: 300 })
-  const small = snapResize({ x: 0, y: 0, width: 100, height: 300 }, 'e', [], 1, { width: 240, height: 240 })
-  assert.equal(small.rect.width, 240)
 })
 
 function workspace() {
@@ -140,12 +135,12 @@ test('CV-p6-op-idempotent: a replayed step and a repeated duplicate change nothi
   const f1 = ok(ws.agent.addFrame({ canvasId: canvas.id, title: 'one', html: '<!doctype html><html></html>' }))
   const layout = () => readFileSync(join(project, '.ezdesign', 'canvases', canvas.id, 'layout.json'), 'utf8')
   const move = (opId: string, x: number, y: number) =>
-    ok(ws.user.applyLayoutOps(canvas.id, { opId: opId as OpId, ops: [{ t: 'place', frames: [{ id: f1.id, rect: { x, y, width: 400, height: 300 } }] }] }))
+    ok(ws.user.applyLayoutOps(canvas.id, { opId: opId as OpId, ops: [{ t: 'move', frames: [{ id: f1.id, x, y }] }] }))
   move('o1', 10, 20)
   move('o2', 30, 40)
   const afterO2 = layout()
   const replay = move('o1', 10, 20)
-  assert.deepEqual(replay.frames[0]!.rect, { x: 30, y: 40, width: 400, height: 300 })
+  assert.deepEqual(replay.frames[0]!.rect, { x: 30, y: 40, width: 1280, height: 800 })
   assert.equal(layout(), afterO2)
   const copy = id(0xf9)
   ok(ws.user.duplicate(canvas.id, { from: f1.id, id: copy }))
@@ -155,6 +150,19 @@ test('CV-p6-op-idempotent: a replayed step and a repeated duplicate change nothi
   assert.equal(twice.frames.find((f) => f.id === copy)!.title, 'one 副本')
   const gone = ok(ws.user.applyLayoutOps(canvas.id, { opId: 'o3' as OpId, ops: [{ t: 'remove', ids: [copy] }] }))
   assert.equal(gone.frames.length, 1)
-  const back = ok(ws.user.applyLayoutOps(canvas.id, { opId: 'o4' as OpId, ops: [{ t: 'restore', ids: [copy] }, { t: 'place', frames: [{ id: id(0xdead), rect: { x: 0, y: 0, width: 1, height: 1 } }] }] }))
+  const back = ok(ws.user.applyLayoutOps(canvas.id, { opId: 'o4' as OpId, ops: [{ t: 'restore', ids: [copy] }, { t: 'move', frames: [{ id: id(0xdead), x: 0, y: 0 }] }] }))
   assert.equal(back.frames.length, 2, 'restore brings it back, and a step naming a gone frame skips it')
+})
+
+test('a frame keeps the size it was added at: no user edit carries one', () => {
+  const { ws } = workspace()
+  const canvas = ok(ws.agent.create('c'))
+  const phone = ok(ws.agent.addFrame({ canvasId: canvas.id, title: 'phone', html: '<!doctype html><html></html>', size: { width: 390, height: 844 } }))
+  assert.equal(parseLayoutStep({ opId: 'o1', ops: [{ t: 'place', frames: [{ id: phone.id, rect: { x: 0, y: 0, width: 999, height: 999 } }] }] }), null)
+  const step = parseLayoutStep({ opId: 'o1', ops: [{ t: 'move', frames: [{ id: phone.id, x: 50, y: 60, width: 999, height: 999 }] }] })
+  assert.deepEqual(step?.ops, [{ t: 'move', frames: [{ id: phone.id, x: 50, y: 60 }] }])
+  const moved = ok(ws.user.applyLayoutOps(canvas.id, step!))
+  assert.deepEqual(moved.frames[0]!.rect, { x: 50, y: 60, width: 390, height: 844 })
+  const copy = ok(ws.user.duplicate(canvas.id, { from: phone.id, id: id(0xc0), at: { x: 1000, y: 0 } }))
+  assert.deepEqual(copy.frames.find((f) => f.id === id(0xc0))!.rect, { x: 1000, y: 0, width: 390, height: 844 })
 })

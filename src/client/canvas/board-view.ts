@@ -4,17 +4,20 @@
  *      [ez-board] role=region data-canvas-id tabindex=0     the viewport
  *        [ez-board-world]                                   the one transformed element
  *          [ez-board-frame] role=group data-frame-id aria-selected
- *            .ez-board-frame-head                           title and size; a drag handle
  *            iframe  src=FrameWire.src sandbox=FRAME_SANDBOX
- *            [ez-board-handle] data-handle=n|s|e|w|ne|nw|se|sw   on a lone selection
  *          [ez-guide] data-axis=x|y                         while aligned
- *      [ez-board-tools]  全部顯示 · 縮小 · [ez-board-zoom] 100% · 放大 · 重設縮放
+ *        .ez-board-heads                                    screen pixels, not scaled
+ *          .ez-board-frame-head data-frame-id               title; a drag handle
+ *      [ez-board-tools]  縮小 · [ez-board-zoom] 100% · 放大
  *
  *  What keeps forty frames smooth:
  *  - Pan and zoom write one `transform` on the world per animation frame from
  *    the camera; input handlers only update the camera and request that frame,
  *    and nothing reads layout - every rect is already in the model. A frame
- *    being dragged writes its own transform the same way.
+ *    being dragged writes its own transform the same way. Frame heads are the
+ *    exception to the one transform: text in a layer rescaled every frame is
+ *    re-rasterized at a new scale each frame and visibly flickers, so each head
+ *    is placed in whole screen pixels instead (`paintHeads`).
  *  - Iframes take no pointer events while a gesture runs, and none outside
  *    annotate mode unless one frame is made live by a double-click, so the
  *    wheel and drags never hit-test into forty documents.
@@ -32,13 +35,17 @@
  *  another tab is active, so a tab switch never reloads an iframe and a pick
  *  armed in a frame is still armed on return. */
 
-import { MIN_FRAME_SIZE, type Camera, type FrameId, type Rect, type Size, mintFrameId } from '../../canvas/types.js'
+import AiSketchIcon from '@hugeicons/core-free-icons/AiSketchIcon'
+import MinusIcon from '@hugeicons/core-free-icons/MinusIcon'
+import PlusIcon from '@hugeicons/core-free-icons/PlusIcon'
+import { type Camera, type FrameId, type Rect, type Size, mintFrameId } from '../../canvas/types.js'
 import { boundsOf } from '../../canvas/place.js'
 import type { CanvasWire, FrameWire, LayoutOp } from '../../canvas/wire.js'
 import { type CanvasGuestPort, canvasGuestId } from '../frame-registry.js'
+import { type IconNode, icon } from '../icon.js'
 import type { Mode } from '../guest-messages.js'
 import { fitAll, panned, worldToScreen, worldTransform, zoomedAround } from './camera.js'
-import { type Guide, type ResizeHandle, snapMove, snapResize } from './guides.js'
+import { type Guide, snapMove } from './guides.js'
 import {
   type BoardEdit,
   EditHistory,
@@ -46,7 +53,6 @@ import {
   planDuplicate,
   planMove,
   planRemove,
-  planResize,
   withPending,
 } from './history.js'
 import { planMounts } from './mounting.js'
@@ -81,7 +87,6 @@ const WHEEL_ZOOM = 0.0025
 /** How far the pointer has to travel, in screen pixels, before a press on a
  *  frame becomes a drag rather than a click. */
 const DRAG_PX = 3
-const HANDLES: ResizeHandle[] = ['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw']
 
 interface Card {
   frame: FrameWire
@@ -105,18 +110,6 @@ type Gesture =
        *  until the press turns out to be a click, which then deselects it. */
       toggleOnClick: FrameId | null
     }
-  | {
-      t: 'resize'
-      pointer: number
-      x: number
-      y: number
-      id: FrameId
-      handle: ResizeHandle
-      /** Where the frame was when the press began. */
-      rect: Rect
-      /** Where the pointer has it now, snapped. */
-      current: Rect
-    }
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, className: string, text?: string): HTMLElementTagNameMap[K] {
   const node = document.createElement(tag)
@@ -125,11 +118,10 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, className: string, te
   return node
 }
 
-const sameRect = (a: Rect, b: Rect) => a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height
-
 export class BoardView {
   readonly el: HTMLElement
   private readonly world: HTMLElement
+  private readonly heads: HTMLElement
   private readonly guides: HTMLElement
   private readonly empty: HTMLElement
   private readonly readout: HTMLElement
@@ -178,14 +170,17 @@ export class BoardView {
     this.world.dataset.testid = TEST_IDS.world
     this.guides = el('div', 'ez-guides')
     this.world.append(this.guides)
-    this.empty = el('div', 'ez-board-empty', '還沒有任何 frame')
+    this.heads = el('div', 'ez-board-heads')
+    this.empty = el('div', 'ez-board-empty')
+    this.empty.append(icon(AiSketchIcon as IconNode, 64))
 
     const tools = el('div', 'ez-board-tools')
     tools.dataset.testid = TEST_IDS.tools
-    const button = (label: string, text: string, hint: string, run: () => void) => {
-      const b = el('button', 'ez-board-tool', text)
+    const button = (label: string, glyph: IconNode, run: () => void) => {
+      const b = el('button', 'ez-board-tool')
+      b.append(icon(glyph, 14))
       b.setAttribute('aria-label', label)
-      b.title = hint
+      b.title = label
       b.onclick = run
       return b
     }
@@ -194,13 +189,11 @@ export class BoardView {
     this.readout.setAttribute('role', 'status')
     this.readout.setAttribute('aria-label', LABELS.zoomLevel)
     tools.append(
-      button(LABELS.fitAll, LABELS.fitAll, `${LABELS.fitAll}（⇧1）`, () => this.fitAll()),
-      button(LABELS.zoomOut, '−', LABELS.zoomOut, () => this.zoomBy(1 / ZOOM_STEP)),
+      button(LABELS.zoomOut, MinusIcon as IconNode, () => this.zoomBy(1 / ZOOM_STEP)),
       this.readout,
-      button(LABELS.zoomIn, '+', LABELS.zoomIn, () => this.zoomBy(ZOOM_STEP)),
-      button(LABELS.resetZoom, '1:1', `${LABELS.resetZoom}（⇧0）`, () => this.resetZoom()),
+      button(LABELS.zoomIn, PlusIcon as IconNode, () => this.zoomBy(ZOOM_STEP)),
     )
-    this.el.append(this.world, this.empty, tools)
+    this.el.append(this.world, this.heads, this.empty, tools)
 
     this.el.addEventListener('wheel', (e) => this.onBoardWheel(e), { passive: false })
     this.el.addEventListener('pointerdown', (e) => this.onPointerDown(e))
@@ -232,6 +225,7 @@ export class BoardView {
       if (next.has(id)) continue
       this.unmount(id)
       card.el.remove()
+      card.head.remove()
       this.cards.delete(id)
       this.selection.delete(id)
       if (this.live === id) this.live = null
@@ -259,6 +253,7 @@ export class BoardView {
     this.world.insertBefore(fresh, this.guides)
     this.empty.hidden = this.frames.length > 0
     this.paintSelection()
+    this.paintHeads()
     if (!this.shown) return
     if (this.following) {
       this.camera = this.fitCamera()
@@ -451,20 +446,24 @@ export class BoardView {
   }
 
   private paintSelection(): void {
-    const lone = this.selection.size === 1 ? [...this.selection][0] : undefined
     for (const [id, card] of this.cards) {
       card.el.setAttribute('aria-selected', String(this.selection.has(id)))
-      const handles = card.el.querySelectorAll('.ez-board-handle')
-      if (id === lone && handles.length === 0) {
-        for (const handle of HANDLES) {
-          const node = el('div', 'ez-board-handle')
-          node.dataset.testid = TEST_IDS.handle
-          node.dataset.handle = handle
-          card.el.append(node)
-        }
-      } else if (id !== lone) {
-        handles.forEach((h) => h.remove())
-      }
+      card.head.classList.toggle('ez-selected', this.selection.has(id))
+    }
+  }
+
+  /** Each head sits on its frame's top-left corner in whole screen pixels, as
+   *  wide as the frame is on screen. A frame mid-drag takes its head along. */
+  private paintHeads(): void {
+    const camera = this.camera
+    if (!camera) return
+    const drag = this.gesture?.t === 'move' ? this.gesture : null
+    for (const card of this.cards.values()) {
+      const { id, rect } = card.frame
+      const dragged = drag?.ids.has(id)
+      const at = worldToScreen(camera, { x: rect.x + (dragged ? drag!.dx : 0), y: rect.y + (dragged ? drag!.dy : 0) })
+      card.head.style.transform = `translate(${Math.round(at.x)}px, ${Math.round(at.y)}px) translateY(-100%)`
+      card.head.style.maxWidth = `${Math.round(rect.width * camera.zoom)}px`
     }
   }
 
@@ -494,8 +493,9 @@ export class BoardView {
     node.dataset.frameId = frame.id
     node.setAttribute('role', 'group')
     const head = el('div', 'ez-board-frame-head')
+    head.dataset.frameId = frame.id
     const card: Card = { frame, el: node, head, iframe: null }
-    node.append(head)
+    this.heads.append(head)
     this.place(card)
     return card
   }
@@ -507,10 +507,7 @@ export class BoardView {
     card.el.style.transform = `translate(${rect.x}px, ${rect.y}px)`
     card.el.style.width = `${rect.width}px`
     card.el.style.height = `${rect.height}px`
-    card.head.replaceChildren(
-      el('span', 'ez-board-frame-title', title),
-      el('span', 'ez-board-frame-size', `${rect.width}×${rect.height}`),
-    )
+    card.head.replaceChildren(el('span', 'ez-board-frame-title', title))
     if (card.iframe) card.iframe.title = label
   }
 
@@ -539,7 +536,7 @@ export class BoardView {
       this.remount()
     })
     card.iframe = iframe
-    card.el.insertBefore(iframe, card.head.nextSibling)
+    card.el.append(iframe)
     this.mounted.add(id)
     this.loading.add(id)
     const place = { canvasId: this.canvas.id, frameId: id }
@@ -626,6 +623,7 @@ export class BoardView {
     const camera = this.camera
     if (!camera) return
     this.world.style.transform = worldTransform(camera)
+    this.paintHeads()
     if (camera.zoom !== this.paintedZoom) {
       this.paintedZoom = camera.zoom
       this.world.style.setProperty('--ez-zoom', String(camera.zoom))
@@ -652,7 +650,7 @@ export class BoardView {
   }
 
   /** The background, or anywhere with Space held, pans; a frame's head or body
-   *  selects and drags it; a handle resizes. */
+   *  selects and drags it. */
   private onPointerDown(e: PointerEvent): void {
     if (e.button !== 0 || !this.camera || this.gesture) return
     const target = e.target as HTMLElement
@@ -670,24 +668,8 @@ export class BoardView {
       this.el.classList.add('ez-panning')
       return
     }
-    const handle = target.closest<HTMLElement>('.ez-board-handle')
-    const cardEl = target.closest<HTMLElement>('.ez-board-frame')
+    const cardEl = target.closest<HTMLElement>('.ez-board-frame, .ez-board-frame-head')
     const id = cardEl?.dataset.frameId as FrameId | undefined
-    if (handle && id) {
-      const frame = this.frames.find((f) => f.id === id)!
-      start({
-        t: 'resize',
-        pointer: e.pointerId,
-        x: e.clientX,
-        y: e.clientY,
-        id,
-        handle: handle.dataset.handle as ResizeHandle,
-        rect: frame.rect,
-        current: frame.rect,
-      })
-      this.el.classList.add('ez-arranging')
-      return
-    }
     if (id && id !== this.live) {
       let toggleOnClick: FrameId | null = null
       if (e.shiftKey) {
@@ -716,24 +698,6 @@ export class BoardView {
       this.setCamera(panned(g.camera, e.clientX - g.x, e.clientY - g.y))
       return
     }
-    if (g.t === 'resize') {
-      const dx = (e.clientX - g.x) / zoom
-      const dy = (e.clientY - g.y) / zoom
-      const r = g.rect
-      const raw = {
-        x: g.handle.includes('w') ? r.x + dx : r.x,
-        y: g.handle.includes('n') ? r.y + dy : r.y,
-        width: g.handle.includes('e') ? r.width + dx : g.handle.includes('w') ? r.width - dx : r.width,
-        height: g.handle.includes('s') ? r.height + dy : g.handle.includes('n') ? r.height - dy : r.height,
-      }
-      const others = this.frames.filter((f) => f.id !== g.id).map((f) => f.rect)
-      const snapped = snapResize(raw, g.handle, others, zoom, MIN_FRAME_SIZE)
-      const rect = { x: Math.round(snapped.rect.x), y: Math.round(snapped.rect.y), width: Math.round(snapped.rect.width), height: Math.round(snapped.rect.height) }
-      this.place(this.cards.get(g.id)!, rect)
-      this.paintGuides(snapped.guides)
-      g.current = rect
-      return
-    }
     if (!g.started) {
       if (Math.hypot(e.clientX - g.x, e.clientY - g.y) < DRAG_PX) return
       g.started = true
@@ -750,6 +714,7 @@ export class BoardView {
     for (const f of moving) {
       this.cards.get(f.id)!.el.style.transform = `translate(${f.rect.x + g.dx}px, ${f.rect.y + g.dy}px)`
     }
+    this.paintHeads()
     this.paintGuides(snapped.guides)
   }
 
@@ -759,12 +724,6 @@ export class BoardView {
     this.gesture = null
     this.el.classList.remove('ez-panning', 'ez-arranging')
     this.paintGuides([])
-    if (g.t === 'resize') {
-      const card = this.cards.get(g.id)!
-      if (cancelled || sameRect(g.current, g.rect)) this.place(card)
-      else this.commit(planResize(card.frame, g.current))
-      return
-    }
     if (g.t !== 'move') return
     if (!g.started) {
       if (g.toggleOnClick) this.select(new Set([...this.selection].filter((id) => id !== g.toggleOnClick)))
@@ -780,7 +739,7 @@ export class BoardView {
   /** A double-click on a frame hands it the pointer, to scroll it or try its
    *  controls; Escape or a click on the background hands it back. */
   private onDoubleClick(e: MouseEvent): void {
-    const frame = (e.target as HTMLElement).closest<HTMLElement>('.ez-board-frame')
+    const frame = (e.target as HTMLElement).closest<HTMLElement>('.ez-board-frame, .ez-board-frame-head')
     const id = frame?.dataset.frameId as FrameId | undefined
     if (id && this.cards.get(id)?.iframe) this.setLive(id)
   }

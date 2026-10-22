@@ -25,6 +25,7 @@ import type { CanvasGuest, CanvasGuestPort } from '../frame-registry.js'
 import type { GuestMessage, Mode, RelayOp } from '../guest-messages.js'
 import type { OverlaySnapshot } from '../overlay-link.js'
 import { BoardView } from './board-view.js'
+import { confirmDialog } from './confirm-dialog.js'
 import { LABELS } from './names.js'
 import { TabStrip, tabsModel } from './tabs.js'
 
@@ -44,8 +45,6 @@ export interface ShellPorts {
   onTabShown: (tab: TabId | null) => void
   /** Escape, or a click on the empty board: stand down any pick or popup. */
   escape: () => void
-  /** The shell's confirm card, for a permanent delete. */
-  confirm: (offer: { title: string; body: string; go: string }) => Promise<boolean>
   /** Say something went wrong, where the user is looking. */
   notice: (text: string) => void
   annotateMode: () => Mode
@@ -171,7 +170,7 @@ export function installCanvas(ports: ShellPorts): CanvasUi {
     rename: (id, name) => void request({ do: 'rename', canvasId: id, name }),
     reopen: (id) => void request({ do: 'reopen', canvasId: id }),
     delete: async (id, name) => {
-      const sure = await ports.confirm({
+      const sure = await confirmDialog({
         title: LABELS.confirmTitle(name),
         body: LABELS.confirmBody,
         go: LABELS.confirmGo,

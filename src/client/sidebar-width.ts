@@ -20,3 +20,13 @@ export function maxSidebarWidth(viewportWidth: number): number {
 export function clampSidebarWidth(width: number, viewportWidth: number): number {
   return Math.round(Math.min(Math.max(width, SIDEBAR_MIN), maxSidebarWidth(viewportWidth)))
 }
+
+/** A drag that goes this far under the floor folds the sidebar away entirely,
+ *  and one that comes back past it opens at the floor - so a sidebar is either
+ *  wide enough to use or not there at all. */
+export const SIDEBAR_COLLAPSE_AT = SIDEBAR_MIN / 2
+
+/** What a drag to `width` lands on: `null` is folded away. */
+export function dragSidebarWidth(width: number, viewportWidth: number): number | null {
+  return width < SIDEBAR_COLLAPSE_AT ? null : clampSidebarWidth(width, viewportWidth)
+}

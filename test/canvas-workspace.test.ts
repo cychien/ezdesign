@@ -105,11 +105,6 @@ test('CV-tab-persist: the lifecycle leaves exactly the expected files', () => {
   unwrap(workspace.user.reopen(id))
   assert.equal(manifest().archivedAt, undefined)
 
-  const open = workspace.user.delete(id)
-  assert.equal(open.ok, false)
-  assert.equal(!open.ok && open.problem.code, 'CANVAS_OPEN')
-  assert.equal(own().length, 4, 'a refused delete removes nothing')
-
   unwrap(workspace.user.archive(id))
   unwrap(workspace.user.delete(id))
   assert.deepEqual(own(), [])
@@ -170,6 +165,22 @@ test('closing an empty untitled canvas deletes it; closing the active one moves 
   assert.equal(view.view.activeTab, b.id, 'the next open tab')
   unwrap(workspace.user.archive(b.id))
   assert.notEqual(view.view.activeTab, b.id)
+})
+
+test('deleting an open canvas removes its frames and moves the active tab off it', () => {
+  const { workspace, view, tree } = setup()
+  const a = unwrap(workspace.user.create('A'))
+  const b = unwrap(workspace.user.create('B'))
+  unwrap(workspace.agent.addFrame({ canvasId: a.id, title: 'x', html: DOC, size: {} }))
+  assert.ok(tree().some((f) => f.startsWith(`${a.id}/frames/`) && f.endsWith('.html')))
+  workspace.user.setView({ activeTab: a.id })
+  unwrap(workspace.user.delete(a.id))
+  assert.ok(!tree().some((f) => f.startsWith(a.id)))
+  assert.equal(view.view.activeTab, b.id)
+  unwrap(workspace.user.delete(b.id))
+  const left = workspace.read.inventory().canvases
+  assert.equal(left.length, 1, 'the strip is never empty: a fresh canvas opens')
+  assert.equal(view.view.activeTab, left[0]!.id)
 })
 
 test('the App tab leaving with no canvas open opens an empty one only while a shell watches', () => {

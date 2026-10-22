@@ -131,9 +131,10 @@ test('the shell routes run the lifecycle, and the empty start waits for a shell'
     })
   const made = (await (await api('/canvases', { method: 'POST', body: JSON.stringify({ name: '首頁' }) })).json()) as { id: string; name: string }
   assert.equal(made.name, '首頁')
-  assert.equal((await api(`/canvases/${made.id}`, { method: 'DELETE' })).status, 409)
-  assert.deepEqual(await (await api(`/canvases/${made.id}/archive`, { method: 'POST' })).json(), { result: 'archived' })
-  assert.deepEqual(await (await api(`/canvases/${made.id}`, { method: 'DELETE' })).json(), { ok: true })
+  assert.deepEqual(await (await api(`/canvases/${made.id}`, { method: 'DELETE' })).json(), { ok: true }, 'an open canvas deletes too')
+  const old = (await (await api('/canvases', { method: 'POST', body: JSON.stringify({ name: '舊' }) })).json()) as { id: string }
+  assert.deepEqual(await (await api(`/canvases/${old.id}/archive`, { method: 'POST' })).json(), { result: 'archived' })
+  assert.deepEqual(await (await api(`/canvases/${old.id}`, { method: 'DELETE' })).json(), { ok: true })
   assert.equal((await api('/view', { method: 'PUT', body: JSON.stringify({ activeTab: 'nope' }) })).status, 400)
 
   const status = await w.run(['status'], { cwd: dir })

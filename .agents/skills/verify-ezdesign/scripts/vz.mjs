@@ -194,10 +194,42 @@ function sessionLife(origin, state, epoch) {
 
 /** The fixture's canvases, as the daemon's workspace writes them. Every dataset
  *  starts from none, so a seed never inherits another's. */
-const FIXTURE_CANVASES = join(FIXTURE, '.ezdesign', 'canvases')
+const FIXTURE_STATE = join(FIXTURE, '.ezdesign')
+const FIXTURE_CANVASES = join(FIXTURE_STATE, 'canvases')
+/** `npm run dev` keeps its canvases in the same folder, so a seed marks the
+ *  folder as its own and vz never deletes one it did not mark. */
+const SEEDED_MARK = join(FIXTURE_STATE, '.vz-seeded')
+const DEV_REGISTRY = join(REPO, '.dev', 'daemon.json')
+
+/** Why the fixture's `.ezdesign` is not this stack's to replace, or null. */
+function fixtureStateTaken() {
+  let dev = null
+  try {
+    dev = JSON.parse(readFileSync(DEV_REGISTRY, 'utf8'))
+  } catch {}
+  if (dev && alive(dev.pid) && commandOf(dev.pid).includes('__daemon')) {
+    return `\`npm run dev\` is running in this checkout (daemon ${dev.pid}) and keeps its canvases in fixtures/playground/.ezdesign`
+  }
+  if (existsSync(FIXTURE_STATE) && !existsSync(SEEDED_MARK)) {
+    return 'fixtures/playground/.ezdesign holds canvases no seed wrote, most likely from `npm run dev`'
+  }
+  return null
+}
+
+function requireFixtureState() {
+  const taken = fixtureStateTaken()
+  if (taken) die(`${taken}. vz never touches them: stop it, or run the verify stack from a git worktree, which has its own fixture.`)
+}
+
+function removeSeededState() {
+  if (existsSync(SEEDED_MARK)) rmSync(FIXTURE_STATE, { recursive: true, force: true })
+}
 
 function writeCanvases(canvases, epoch) {
-  rmSync(join(FIXTURE, '.ezdesign'), { recursive: true, force: true })
+  requireFixtureState()
+  removeSeededState()
+  mkdirSync(FIXTURE_STATE, { recursive: true })
+  writeFileSync(SEEDED_MARK, '')
   canvases.forEach((c, ci) => {
     const id = hexId(`canvas|${ci}|${c.name}`)
     const dir = join(FIXTURE_CANVASES, id)
@@ -408,6 +440,7 @@ async function cmdUp(args) {
     die(`a stack from this checkout is already up (vite ${existing.vitePid}, daemon ${existing.daemonPid}) - run \`vz.mjs down\` first`)
   }
   const dataset = args.includes('--dataset') ? args[args.indexOf('--dataset') + 1] : 'baseline'
+  requireFixtureState()
   rmSync(RUN_DIR, { recursive: true, force: true })
   mkdirSync(LOG_DIR, { recursive: true })
 
@@ -487,6 +520,7 @@ async function cmdSeed(args) {
   if (!name) die(`usage: vz.mjs seed <${datasets().join('|')}>`)
   const state = readState()
   if (!state || !alive(state.vitePid)) die('no stack up - run `vz.mjs up` first')
+  requireFixtureState()
   saveDaemonLog(state)
   await stopDaemon(state)
   loadDataset(name, state)
@@ -600,7 +634,7 @@ async function cmdDown() {
     if (existsSync(OPENED_LOG)) cpSync(OPENED_LOG, join(saved, 'opened.log'))
   }
   rmSync(RUN_DIR, { recursive: true, force: true })
-  rmSync(join(FIXTURE, '.ezdesign'), { recursive: true, force: true })
+  removeSeededState()
   say(leftovers.length ? `WARNING: still alive: ${leftovers.join(', ')}` : 'stopped vite and daemon; run dir removed')
   say(`logs kept in ${saved}`)
   if (leftovers.length) process.exit(1)

@@ -1,4 +1,4 @@
-/** Alignment guides and snapping while a frame is dragged or resized. Pure, so
+/** Alignment guides and snapping while frames are dragged. Pure, so
  *  the threshold and the "nearest wins" rule are tested once.
  *
  *  Candidates are the left, centre and right x of every other live frame and
@@ -23,8 +23,6 @@ export interface SnapResult {
   rect: Rect
   guides: Guide[]
 }
-
-export type ResizeHandle = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw'
 
 const xs = (r: Rect) => [r.x, r.x + r.width / 2, r.x + r.width]
 const ys = (r: Rect) => [r.y, r.y + r.height / 2, r.y + r.height]
@@ -69,44 +67,4 @@ export function snapMove(moving: Rect, others: readonly Rect[], zoom: number): S
     rect,
     guides: [...(mx ? [guide('x', mx, rect)] : []), ...(my ? [guide('y', my, rect)] : [])],
   }
-}
-
-/** Resizing snaps only the edges being dragged; the opposite edge is fixed. */
-export function snapResize(
-  resizing: Rect,
-  handle: ResizeHandle,
-  others: readonly Rect[],
-  zoom: number,
-  min: { width: number; height: number },
-): SnapResult {
-  const threshold = SNAP_PX / zoom
-  let { x, y, width, height } = resizing
-  const right = x + width
-  const bottom = y + height
-  const guides: Guide[] = []
-  const edges = (r: Rect) => [r.x, r.x + r.width]
-  const rows = (r: Rect) => [r.y, r.y + r.height]
-  if (handle.includes('e')) {
-    const m = nearest([right], others, edges, threshold)
-    width = Math.max(min.width, width + (m?.delta ?? 0))
-    if (m) guides.push(guide('x', m, { x, y, width, height }))
-  } else if (handle.includes('w')) {
-    const m = nearest([x], others, edges, threshold)
-    const left = Math.min(right - min.width, x + (m?.delta ?? 0))
-    width = right - left
-    x = left
-    if (m) guides.push(guide('x', m, { x, y, width, height }))
-  }
-  if (handle.includes('s')) {
-    const m = nearest([bottom], others, rows, threshold)
-    height = Math.max(min.height, height + (m?.delta ?? 0))
-    if (m) guides.push(guide('y', m, { x, y, width, height }))
-  } else if (handle.includes('n')) {
-    const m = nearest([y], others, rows, threshold)
-    const top = Math.min(bottom - min.height, y + (m?.delta ?? 0))
-    height = bottom - top
-    y = top
-    if (m) guides.push(guide('y', m, { x, y, width, height }))
-  }
-  return { rect: { x, y, width, height }, guides }
 }
