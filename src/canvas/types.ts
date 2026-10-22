@@ -151,8 +151,6 @@ export interface ViewStore {
 export type CanvasProblem =
   | { code: 'CANVAS_NOT_FOUND'; canvasId: string; known: { id: CanvasId; name: string }[] }
   | { code: 'CANVAS_ARCHIVED'; canvasId: CanvasId; name: string }
-  /** Permanent delete is only for a canvas already closed. */
-  | { code: 'CANVAS_OPEN'; canvasId: CanvasId; name: string }
   | { code: 'FRAME_NOT_FOUND'; canvasId: CanvasId; frameId: string }
   /** `update_frame` named an `expectedHash` the file no longer has: someone (an
    *  editor, the agent's own file tools) changed it since it was read. */

@@ -57,7 +57,7 @@
   "dependencies": {
     "@agentclientprotocol/sdk": "^1.4.0",
     "@babel/parser": "^7.26.0",
-    "@hugeicons/core-free-icons": "^4.2.3",
+    "@hugeicons/core-free-icons": "^4.3.5",
     "@modelcontextprotocol/sdk": "^1.30.0",
     "express": "^5.1.0",
     "http-proxy-middleware": "^3.0.3",

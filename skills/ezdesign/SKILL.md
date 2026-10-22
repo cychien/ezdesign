@@ -83,8 +83,9 @@ An ACP review session also gives you the `ezdesign-canvas` tools. Each turn's pr
 the user sent the batch from and which canvases exist.
 
 - When the user wants to explore directions, compare options or see a design before it is built,
-  put each one in a frame on a canvas: `create_canvas`, then one `add_frame` per design, as soon as
-  each is ready. Leave `position` out; frames are placed for you.
+  put each one in a frame on a canvas: one `add_frame` per design, as soon as each is ready, on the
+  canvas the turn's prompt names. Call `create_canvas` only when no canvas is open or the user asks
+  for a new one. Leave `position` out; frames are placed for you.
 - A frame is a complete HTML document with its own `<head>` and styles, at a real viewport width
   (390 phone, 768 tablet, 1280 desktop). Nothing is shared between frames.
 - An item whose `anchor.frame` is set was made inside a frame: `anchor.source` is a line of that

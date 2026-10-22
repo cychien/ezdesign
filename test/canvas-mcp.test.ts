@@ -181,3 +181,24 @@ test('the brief says where the user was and what exists, and nothing without too
   assert.ok(app.includes('The user was on the App tab at /pricing when they sent this.'))
   assert.deepEqual(canvasBrief({ inventory, view: undefined, app: null, tools: false }), [])
 })
+
+test('the brief names one canvas for new frames: the one the user is on, else the newest open one', () => {
+  const canvas = (id: string, name: string, createdAt: number, archived = false) => ({
+    id: id as CanvasId, name, archived, frames: 1, createdAt,
+  })
+  const inventory = {
+    activeTab: 'app' as const,
+    canvases: [canvas('aaaaaaaaaaaa', 'A', 1), canvas('bbbbbbbbbbbb', 'B', 2), canvas('cccccccccccc', 'C', 3, true)],
+  }
+  const brief = (view: Parameters<typeof canvasBrief>[0]['view'], canvases = inventory.canvases) =>
+    canvasBrief({ inventory: { ...inventory, canvases }, view, app: 'http://localhost:5173', tools: true })
+  const onA = 'Add new frames to canvas "A" (aaaaaaaaaaaa). Call create_canvas only when the user asks for a new canvas or this one is full.'
+  const onB = onA.replaceAll('"A" (aaaaaaaaaaaa)', '"B" (bbbbbbbbbbbb)')
+  assert.ok(brief({ tab: 'canvas', canvasId: 'aaaaaaaaaaaa' }).includes(onA))
+  assert.ok(brief({ tab: 'app', page: '/' }).includes(onB))
+  assert.ok(brief({ tab: 'canvas', canvasId: 'cccccccccccc' }).includes(onB))
+  assert.ok(brief(undefined).includes(onB))
+  const none = 'No canvas is open: create one with create_canvas for new frames.'
+  assert.ok(brief({ tab: 'app', page: '/' }, [canvas('cccccccccccc', 'C', 3, true)]).includes(none))
+  assert.ok(brief(undefined, []).includes(none))
+})

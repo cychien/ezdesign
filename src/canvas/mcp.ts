@@ -122,7 +122,7 @@ export const CANVAS_TOOLS = {
   }),
   create_canvas: tool({
     description:
-      'Create an empty canvas and show it to the user as the active tab. Use one canvas per exploration; add frames to it with add_frame.',
+      'Create an empty canvas and show it to the user as the active tab. Call it only when no canvas is open, the user asks for a new canvas, or the open one is full; otherwise add frames to an open canvas with add_frame.',
     input: {
       name: z
         .string()
@@ -158,7 +158,7 @@ export const CANVAS_TOOLS = {
       'Add one frame to an open canvas: a complete, self-contained HTML document (<!doctype html>, its own <head> and styles) rendered in its own iframe at a real viewport width.',
       'Scripts and CDN assets are allowed. No CSS is shared between frames.',
       'width is the viewport width the page is designed for (390 phone, 768 tablet, 1280 desktop; default 1280); height defaults to a common screen for that width.',
-      'Leave position out unless the user asked for a particular arrangement: the frame is then placed where it overlaps nothing. After creation a frame\'s position and size are the user\'s.',
+      'Leave position out unless the user asked for a particular arrangement: the frame is then placed where it overlaps nothing. After creation a frame\'s position is the user\'s, and its size never changes: pick width and height here.',
       'Call once per frame, as soon as it is ready: the user watches frames appear.',
     ].join('\n'),
     input: {
@@ -194,7 +194,7 @@ export const CANVAS_TOOLS = {
       "Replace a frame's HTML document and/or retitle it.",
       'Pass expectedHash - the hash read_canvas, add_frame or your last update_frame returned - so an edit you have not seen is never overwritten: if the file changed since, nothing is written and the error names its current hash.',
       "For a small change you may instead edit the frame's file directly; the user's canvas updates either way.",
-      "A frame's position and size belong to the user and cannot be changed.",
+      "A frame's position belongs to the user and its size is fixed when it is added; neither can be changed here.",
     ].join('\n'),
     input: {
       canvasId,
@@ -314,7 +314,7 @@ export class CanvasMcp {
         server.registerTool(
           name,
           // Strict, so `x` or `width` on an existing frame is refused rather than
-          // silently ignored: geometry after creation is the user's.
+          // silently ignored: a frame's position is the user's, its size fixed.
           { description: spec.description, inputSchema: z.object(spec.input).strict() },
           (args: unknown) => runCanvasTool(this.port, name, args as never),
         )
@@ -341,8 +341,6 @@ export function canvasProblemMessage(problem: CanvasProblem): string {
       }. Call list_canvases, or create_canvas to start one.`
     case 'CANVAS_ARCHIVED':
       return `CANVAS_ARCHIVED: canvas ${problem.canvasId} (${problem.name}) is archived. Call reopen_canvas first, then retry.`
-    case 'CANVAS_OPEN':
-      return `CANVAS_OPEN: canvas ${problem.canvasId} (${problem.name}) is open; only an archived canvas can be deleted.`
     case 'FRAME_NOT_FOUND':
       return `FRAME_NOT_FOUND: canvas ${problem.canvasId} has no frame ${JSON.stringify(problem.frameId)}. Call read_canvas for its frames.`
     case 'FRAME_CONFLICT':

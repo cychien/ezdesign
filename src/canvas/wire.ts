@@ -10,7 +10,7 @@
  *  every open canvas so a tab opens with no fetch. Frame HTML never travels
  *  here: each iframe loads its own document from the frame host. */
 
-import type { Camera, CanvasId, CanvasSummary, FrameId, Rect, TabId } from './types.js'
+import type { Camera, CanvasId, CanvasSummary, FrameId, Point, Rect, TabId } from './types.js'
 
 /** The snapshot's canvas part: the tab strip is drawn from it. */
 export interface CanvasSnapshotWire {
@@ -63,8 +63,9 @@ export type CanvasEventWire =
  *  knows, so applying it twice lands the same way, and an op naming a frame that
  *  is gone (the agent removed it meanwhile) is skipped rather than refused. */
 export type LayoutOp =
-  /** Move and/or resize; a group move is one op with several frames. */
-  | { t: 'place'; frames: { id: FrameId; rect: Rect }[] }
+  /** A group move is one op with several frames. Nothing on the board resizes:
+   *  a frame keeps the size it was added at. */
+  | { t: 'move'; frames: ({ id: FrameId } & Point)[] }
   /** Soft: the frame leaves the board, its file stays, so undo needs no HTML. */
   | { t: 'remove'; ids: FrameId[] }
   /** Undo of a remove. */
@@ -87,8 +88,9 @@ export interface LayoutStepWire {
 export interface DuplicateWire {
   from: FrameId
   id: FrameId
-  /** Where the user dropped it; absent means beside the source. */
-  rect?: Rect
+  /** Where the copy goes; absent means beside the source. It keeps the
+   *  source's size. */
+  at?: Point
 }
 
 /** `PUT /view`. Persisted in the session's `view.json`; a camera is never

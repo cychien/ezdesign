@@ -47,7 +47,8 @@ ready    run `vz.mjs doctor` next
 - **No desktop browser window.** The CLI calls the `open` package, which spawns `open`/`xdg-open` from `PATH`; `vz.mjs` puts shims first on `PATH` that append to `<run dir>/opened.log` instead. The proof that the CLI tried to open the shell is that log line (`open --new -a google chrome --args --new-window http://127.0.0.1:.../__ezdesign/shell?path=%2F`).
 - `EZDESIGN_NO_UPDATE_CHECK=1` is set, so the daemon never asks the npm registry.
 - **One stack per checkout.** `up` refuses while one is recorded alive; run `down` first.
-- **Why not `npm run dev`.** It is the human dev loop, not a verification harness: it always attaches an ACP `claude` agent (a real model that edits `fixtures/playground` and races `poll` for every batch), and it opens a real browser window. It is per checkout (`.dev/` data dir, a control range in 4100-4199, a fixture port from 5173), so it does not collide with this stack. Do not drive a `npm run dev` stack you did not start.
+- **Not beside `npm run dev` in the same checkout.** Both keep canvases in `fixtures/playground/.ezdesign`, and `down` deletes that folder. A seed marks it with `.vz-seeded`, `down` deletes only a marked folder, and `up`/`seed` refuse while this checkout's dev daemon runs or the folder holds canvases no seed wrote; `npm run dev` refuses while the mark is there. Verify from a git worktree instead.
+- **Why not `npm run dev`.** It is the human dev loop, not a verification harness: it always attaches an ACP `claude` agent (a real model that edits `fixtures/playground` and races `poll` for every batch), and it opens a real browser window. It is per checkout (`.dev/` data dir, a control range in 4100-4199, a fixture port from 5173), so its ports and data do not collide with this stack; the fixture's canvases do (above). Do not drive a `npm run dev` stack you did not start.
 
 ## Seed
 

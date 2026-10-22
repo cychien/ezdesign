@@ -178,11 +178,11 @@ test('CV-p6-agent-geometry: the agent cannot move a frame the user placed', asyn
     return s.canvas?.canvases.find((c) => c.frames === 3)
   }, 'the canvas', 15_000)
   await waitFor(async () => ((await w.state(port)) as unknown as State).acp?.state === 'idle', 'the turn to end')
-  const wire = (await (await fetch(`http://127.0.0.1:${port}/__ezdesign/api/canvases/${canvas.id}`)).json()) as { frames: { id: string; rect: { width: number; height: number } }[] }
+  const wire = (await (await fetch(`http://127.0.0.1:${port}/__ezdesign/api/canvases/${canvas.id}`)).json()) as { frames: { id: string }[] }
   const first = wire.frames[0]!
   const moved = await api(port, `/canvases/${canvas.id}/ops`, {
     opId: 'user-move',
-    ops: [{ t: 'place', frames: [{ id: first.id, rect: { x: 900, y: 0, width: first.rect.width, height: first.rect.height } }] }],
+    ops: [{ t: 'move', frames: [{ id: first.id, x: 900, y: 0 }] }],
   })
   assert.equal(moved.status, 200)
 

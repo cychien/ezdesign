@@ -28,7 +28,7 @@ import {
   type CanvasProblem,
   type FrameId,
   type Outcome,
-  type Rect,
+  type Point,
   ZOOM_MAX,
   ZOOM_MIN,
   asCanvasId,
@@ -50,8 +50,6 @@ export function problemText(problem: CanvasProblem): string {
       return `no canvas ${problem.canvasId}`
     case 'CANVAS_ARCHIVED':
       return `canvas ${problem.name} is closed`
-    case 'CANVAS_OPEN':
-      return `canvas ${problem.name} is open; close it before deleting it`
     case 'FRAME_NOT_FOUND':
       return `no frame ${problem.frameId} on canvas ${problem.canvasId}`
     case 'FRAME_CONFLICT':
@@ -77,7 +75,6 @@ export function statusOf(problem: CanvasProblem): 400 | 404 | 409 | 413 {
     case 'FRAME_NOT_FOUND':
       return 404
     case 'CANVAS_ARCHIVED':
-    case 'CANVAS_OPEN':
     case 'FRAME_CONFLICT':
       return 409
     case 'HTML_TOO_LARGE':
@@ -121,10 +118,10 @@ export function parseView(raw: unknown): ViewWire | null {
   return view
 }
 
-function rect(raw: unknown): Rect | null {
+function point(raw: unknown): Point | null {
   if (typeof raw !== 'object' || raw === null) return null
-  const { x, y, width, height } = raw as Record<string, unknown>
-  return finite(x) && finite(y) && finite(width) && finite(height) ? { x, y, width, height } : null
+  const { x, y } = raw as Record<string, unknown>
+  return finite(x) && finite(y) ? { x, y } : null
 }
 
 function frameIds(raw: unknown): FrameId[] | null {
@@ -134,21 +131,21 @@ function frameIds(raw: unknown): FrameId[] | null {
 }
 
 /** A step off the wire, or null for a malformed one (400). Ids through
- *  `asFrameId`, rects checked finite here and normalized by the workspace. */
+ *  `asFrameId`, positions checked finite here and normalized by the workspace. */
 export function parseLayoutStep(raw: unknown): LayoutStepWire | null {
   if (typeof raw !== 'object' || raw === null) return null
   const { opId, ops } = raw as Record<string, unknown>
   if (typeof opId !== 'string' || !/^[\w-]{1,64}$/.test(opId) || !Array.isArray(ops) || ops.length > 512) return null
   const parsed: LayoutOp[] = []
   for (const op of ops as Record<string, unknown>[]) {
-    if (op?.t === 'place' && Array.isArray(op.frames)) {
+    if (op?.t === 'move' && Array.isArray(op.frames)) {
       const frames = (op.frames as Record<string, unknown>[]).map((f) => {
         const id = asFrameId(f?.id)
-        const r = rect(f?.rect)
-        return id && r ? { id, rect: r } : null
+        const at = point(f)
+        return id && at ? { id, ...at } : null
       })
       if (frames.some((f) => f === null)) return null
-      parsed.push({ t: 'place', frames: frames as { id: FrameId; rect: Rect }[] })
+      parsed.push({ t: 'move', frames: frames as ({ id: FrameId } & Point)[] })
     } else if (op?.t === 'remove' || op?.t === 'restore') {
       const ids = frameIds(op.ids)
       if (!ids) return null
@@ -162,12 +159,12 @@ export function parseLayoutStep(raw: unknown): LayoutStepWire | null {
 
 export function parseDuplicate(raw: unknown): DuplicateWire | null {
   if (typeof raw !== 'object' || raw === null) return null
-  const { from, id, rect: at } = raw as Record<string, unknown>
+  const { from, id, at: rawAt } = raw as Record<string, unknown>
   const source = asFrameId(from)
   const copy = asFrameId(id)
-  const r = at === undefined ? undefined : rect(at)
-  if (!source || !copy || r === null) return null
-  return { from: source, id: copy, ...(r ? { rect: r } : {}) }
+  const at = rawAt === undefined ? undefined : point(rawAt)
+  if (!source || !copy || at === null) return null
+  return { from: source, id: copy, ...(at ? { at } : {}) }
 }
 
 export function canvasApiRouter(host: CanvasRouteHost): Router {

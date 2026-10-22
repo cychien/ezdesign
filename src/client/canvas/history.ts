@@ -3,7 +3,7 @@
  *  Pure, like `pick.ts` and `nav.ts`, so undo across an agent's concurrent
  *  change is testable without a DOM.
  *
- *  - A gesture (drag, resize, duplicate, delete, a nudge run) is one `EditStep`.
+ *  - A gesture (drag, duplicate, delete, a nudge run) is one `EditStep`.
  *    Its undo and redo are layout ops known when the step is made: removes are
  *    soft on the daemon, so undoing a delete is a `restore` that needs no HTML,
  *    and a duplicate's copy has a client-minted id, so undoing it is a `remove`
@@ -16,7 +16,7 @@
  *    daemon, so the history never needs rewriting. Camera moves are not edits. */
 
 import { placeBeside } from '../../canvas/place.js'
-import type { FrameId, Rect } from '../../canvas/types.js'
+import type { FrameId, Point } from '../../canvas/types.js'
 import type { CanvasWire, DuplicateWire, FrameWire, LayoutOp } from '../../canvas/wire.js'
 
 /** What one request asks the daemon for. */
@@ -38,9 +38,9 @@ export const HISTORY_LIMIT = 100
  *  is one undo. */
 export const NUDGE_FOLD_MS = 600
 
-const place = (frames: { id: FrameId; rect: Rect }[]): LayoutOp => ({ t: 'place', frames })
+const move = (frames: ({ id: FrameId } & Point)[]): LayoutOp => ({ t: 'move', frames })
 
-/** Group move: one `place` for every selected frame. */
+/** Group move: one `move` for every selected frame. */
 export function planMove(
   frames: readonly FrameWire[],
   ids: ReadonlySet<FrameId>,
@@ -49,24 +49,14 @@ export function planMove(
   opts: { nudge?: boolean } = {},
 ): EditStep {
   const moving = frames.filter((f) => ids.has(f.id))
-  const to = place(moving.map((f) => ({ id: f.id, rect: { ...f.rect, x: f.rect.x + dx, y: f.rect.y + dy } })))
-  const from = place(moving.map((f) => ({ id: f.id, rect: f.rect })))
+  const to = move(moving.map((f) => ({ id: f.id, x: f.rect.x + dx, y: f.rect.y + dy })))
+  const from = move(moving.map((f) => ({ id: f.id, x: f.rect.x, y: f.rect.y })))
   return {
     label: moving.length > 1 ? `移動 ${moving.length} 個 frame` : '移動 frame',
     apply: [{ t: 'ops', ops: [to] }],
     undo: [from],
     redo: [to],
     ...(opts.nudge ? { nudge: true as const } : {}),
-  }
-}
-
-export function planResize(frame: FrameWire, rect: Rect): EditStep {
-  const to = place([{ id: frame.id, rect }])
-  return {
-    label: '調整 frame 大小',
-    apply: [{ t: 'ops', ops: [to] }],
-    undo: [place([{ id: frame.id, rect: frame.rect }])],
-    redo: [to],
   }
 }
 
@@ -82,11 +72,10 @@ export function planDuplicate(
   const copies: FrameId[] = []
   for (const source of frames.filter((f) => ids.has(f.id))) {
     const at = placeBeside(source.rect, rects)
-    const rect = { ...at, width: source.rect.width, height: source.rect.height }
-    rects.push(rect)
+    rects.push({ ...at, width: source.rect.width, height: source.rect.height })
     const id = mint()
     copies.push(id)
-    apply.push({ t: 'duplicate', input: { from: source.id, id, rect } })
+    apply.push({ t: 'duplicate', input: { from: source.id, id, at } })
   }
   return {
     label: copies.length > 1 ? `複製 ${copies.length} 個 frame` : '複製 frame',
@@ -118,13 +107,16 @@ export function withPending(canvas: CanvasWire, pending: readonly BoardEdit[]): 
     if (edit.t === 'duplicate') {
       const source = frames.find((f) => f.id === edit.input.from)
       if (!source || frames.some((f) => f.id === edit.input.id)) continue
-      frames.push({ ...source, id: edit.input.id, rect: edit.input.rect ?? source.rect })
+      frames.push({ ...source, id: edit.input.id, rect: { ...source.rect, ...edit.input.at } })
       continue
     }
     for (const op of edit.ops) {
-      if (op.t === 'place') {
-        const at = new Map(op.frames.map((f) => [f.id, f.rect]))
-        frames = frames.map((f) => (at.has(f.id) ? { ...f, rect: at.get(f.id)! } : f))
+      if (op.t === 'move') {
+        const at = new Map(op.frames.map((f) => [f.id, f]))
+        frames = frames.map((f) => {
+          const to = at.get(f.id)
+          return to ? { ...f, rect: { ...f.rect, x: to.x, y: to.y } } : f
+        })
       } else if (op.t === 'remove') {
         const gone = new Set(op.ids)
         frames = frames.filter((f) => !gone.has(f.id))

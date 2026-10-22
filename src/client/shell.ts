@@ -3156,7 +3156,6 @@ function canvasPorts(): Parameters<typeof installCanvas>[0] {
       paintPage()
     },
     escape: () => void abortPick('escape'),
-    confirm: (offer) => askConfirm({ key: 'canvas-delete', ...offer, skippable: false }),
     notice: (text) => stripNotice(text),
     annotateMode: () => annotateMode,
   }

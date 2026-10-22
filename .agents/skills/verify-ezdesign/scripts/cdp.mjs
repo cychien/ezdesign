@@ -1,6 +1,6 @@
 // A headless Chrome driven over raw CDP, for what chrome-devtools-axi cannot do:
 // hold a modifier on a click, reach into a cross-origin canvas frame, or drag a
-// pointer through intermediate points (resize handles have no ref).
+// pointer through intermediate points.
 import { spawn } from 'node:child_process'
 import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'

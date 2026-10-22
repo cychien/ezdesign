@@ -47,6 +47,8 @@ export function canvasBrief(input: CanvasBriefInput): string[] {
       ? `The user was on canvas "${canvas.name}" (${canvas.id}) when they sent this.`
       : `The user was on a canvas that has since been deleted (${view.canvasId}) when they sent this.`
   })()
+  const view = input.view
+  const target = (view?.tab === 'canvas' ? open.find((c) => c.id === view.canvasId) : undefined) ?? open.at(-1)
   return [
     '',
     `The review shell has these tabs: ${tabs.join(', ') || 'none'}.` +
@@ -54,8 +56,11 @@ export function canvasBrief(input: CanvasBriefInput): string[] {
       (more > 0 ? ` ${more} more: call list_canvases.` : ''),
     ...(where ? [where] : []),
     `Items with anchor.frame were made inside a canvas frame; anchor.source is then a line of that frame's file under ${CANVASES_DIR}/.`,
-    "A frame's HTML is yours: change it with update_frame or by editing that file. Its position and size are the user's. Never edit canvas.json or layout.json.",
+    "A frame's HTML is yours: change it with update_frame or by editing that file. Its position is the user's, and its size is fixed when it is added. Never edit canvas.json or layout.json.",
     `To show the user designs, mockups or alternatives side by side, put each one in a frame on a canvas. Canvas tools (${CANVAS_SERVER_NAME}): ${CANVAS_TOOL_NAMES.join(', ')}.`,
+    target
+      ? `Add new frames to canvas "${target.name}" (${target.id}). Call create_canvas only when the user asks for a new canvas or this one is full.`
+      : 'No canvas is open: create one with create_canvas for new frames.',
     '',
   ]
 }

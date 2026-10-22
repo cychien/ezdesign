@@ -275,8 +275,9 @@ out. No CSS is shared between frames: exploration directions diverge, and that i
 
 **Tabs.** The strip above the stage has an **App** tab while a dev server is attached, then one tab
 per open canvas. `+` makes a new one, a double-click on a tab renames it, and closing a tab
-archives the canvas: the tab goes, the files stay. **所有 canvas** lists every canvas, open and
-archived, and reopens or permanently deletes one (after asking). A session has one active tab:
+archives the canvas: the tab goes, the files stay. **Canvas** lists every canvas, open and
+archived, and reopens one; hover a row for **刪除**, which removes the canvas and all its frames
+(after asking). A session has one active tab:
 two shell windows follow each other, and every batch tells the agent which tab you sent it from.
 
 Run `ezdesign` with no url in a project without a dev server and the shell opens on that
@@ -284,12 +285,13 @@ project's canvases - one empty `未命名 canvas` the first time. Run `ezdesign 
 App tab joins the same shell; the conversation carries on.
 
 **The board.** Drag the background or hold Space to pan, scroll to pan, pinch or Cmd/Ctrl+scroll to
-zoom around the pointer, `⇧1` (全部顯示) to fit everything, `⇧0` to go back to 100%. Click a frame to
-select it, Shift+click to add, `⌘A` for all; drag to move, with guides that snap to other frames'
-edges and centres; drag a handle to resize; `⌘D` duplicates, `⌫` deletes, arrows nudge (`⇧` for
-10). Every step undoes and redoes (`⌘Z`, `⌘⇧Z`). Double-click a frame to scroll it or click
-through its controls; Escape hands the pointer back. Positions, the open tabs, the active tab and
-each canvas's camera survive a reload and a daemon restart.
+zoom around the pointer, `-`/`+` in the corner to step, `⇧1` to fit everything, `⇧0` to go back to
+100%. Click a frame to select it, Shift+click to add, `⌘A` for all; drag to move, with guides that
+snap to other frames' edges and centres; `⌘D` duplicates, `⌫` deletes, arrows nudge (`⇧` for 10). A
+frame keeps the size it was added at: it is a viewport, so it is never resized. Every step undoes
+and redoes (`⌘Z`, `⌘⇧Z`). Double-click a frame to scroll it or click through its controls; Escape
+hands the pointer back. Positions, the open tabs, the active tab and each canvas's camera survive a
+reload and a daemon restart.
 
 **Annotating.** `元素` and `範圍` work inside frames as they do on the app, and an annotation in a
 frame reaches the agent as a line of that frame's file -
@@ -299,10 +301,12 @@ frame you mean, and the comment comes back with the ref in it - or the reverse.
 
 **The agent.** An ACP agent gets the `ezdesign-canvas` tools - `list_canvases`, `create_canvas`,
 `read_canvas`, `reopen_canvas`, `add_frame`, `update_frame`, `remove_frame` - from its first turn,
-granted without asking. A canvas it creates becomes the active tab and its frames appear as each
-call returns. A frame's HTML is the agent's: it changes it through the tools or by editing the
-file, and the open shell reloads that frame either way. Where a frame sits and how big it is are
-yours; the tools refuse geometry on a frame that exists. Poll mode has no canvas tools.
+granted without asking. New frames go on the canvas you sent from, or else the newest open one; the
+agent starts a new canvas only when none is open or you ask for one. A canvas it creates becomes the
+active tab and its frames appear as each call returns. A frame's HTML is the agent's: it changes it
+through the tools or by editing the file, and the open shell reloads that frame either way. The agent
+picks a frame's size when it adds it; after that, where the frame sits is yours, and the tools
+refuse geometry on a frame that exists. Poll mode has no canvas tools.
 
 **On disk.** Canvases live in the project, in `.ezdesign/canvases/<canvas>/`: `canvas.json` (name,
 frames), `layout.json` (where each frame is) and `frames/<frame>.html`. ezdesign writes the two

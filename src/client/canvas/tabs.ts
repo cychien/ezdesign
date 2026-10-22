@@ -1,12 +1,16 @@
-/** The tab strip and the 所有 canvas menu: a pure model from the snapshot, and
+/** The tab strip and the Canvas menu: a pure model from the snapshot, and
  *  the painter that draws it with the names in `names.ts`.
  *
  *  The tabs are derived, never stored: the App tab exists while an origin is
  *  attached, a canvas tab while its canvas is not archived. Only the active tab
  *  is state, and the daemon holds it. */
 
-import type { CanvasId, CanvasSummary, TabId } from '../../canvas/types.js'
+import CanvasIcon from '@hugeicons/core-free-icons/CanvasIcon'
+import PlusIcon from '@hugeicons/core-free-icons/PlusIcon'
+import WebDesign01Icon from '@hugeicons/core-free-icons/WebDesign01Icon'
+import { type CanvasId, type CanvasSummary, MAX_CANVAS_NAME, type TabId } from '../../canvas/types.js'
 import type { CanvasSnapshotWire } from '../../canvas/wire.js'
+import { type IconNode, icon } from '../icon.js'
 import { LABELS, TEST_IDS } from './names.js'
 
 export interface Tab {
@@ -54,6 +58,8 @@ export interface TabStripHandlers {
   delete(canvasId: CanvasId, name: string): void
 }
 
+const RENAME_SAVE_MS = 400
+
 type Make = <K extends keyof HTMLElementTagNameMap>(
   tag: K,
   className?: string,
@@ -92,11 +98,14 @@ export class TabStrip {
     create.dataset.testid = TEST_IDS.newCanvas
     create.setAttribute('aria-label', LABELS.newCanvas)
     create.title = LABELS.newCanvas
-    create.textContent = '+'
+    create.append(icon(PlusIcon as IconNode, 14))
     create.onclick = () => handlers.create()
 
     this.menuWrap = h('div', 'ez-canvas-menu-wrap')
-    this.menuButton = h('button', 'ez-canvas-menu', LABELS.canvasMenu)
+    this.menuButton = h('button', 'ez-canvas-menu')
+    this.menuButton.append(icon(CanvasIcon as IconNode, 16))
+    this.menuButton.setAttribute('aria-label', LABELS.canvasMenu)
+    this.menuButton.title = LABELS.canvasMenu
     this.menuButton.dataset.testid = TEST_IDS.canvasMenu
     this.menuButton.setAttribute('aria-haspopup', 'menu')
     this.menuButton.setAttribute('aria-expanded', 'false')
@@ -146,7 +155,10 @@ export class TabStrip {
     el.setAttribute('aria-label', tab.label)
     el.tabIndex = active ? 0 : -1
     const name = h('span', 'ez-tab-name', tab.label)
-    el.append(name)
+    const label = h('span', 'ez-tab-label')
+    if (tab.id === 'app') label.append(icon(WebDesign01Icon as IconNode, 15))
+    label.append(name)
+    el.append(label)
     el.onclick = () => this.handlers.select(tab.id)
     if (tab.id !== 'app') {
       const id = tab.id
@@ -172,33 +184,49 @@ export class TabStrip {
     return el
   }
 
-  private beginRename(tabEl: HTMLElement, id: CanvasId, current: string): void {
+  /** In place on the tab's own name, saved as it is typed; Escape restores the
+   *  name it started with. */
+  private beginRename(tabEl: HTMLElement, id: CanvasId, original: string): void {
     this.renaming = id
-    const input = h('input', 'ez-tab-rename')
-    input.value = current
-    input.setAttribute('aria-label', 'canvas 名稱')
-    const name = tabEl.querySelector('.ez-tab-name')!
-    name.replaceWith(input)
-    input.focus()
-    input.select()
+    const name = tabEl.querySelector<HTMLElement>('.ez-tab-name')!
+    name.contentEditable = 'plaintext-only'
+    name.spellcheck = false
+    name.setAttribute('aria-label', 'canvas 名稱')
+    tabEl.toggleAttribute('data-renaming', true)
+    name.focus()
+    getSelection()?.selectAllChildren(name)
+    let saved = original
+    let pending: ReturnType<typeof setTimeout> | undefined
+    const save = (next: string) => {
+      clearTimeout(pending)
+      if (next && next !== saved) this.handlers.rename(id, (saved = next))
+    }
+    const typed = () =>
+      [...(name.textContent ?? '').replace(/\s+/g, ' ').trim()].slice(0, MAX_CANVAS_NAME).join('')
     let settled = false
-    const finish = (commit: boolean) => {
+    const finish = (restore: boolean) => {
       if (settled) return
       settled = true
+      save(restore ? original : typed())
       this.renaming = null
-      const next = input.value.trim()
-      if (commit && next && next !== current) this.handlers.rename(id, next)
       this.drawn = null
       this.paint(this.model)
       this.tabNode(id)?.focus()
     }
-    input.addEventListener('keydown', (e) => {
-      e.stopPropagation()
-      if (e.key === 'Enter') finish(true)
-      if (e.key === 'Escape') finish(false)
+    name.addEventListener('input', () => {
+      clearTimeout(pending)
+      pending = setTimeout(() => save(typed()), RENAME_SAVE_MS)
     })
-    input.addEventListener('blur', () => finish(true))
-    input.addEventListener('click', (e) => e.stopPropagation())
+    name.addEventListener('keydown', (e) => {
+      e.stopPropagation()
+      if (e.key === 'Enter' || e.key === 'Escape') {
+        e.preventDefault()
+        finish(e.key === 'Escape')
+      }
+    })
+    name.addEventListener('blur', () => finish(false))
+    name.addEventListener('click', (e) => e.stopPropagation())
+    name.addEventListener('dblclick', (e) => e.stopPropagation())
   }
 
   private onKey(e: KeyboardEvent): void {
@@ -236,10 +264,7 @@ export class TabStrip {
       row.setAttribute('role', 'none')
       const open = h('button', 'ez-menu-item ez-canvas-menu-open')
       open.setAttribute('role', 'menuitem')
-      open.append(
-        h('span', 'ez-menu-name', c.name),
-        h('span', 'ez-canvas-menu-meta', c.archived ? '已關閉' : `${c.frames} 個 frame`),
-      )
+      open.append(h('span', 'ez-menu-name', c.name))
       if (c.archived) {
         open.setAttribute('aria-label', LABELS.reopen(c.name))
         open.title = LABELS.reopen(c.name)
@@ -253,18 +278,15 @@ export class TabStrip {
           this.handlers.select(c.id)
         }
       }
-      row.append(open)
-      if (c.archived) {
-        const del = h('button', 'ez-canvas-menu-delete', '刪除')
-        del.setAttribute('role', 'menuitem')
-        del.setAttribute('aria-label', LABELS.delete(c.name))
-        del.title = LABELS.delete(c.name)
-        del.onclick = () => {
-          this.toggleMenu(false)
-          this.handlers.delete(c.id, c.name)
-        }
-        row.append(del)
+      const del = h('button', 'ez-canvas-menu-delete', '刪除')
+      del.setAttribute('role', 'menuitem')
+      del.setAttribute('aria-label', LABELS.delete(c.name))
+      del.title = LABELS.delete(c.name)
+      del.onclick = () => {
+        this.toggleMenu(false)
+        this.handlers.delete(c.id, c.name)
       }
+      row.append(open, del)
       return row
     })
     if (!items.length) items.push(h('div', 'ez-canvas-menu-empty', '還沒有 canvas'))
