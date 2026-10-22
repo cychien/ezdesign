@@ -167,7 +167,7 @@ export async function launch(chrome: string, options: LaunchOptions): Promise<Ha
   mkdirSync(evidence, { recursive: true })
   const runInstall = () =>
     spawnSync(process.execPath, [join(REPO, 'dist/cli.mjs'), 'extension', 'install', '--user-data-dir', profile], {
-      env: { ...process.env, HOME: root, EZDESIGN_DATA_DIR: dataDir, EZDESIGN_NO_UPDATE_CHECK: '1', EZDESIGN_CAPTURE: '1' },
+      env: { ...process.env, HOME: root, EZDESIGN_DATA_DIR: dataDir, EZDESIGN_NO_UPDATE_CHECK: '1' },
       encoding: 'utf8',
     })
   const install = runInstall()

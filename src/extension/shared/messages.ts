@@ -30,12 +30,14 @@ export interface EncodedThumb {
 }
 
 export type PageCommand =
+  | { to: 'page'; type: 'select-region' }
   | { to: 'page'; type: 'inspect'; srcUrl: string; mediaType: 'image' | 'video'; fullFrame: boolean }
   | { to: 'page'; type: 'read'; url: string }
   | { to: 'page'; type: 'present'; captureId: CaptureId; dialogPath: string; nonce: string; bitmap: boolean }
   | { to: 'page'; type: 'dismiss'; captureId: CaptureId }
 
 export interface PageReplies {
+  'select-region': RegionChoice
   inspect: Inspection
   read: { data: string | null }
   /** A cross-origin image's bitmap is not origin-clean, and Chrome will not transfer one. */
@@ -56,6 +58,12 @@ export type FrameGrab =
   | { type: 'tainted' }
   | { type: 'protected' }
   | { type: 'empty' }
+
+/** `pickedAt`: epoch ms of the mouse-up, on the timeline's clock. */
+export type RegionChoice =
+  | { type: 'rect'; rect: ViewportRect; viewport: Size; pickedAt: number }
+  | { type: 'viewport'; viewport: Size; pickedAt: number }
+  | { type: 'cancelled' }
 
 export interface PreviewHandoff {
   type: 'ez-capture-preview'

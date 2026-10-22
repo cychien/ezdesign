@@ -16,6 +16,9 @@
   "background": {
     "service_worker": "worker.js"
   },
+  "action": {
+    "default_title": "截取區域存至 ezdesign"
+  },
   "optional_host_permissions": [
     "<all_urls>"
   ],

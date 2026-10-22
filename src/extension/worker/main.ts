@@ -95,11 +95,20 @@ const listeners: CaptureSeam['listeners'] = {
     if (info.menuItemId !== MENU_ID || !ref) return null
     return captures.start({ type: 'menu', click: info, tab: ref })
   },
+  async actionClicked(tab: SeamTab) {
+    const ref = tabRef(tab)
+    return ref ? captures.start({ type: 'region', tab: ref }) : null
+  },
+  async command(command: string, tab?: SeamTab) {
+    const ref = tab && tabRef(tab)
+    if (command !== REGION_COMMAND || !ref) return null
+    return captures.start({ type: 'region', tab: ref })
+  },
 }
 
 chrome.contextMenus.onClicked.addListener(listeners.contextMenuClicked)
-// Chrome grants activeTab for a shortcut only to an extension listening for it; the region capture it starts comes in phase 4.
-chrome.commands.onCommand.addListener(() => {})
+chrome.action.onClicked.addListener(listeners.actionClicked)
+chrome.commands.onCommand.addListener(listeners.command)
 
 chrome.runtime.onInstalled.addListener(({ reason }) => {
   void chrome.contextMenus
