@@ -1,11 +1,13 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import {
+  SIDEBAR_COLLAPSE_AT,
   SIDEBAR_DEFAULT,
   SIDEBAR_MAX,
   SIDEBAR_MIN,
   STAGE_MIN,
   clampSidebarWidth,
+  dragSidebarWidth,
   maxSidebarWidth,
 } from '../src/client/sidebar-width.js'
 
@@ -37,4 +39,16 @@ test('a narrow window clamps the chosen width and a roomy one returns it intact'
 test('a fractional drag lands on a whole pixel', () => {
   assert.equal(clampSidebarWidth(400.4, ROOMY), 400)
   assert.equal(clampSidebarWidth(400.6, ROOMY), 401)
+})
+
+test('a drag holds at the floor, then folds the sidebar away past the collapse point', () => {
+  assert.equal(dragSidebarWidth(SIDEBAR_MIN - 1, ROOMY), SIDEBAR_MIN)
+  assert.equal(dragSidebarWidth(SIDEBAR_COLLAPSE_AT, ROOMY), SIDEBAR_MIN)
+  assert.equal(dragSidebarWidth(SIDEBAR_COLLAPSE_AT - 1, ROOMY), null)
+  assert.equal(dragSidebarWidth(-50, ROOMY), null)
+})
+
+test('a drag that opens the sidebar is clamped like any other', () => {
+  assert.equal(dragSidebarWidth(9999, ROOMY), SIDEBAR_MAX)
+  assert.equal(dragSidebarWidth(400.6, ROOMY), 401)
 })

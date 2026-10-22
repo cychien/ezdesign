@@ -444,6 +444,18 @@ body.ez-arranging .ez-frame {
 
 /* ---------------------------------------------------------------- sidebar */
 
+/* Clipped only while closed: open, the sidebar's menus are free to hang past
+   its edge. */
+.ez-sidebar-slot {
+  display: flex;
+  flex-shrink: 0;
+}
+
+.ez-sidebar-slot[data-collapsed] {
+  width: 0;
+  overflow: hidden;
+}
+
 /* Width is owned by shell.ts - it is user-resizable and restored from storage,
    so there is no useful value to declare here. */
 .ez-sidebar {
@@ -456,14 +468,75 @@ body.ez-arranging .ez-frame {
   min-height: 0;
 }
 
+/* The first button lines up with the tab strip's: the bar's top padding puts
+   its centre on the strip's 21px midline. */
+.ez-activity {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  width: 44px;
+  padding-top: 5px;
+  background: var(--background);
+  border-left: 1px solid var(--border);
+}
+
+.ez-activity-btn {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted-foreground);
+  cursor: pointer;
+  transition:
+    background 0.12s ease,
+    color 0.12s ease;
+}
+
+.ez-activity-btn path {
+  stroke-width: 1.75;
+}
+
+.ez-activity-btn:hover {
+  background: var(--muted);
+  color: var(--foreground);
+}
+
+.ez-activity-btn[aria-pressed='true'] {
+  background: var(--muted);
+  color: var(--foreground);
+}
+
+/* The header's working dot, carried out here while the header is out of view:
+   watching the page while the agent edits it is the reason to fold it away. */
+.ez-activity-btn[aria-pressed='false'][data-working]::after {
+  content: '';
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: oklch(70% 0.16 70);
+  box-shadow: 0 0 0 2px var(--background);
+  animation: ez-pulse 1.2s ease-in-out infinite;
+}
+
 /* The grab band straddles the border instead of sitting beside it: a 1px border
    is not a pointer target, and the room to widen it is on the stage side, where
-   nothing else is clickable. */
+   nothing else is clickable. The margins give back its width, so it takes no
+   room of its own in the row. */
 .ez-resizer {
-  position: absolute;
-  inset-block: 0;
-  left: -4px;
+  position: relative;
+  flex-shrink: 0;
   width: 9px;
+  margin-inline: -4px -5px;
   z-index: 4;
   cursor: col-resize;
   touch-action: none;
