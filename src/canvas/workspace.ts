@@ -32,13 +32,12 @@ import {
   mkdirSync,
   readFileSync,
   readdirSync,
-  renameSync,
   rmSync,
   statSync,
   unlinkSync,
-  writeFileSync,
 } from 'node:fs'
 import { join } from 'node:path'
+import { writeAtomic } from '../fs-atomic.js'
 import type { FrameRef } from '../protocol.js'
 import { type FrameOverlayConfig, checkFrameHtml, frameUrl, renderFrameDocument } from './frame-document.js'
 import { autoPlace, defaultHeightFor, normalizeRect, placeBeside } from './place.js'
@@ -252,12 +251,6 @@ const DELETED_KEEP_MS = 7 * 24 * 60 * 60_000
 const NO_RECT: Rect = { x: 0, y: 0, width: 1280, height: 800 }
 
 const sha1 = (bytes: string | Buffer) => createHash('sha1').update(bytes).digest('hex').slice(0, 12)
-
-function writeAtomic(path: string, data: string): void {
-  const temp = `${path}.tmp-${process.pid}-${randomBytes(3).toString('hex')}`
-  writeFileSync(temp, data)
-  renameSync(temp, path)
-}
 
 function readJson<T>(path: string): T | null {
   try {

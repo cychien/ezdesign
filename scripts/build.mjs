@@ -6,7 +6,7 @@ import { pathToFileURL } from 'node:url'
 const node = {
   platform: 'node',
   format: 'esm',
-  target: 'node20',
+  target: 'node22',
   bundle: true,
   packages: 'external',
   sourcemap: false,
