@@ -1,41 +1,39 @@
 import assert from 'node:assert/strict'
-import { chmodSync, existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { after, test } from 'node:test'
+import { fileURLToPath } from 'node:url'
 import { DaemonWorld, waitFor } from './helpers/daemon.js'
 
 const world = await DaemonWorld.create()
 after(() => world.dispose())
-const flagged = { env: { EZDESIGN_CAPTURE: '1' } }
+const REPO = fileURLToPath(new URL('..', import.meta.url))
 
-test('CX-p2-cli-regression: without the flag, `extension` is a host to open, as before', async () => {
-  const before = readdirSync(world.dataDir)
-  const run = await world.run(['extension', 'install'])
-  assert.deepEqual(run, {
-    stdout: '',
-    stderr:
-      'error: nothing is listening at http://extension\nhint: start your dev server first, then re-run this command\n',
-    code: 1,
-  })
-  assert.deepEqual(readdirSync(world.dataDir), before)
-  assert.equal((await world.run(['http://localhost:1'])).stderr.split('\n')[0], 'error: nothing is listening at http://localhost:1')
-  assert.equal((await world.run(['nonsense-host'])).stderr.split('\n')[0], 'error: nothing is listening at http://nonsense-host')
-  assert.doesNotMatch((await world.run(['--help'])).stdout, /extension/)
-  assert.match(
-    (await world.run(['--help'], flagged)).stdout,
-    /\n {2}ezdesign extension install \[--user-data-dir <dir>\] \| uninstall \| status\n/,
+function filesUnder(dir: string): string[] {
+  return readdirSync(dir, { withFileTypes: true }).flatMap((entry) =>
+    entry.isDirectory() ? filesUnder(join(dir, entry.name)) : [join(dir, entry.name)],
   )
-})
+}
 
-test('with the flag, status reports a missing install, exits 1 and creates nothing', async () => {
+test('CX-p4-flag-removed: `extension` is a verb with no flag, in the help and in the docs', async () => {
+  assert.match((await world.run(['--help'])).stdout, /\n {2}ezdesign extension install \[--user-data-dir <dir>\] \| uninstall \| status\n/)
   const before = readdirSync(world.dataDir)
-  const run = await world.run(['extension', 'status'], flagged)
+  const run = await world.run(['extension', 'status'])
   assert.equal(run.code, 1)
   assert.match(run.stdout, /^host: not installed\n/)
   assert.match(run.stdout, /\nproblem: the capture host is not installed; run `ezdesign extension install`\n$/)
-  assert.deepEqual(readdirSync(world.dataDir), before)
-  const unknown = await world.run(['extension', 'reinstall'], flagged)
+  assert.deepEqual(readdirSync(world.dataDir), before, 'status creates nothing')
+  const unknown = await world.run(['extension', 'reinstall'])
   assert.deepEqual([unknown.code, unknown.stderr], [1, 'error: unknown extension command: reinstall\nhint: ezdesign extension install | uninstall | status\n'])
+
+  const flag = ['EZDESIGN', 'CAPTURE'].join('_')
+  const mentions = ['src', 'test', 'scripts']
+    .flatMap((dir) => filesUnder(join(REPO, dir)))
+    .filter((file) => readFileSync(file, 'utf8').includes(flag))
+  assert.deepEqual(mentions, [])
+  const readme = readFileSync(join(REPO, 'README.md'), 'utf8')
+  assert.match(readme, /npx -y @cychien\/ezdesign@latest extension install/)
+  assert.match(readme, /Load unpacked/)
 })
 
 test('CX-p2-refresh-safe: a broken capture install never stops the daemon', async () => {

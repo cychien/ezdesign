@@ -15,6 +15,7 @@ import {
   type Dialog,
   type Harness,
   type LaunchOptions,
+  type Tab,
   REPO,
   check,
   delay,
@@ -155,6 +156,44 @@ async function seedLibrary(dataDir: string, entries: { tags: string[]; deleted?:
   db.close()
 }
 
+
+const BLOCKS = [
+  { at: { x: 100, y: 100 }, color: '#e56d41' },
+  { at: { x: 400, y: 100 }, color: '#2f6fde' },
+  { at: { x: 100, y: 400 }, color: '#1f9d55' },
+  { at: { x: 400, y: 400 }, color: '#222222' },
+]
+
+async function blocksPage(h: Harness): Promise<Tab> {
+  const blocks = BLOCKS.map(
+    (b) => `<div style="position:fixed;left:${b.at.x}px;top:${b.at.y}px;width:200px;height:200px;background:${b.color}"></div>`,
+  ).join('')
+  const page = await h.openTab(servePage(h, '/blocks', 'Blocks', `<style>html,body{background:#fff}</style>${blocks}`))
+  const viewport = await h.evaluate<[number, number, number]>(page.session, '[innerWidth, innerHeight, devicePixelRatio]')
+  check(JSON.stringify(viewport) === '[1280,800,2]', `the blocks page is ${viewport.join(' x ')}`)
+  return page
+}
+
+async function nextCapture(h: Harness, before: CaptureId | null): Promise<CaptureId> {
+  return waitFor(async () => {
+    const id = await h.inWorker<CaptureId | null>('__ezCapture.latest()')
+    return id && id !== before ? id : null
+  }, 'the region capture to start')
+}
+
+async function pixelsAt(h: Harness, session: string, png: Buffer, points: { x: number; y: number }[]): Promise<number[][]> {
+  return h.evaluate<number[][]>(session, `(async () => {
+    const bitmap = await createImageBitmap(new Blob([Uint8Array.from(atob('${png.toString('base64')}'), (c) => c.charCodeAt(0))], { type: 'image/png' }))
+    const canvas = new OffscreenCanvas(bitmap.width, bitmap.height)
+    const ctx = canvas.getContext('2d')
+    ctx.drawImage(bitmap, 0, 0)
+    return ${JSON.stringify(points)}.map((p) => [...ctx.getImageData(p.x, p.y, 1, 1).data].slice(0, 3))
+  })()`)
+}
+
+const rgb = (hex: string) => [1, 3, 5].map((i) => Number.parseInt(hex.slice(i, i + 2), 16))
+const near = (a: number[], b: number[], tolerance = 2) => a.every((v, i) => Math.abs(v - b[i]!) <= tolerance)
+
 const checks: Check[] = [
   {
     id: 'CX-host-install',
@@ -197,7 +236,7 @@ const checks: Check[] = [
       const src = `${h.fixtures.cross}/a.jpg`
       const url = servePage(h, '/gallery', 'Gallery 測試', `<img src="${src}" style="width:600px">`)
       const page = await h.openTab(url)
-      await page.pressShortcut()
+      await page.grantActiveTab()
       const id = await page.saveFromMenu(src, 'image')
       const dialog = await page.dialog(id)
       check((await previewDrawn(dialog)) === 'img', 'a cross-origin image previews by its URL')
@@ -268,7 +307,7 @@ const checks: Check[] = [
       const image = await makeJpeg((e) => h.evaluate(blank.session, e), 800, 600, 3)
       h.fixtures.serve('/b.jpg', { type: 'image/jpeg', body: image })
       const page = await h.openTab(servePage(h, '/board', 'Board', `<img src="${h.fixtures.cross}/b.jpg" width="400">`))
-      await page.pressShortcut()
+      await page.grantActiveTab()
       const id = await page.saveFromMenu(`${h.fixtures.cross}/b.jpg`, 'image')
       const dialog = await page.dialog(id)
       const listed = () =>
@@ -318,7 +357,7 @@ const checks: Check[] = [
         await new Promise((r) => v.addEventListener('seeked', r, { once: true }))
       })()`)
       check((await h.evaluate<number>(page.session, `document.querySelector('video').currentTime`)) === 2, 'the video is at 2.0 s')
-      await page.pressShortcut()
+      await page.grantActiveTab()
       const id = await page.saveFromMenu(src, 'video')
       const dialog = await page.dialog(id)
       await previewDrawn(dialog)
@@ -395,7 +434,7 @@ const checks: Check[] = [
       await waitFor(() => h.evaluate<boolean>(page.session, `document.body.dataset.ready === '1'`), 'the stream to seek')
       const src = await h.evaluate<string>(page.session, `document.querySelector('video').currentSrc`)
       check(src.startsWith('blob:'), `src ${src}`)
-      await page.pressShortcut()
+      await page.grantActiveTab()
       const id = await page.saveFromMenu(src, 'video')
       const dialog = await page.dialog(id)
       check((await previewDrawn(dialog)) === 'canvas', 'a stream previews its current frame')
@@ -436,7 +475,7 @@ const checks: Check[] = [
       }
       const url = servePage(h, '/two', 'Two', `<img src="${h.fixtures.cross}/1.jpg"><img src="${h.fixtures.cross}/2.jpg">`)
       const page = await h.openTab(url)
-      await page.pressShortcut()
+      await page.grantActiveTab()
       const first = await page.saveFromMenu(`${h.fixtures.cross}/1.jpg`, 'image')
       const firstDialog = await page.dialog(first)
       await waitFor(() => firstDialog.evaluate<boolean>(`!document.querySelector('[data-testid=ez-capture-save]').disabled`), 'save to be enabled')
@@ -487,7 +526,7 @@ const checks: Check[] = [
       const blank = await h.openTab('about:blank')
       h.fixtures.serve('/a.jpg', { type: 'image/jpeg', body: await makeJpeg((e) => h.evaluate(blank.session, e), 800, 500, 5) })
       const page = await h.openTab(servePage(h, '/gallery', 'Gallery', `<img src="${h.fixtures.cross}/a.jpg" width="500">`))
-      await page.pressShortcut()
+      await page.grantActiveTab()
       const id = await page.saveFromMenu(`${h.fixtures.cross}/a.jpg`, 'image')
       const dialog = await page.dialog(id)
       const install = await waitFor(() => dialog.evaluate<string | null>(`(() => { const el = document.querySelector('[data-testid=ez-capture-install]'); return el && !el.hidden ? el.querySelector('code').textContent : null })()`), 'the install command')
@@ -537,7 +576,7 @@ const checks: Check[] = [
       })
       const page = await h.openTab(`${h.fixtures.cross}/private`)
       await waitFor(() => h.evaluate<boolean>(page.session, `document.querySelector('img').naturalWidth > 0`), 'the page to show its image')
-      await page.pressShortcut()
+      await page.grantActiveTab()
       const src = `${h.fixtures.cross}/private.png`
       const id = await page.saveFromMenu(src, 'image')
       const dialog = await page.dialog(id)
@@ -592,7 +631,7 @@ const checks: Check[] = [
       )
       const src = `${h.fixtures.cross}/a.jpg`
       const open = async () => {
-        await page.pressShortcut()
+        await page.grantActiveTab()
         await h.evaluate(page.session, 'window.__keys = 0')
         const id = await page.saveFromMenu(src, 'image')
         return { id, dialog: await page.dialog(id) }
@@ -663,6 +702,178 @@ const checks: Check[] = [
       await settled(h, reduced.id, 5000)
     },
   },
+
+  {
+    id: 'CX-region',
+    name: 'a dragged region saves at device resolution; a click saves the visible viewport',
+    async run(ctx) {
+      const h = await ctx.launch({ deviceScaleFactor: 2 })
+      const page = await blocksPage(h)
+      let before = await h.inWorker<CaptureId | null>('__ezCapture.latest()')
+      await page.pressShortcut()
+      await page.overlayShown()
+      await page.drag({ x: 90, y: 90 }, { x: 610, y: 610 })
+      const dragged = await nextCapture(h, before)
+      let dialog = await page.dialog(dragged)
+      check((await previewDrawn(dialog)) === 'canvas', 'the region previews as a crop of the screenshot')
+      await dialog.type('blocks')
+      await dialog.press('Enter')
+      await waitFor(() => dialog.evaluate<boolean>(`!document.querySelector('[data-testid=ez-capture-save]').disabled`), 'save to be enabled')
+      await animationsSettled(dialog)
+      await h.screenshot(page.session, 'CX-region-dialog.png')
+      await dialog.click('ez-capture-save')
+      check((await settled(h, dragged)).type === 'saved', 'the region saves')
+      await waitFor(async () => !(await h.evaluate<boolean>(page.session, `!!document.querySelector('[data-ez-capture]')`)), 'the dialog to leave', 5000)
+
+      before = dragged
+      await page.pressShortcut()
+      await page.overlayShown()
+      await page.click({ x: 700, y: 700 })
+      const clicked = await nextCapture(h, before)
+      dialog = await page.dialog(clicked)
+      await waitFor(() => dialog.evaluate<boolean>(`!document.querySelector('[data-testid=ez-capture-save]').disabled`), 'save to be enabled')
+      await dialog.click('ez-capture-save')
+      check((await settled(h, clicked)).type === 'saved', 'the viewport saves')
+
+      const saved = (await items(h)).reverse()
+      writeFileSync(join(ctx.evidence, 'CX-region-items.json'), JSON.stringify(saved, null, 2))
+      check(saved.length === 2, `${saved.length} items`)
+      const [region, viewport] = saved as [(typeof saved)[0], (typeof saved)[0]]
+      check(region.kind === 'screenshot' && region.content.type === 'file' && region.content.mediaType === 'image/png', `region ${JSON.stringify(region.content)}`)
+      if (region.content.type !== 'file' || viewport.content.type !== 'file') return
+      const regionPng = readFileSync(region.content.path)
+      writeFileSync(join(ctx.evidence, 'CX-region-region.png'), regionPng)
+      check(JSON.stringify(pngSize(regionPng)) === '{"width":1040,"height":1040}', `region size ${JSON.stringify(pngSize(regionPng))}`)
+      const centers = [{ x: 220, y: 220 }, { x: 820, y: 220 }, { x: 220, y: 820 }, { x: 820, y: 820 }]
+      const edges = [0, 260, 520, 780, 1039].flatMap((v) => [{ x: v, y: 0 }, { x: v, y: 1039 }, { x: 0, y: v }, { x: 1039, y: v }])
+      const read = await pixelsAt(h, page.session, regionPng, [...centers, { x: 10, y: 10 }, ...edges])
+      read.slice(0, 4).forEach((px, i) => check(near(px, rgb(BLOCKS[i]!.color)), `block ${i} reads ${px}, not ${BLOCKS[i]!.color}`))
+      read.slice(4).forEach((px, i) => check(near(px, [255, 255, 255]), `pixel ${i} of the white margin and edges reads ${px}: overlay chrome in the shot?`))
+      check(JSON.stringify(region.tags) === '["blocks"]', `tags ${JSON.stringify(region.tags)}`)
+      const viewportPng = readFileSync(viewport.content.path)
+      check(JSON.stringify(pngSize(viewportPng)) === '{"width":2560,"height":1600}', `viewport size ${JSON.stringify(pngSize(viewportPng))}`)
+      for (const item of [region, viewport]) {
+        const thumb = item.thumbnail && webpSize(readFileSync(item.thumbnail.path))
+        check(thumb && Math.max(thumb.width, thumb.height) === 400, `thumbnail ${JSON.stringify(thumb)}`)
+      }
+    },
+  },
+  {
+    id: 'CX-p4-save-regression',
+    name: 'right-click save still works beside a cancelled region, and a second save merges',
+    async run(ctx) {
+      const h = await ctx.launch()
+      const blank = await h.openTab('about:blank')
+      const image = await makeJpeg((e) => h.evaluate(blank.session, e), 900, 600, 4)
+      h.fixtures.serve('/a.jpg', { type: 'image/jpeg', body: image })
+      const src = `${h.fixtures.cross}/a.jpg`
+      const page = await h.openTab(servePage(h, '/gallery', 'Gallery 測試', `<img src="${src}" width="600">`))
+      await page.grantActiveTab()
+      const first = await page.saveFromMenu(src, 'image')
+      let dialog = await page.dialog(first)
+      await dialog.type('hero')
+      await dialog.press('Enter')
+      await waitFor(() => dialog.evaluate<boolean>(`!document.querySelector('[data-testid=ez-capture-save]').disabled`), 'save')
+      await dialog.click('ez-capture-save')
+      const saved = await settled(h, first)
+      check(saved.type === 'saved' && !saved.merged, `first save ${JSON.stringify(saved)}`)
+      await waitFor(async () => !(await h.evaluate<boolean>(page.session, `!!document.querySelector('[data-ez-capture]')`)), 'the dialog to leave', 5000)
+      const library = () => JSON.stringify(['blobs', 'thumbs'].map((d) => filesUnder(join(h.dataDir, 'library', d)).sort()))
+      const before = library()
+      const latest = await h.inWorker<CaptureId | null>('__ezCapture.latest()')
+      await page.pressShortcut()
+      await page.overlayShown()
+      await page.press('Escape')
+      const region = await nextCapture(h, latest)
+      check((await settled(h, region, 5000)).type === 'cancelled', 'the region is cancelled')
+      check(library() === before, 'the cancelled region changed the library')
+      const second = await page.saveFromMenu(src, 'image')
+      dialog = await page.dialog(second)
+      const status = await waitFor(() => dialog.evaluate<string>(`document.querySelector('[data-testid=ez-capture-status]').textContent`), 'the status line')
+      check(status === '已收藏過', `status ${status}`)
+      await dialog.type('layout')
+      await dialog.press('Enter')
+      await dialog.click('ez-capture-save')
+      const merged = await settled(h, second)
+      check(merged.type === 'saved' && merged.merged, `second save ${JSON.stringify(merged)}`)
+      const all = await items(h)
+      check(all.length === 1 && JSON.stringify(all[0]!.tags) === '["hero","layout"]', `items ${JSON.stringify(all.map((i) => i.tags))}`)
+    },
+  },
+  {
+    id: 'CX-restricted-page',
+    name: 'on chrome://extensions the viewport is captured at once and the dialog opens in a window',
+    async run(ctx) {
+      const h = await ctx.launch()
+      const page = await h.openTab('chrome://extensions/')
+      const before = await h.inWorker<CaptureId | null>('__ezCapture.latest()')
+      await page.pressShortcut()
+      const id = await nextCapture(h, before)
+      const dialog = await page.dialog(id)
+      check(await dialog.evaluate<boolean>('window.top === window'), 'the dialog is in its own window')
+      const size = await dialog.evaluate<[number, number]>('[outerWidth, outerHeight]')
+      writeFileSync(join(ctx.evidence, 'CX-restricted-page-window.txt'), `${size.join('x')}\n`)
+      check((await previewDrawn(dialog)) === 'canvas', 'the window previews the screenshot')
+      // Headless windows keep one size; the 480x640 popup is emulated to see it as a user would.
+      await h.cdp.send('Emulation.setDeviceMetricsOverride', { width: 480, height: 640, deviceScaleFactor: 2, mobile: false }, dialog.session)
+      await animationsSettled(dialog)
+      check(!(await dialog.evaluate<boolean>('document.scrollingElement.scrollHeight > innerHeight + 1')), 'the dialog fits a 480x640 window')
+      await h.screenshot(dialog.session, 'CX-restricted-page-window.png')
+      await dialog.type('chrome')
+      await dialog.press('Enter')
+      await waitFor(() => dialog.evaluate<boolean>(`!document.querySelector('[data-testid=ez-capture-save]').disabled`), 'save')
+      await dialog.click('ez-capture-save')
+      check((await settled(h, id)).type === 'saved', 'the window saves')
+      const [item] = await items(h)
+      check(item?.kind === 'screenshot' && JSON.stringify(item.tags) === '["chrome"]', `item ${JSON.stringify(item)}`)
+      check(item?.content.type === 'file' && pngSize(readFileSync(item.content.path))!.width > 0, 'a PNG of the viewport')
+
+      const latest = await h.inWorker<CaptureId | null>('__ezCapture.latest()')
+      await page.pressShortcut()
+      const second = await nextCapture(h, latest)
+      const secondDialog = await page.dialog(second)
+      await secondDialog.press('Escape')
+      check((await settled(h, second, 5000)).type === 'cancelled', 'Esc in the window cancels')
+      check((await items(h)).length === 1, 'Esc saved nothing')
+      await waitFor(async () => !(await h.cdp.send<{ targetInfos: { url: string }[] }>('Target.getTargets')).targetInfos.some((t) => t.url.includes(`dialog.html#${second}`)), 'the window to close', 5000)
+    },
+  },
+  {
+    id: 'CX-perf-region',
+    name: 'mouse-up to the dialog showing its crop within 500 ms (p95 of 20, warm and cold workers)',
+    async run(ctx) {
+      const h = await ctx.launch({ deviceScaleFactor: 2 })
+      const page = await blocksPage(h)
+      const runs: { cold: boolean; ms: number }[] = []
+      for (let run = 0; run < 20; run++) {
+        const cold = run % 2 === 1
+        const before = await h.inWorker<CaptureId | null>('__ezCapture.latest()')
+        if (cold) {
+          await h.restartWorker(page, { keepOverlay: true })
+        } else {
+          await page.pressShortcut()
+          await page.overlayShown()
+        }
+        await page.drag({ x: 90, y: 90 }, { x: 610, y: 610 })
+        const id = await nextCapture(h, cold ? null : before)
+        const dialog = await page.dialog(id)
+        const t = await waitFor(async () => {
+          const marks = await timeline(h, id)
+          return marks.previewShown && marks.regionPicked ? marks : null
+        }, 'the preview')
+        runs.push({ cold, ms: t.previewShown! - t.regionPicked! })
+        await dialog.press('Escape')
+        await settled(h, id, 5000)
+        await waitFor(async () => !(await h.evaluate<boolean>(page.session, `!!document.querySelector('[data-ez-capture]')`)), 'the dialog to leave', 5000)
+      }
+      const sorted = runs.map((r) => r.ms).sort((a, b) => a - b)
+      const p = (q: number) => sorted[Math.ceil(q * sorted.length) - 1]!
+      const report = { p50: p(0.5), p95: p(0.95), runs }
+      writeFileSync(join(ctx.evidence, 'CX-perf-region.json'), JSON.stringify(report, null, 2))
+      console.log(`  mouse-up to preview p50 ${report.p50.toFixed(0)} ms, p95 ${report.p95.toFixed(0)} ms`)
+      check(report.p95 <= 500, `p95 ${report.p95.toFixed(0)} ms is over 500`)
+    },
+  },
   {
     id: 'CX-perf-dialog',
     name: 'menu click to preview within 300 ms, confirm to committed within 2 s, from a cold host (p95 of 20)',
@@ -678,7 +889,7 @@ const checks: Check[] = [
       const runs: { preview: number; commit: number; confirmAfterTrigger: number; beforeDialog: string[] }[] = []
       const hostRunning = () => spawnSync('pgrep', ['-f', join(h.dataDir, 'native-host', 'host.mjs')]).status === 0
       for (let run = 0; run < 20; run++) {
-        await h.restartWorker(page)
+        await h.restartWorker(page, { withoutCapture: true })
         await waitFor(() => !hostRunning(), 'the host to exit with the worker', 5000)
         const id = await page.saveFromMenu(src, 'image')
         const dialog = await page.dialog(id)

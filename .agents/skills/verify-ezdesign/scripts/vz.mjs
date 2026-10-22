@@ -664,8 +664,7 @@ async function cmdConsumer() {
     expect: (r) => r.status === 1 && r.stderr.includes('EZDESIGN_CONTROL_PORT must be an integer'),
   })
   step('import @cychien/ezdesign/vite', 'node', ['--input-type=module', '-e', "import { ezdesignSource } from '@cychien/ezdesign/vite'; const p = ezdesignSource(); if (p.name !== 'ezdesign:source' || p.apply !== 'serve' || typeof p.transform !== 'function') process.exit(1); const out = p.transform('export const A = () => <div>hi</div>', process.cwd() + '/A.tsx'); console.log(out && out.code); if (!out || !out.code.includes('data-ez-source=\"A.tsx:1\"')) process.exit(1)"])
-  step('bin extension status (capture flag, nothing installed)', bin, ['extension', 'status'], {
-    env: { ...env, EZDESIGN_CAPTURE: '1' },
+  step('bin extension status (nothing installed)', bin, ['extension', 'status'], {
     expect: (r) => r.status === 1 && r.stdout.startsWith('host: not installed') && !existsSync(join(home, '.ezdesign')),
   })
   const state = readState()

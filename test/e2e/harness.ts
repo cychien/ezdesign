@@ -120,7 +120,7 @@ export interface Harness {
   openTab(url: string): Promise<Tab>
   evaluate<T>(session: string, expression: string): Promise<T>
   screenshot(session: string, name: string): Promise<string>
-  restartWorker(page: Tab): Promise<void>
+  restartWorker(page: Tab, options?: { keepOverlay?: boolean; withoutCapture?: boolean }): Promise<void>
   library(): Promise<Library>
   installHost(): void
   grantHost(pattern: string): Promise<void>
@@ -131,6 +131,11 @@ export interface Tab {
   targetId: string
   session: string
   pressShortcut(): Promise<void>
+  grantActiveTab(): Promise<void>
+  overlayShown(): Promise<void>
+  drag(from: { x: number; y: number }, to: { x: number; y: number }): Promise<void>
+  click(at: { x: number; y: number }): Promise<void>
+  press(key: 'Escape'): Promise<void>
   saveFromMenu(srcUrl: string, mediaType: 'image' | 'video'): Promise<CaptureId>
   dialog(id: CaptureId): Promise<Dialog>
 }
@@ -156,6 +161,8 @@ export interface LaunchOptions {
   evidence: string
   seed?(dataDir: string): Promise<void>
   withoutHost?: boolean
+  /** A real display scale: `captureVisibleTab` ignores CDP's emulated one. */
+  deviceScaleFactor?: number
 }
 
 export async function launch(chrome: string, options: LaunchOptions): Promise<Harness> {
@@ -167,7 +174,7 @@ export async function launch(chrome: string, options: LaunchOptions): Promise<Ha
   mkdirSync(evidence, { recursive: true })
   const runInstall = () =>
     spawnSync(process.execPath, [join(REPO, 'dist/cli.mjs'), 'extension', 'install', '--user-data-dir', profile], {
-      env: { ...process.env, HOME: root, EZDESIGN_DATA_DIR: dataDir, EZDESIGN_NO_UPDATE_CHECK: '1', EZDESIGN_CAPTURE: '1' },
+      env: { ...process.env, HOME: root, EZDESIGN_DATA_DIR: dataDir, EZDESIGN_NO_UPDATE_CHECK: '1' },
       encoding: 'utf8',
     })
   const install = runInstall()
@@ -210,7 +217,9 @@ export async function launch(chrome: string, options: LaunchOptions): Promise<Ha
       '--password-store=basic',
       '--no-first-run',
       '--no-default-browser-check',
-      '--window-size=1280,800',
+      // Headless keeps 143 px of the window for browser UI; this leaves a 1280x800 viewport.
+      '--window-size=1280,943',
+      ...(options.deviceScaleFactor ? [`--force-device-scale-factor=${options.deviceScaleFactor}`] : []),
       'about:blank',
     ],
     { env: { HOME: root }, stdio: 'ignore' },
@@ -274,6 +283,33 @@ export async function launch(chrome: string, options: LaunchOptions): Promise<Ha
       await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', ...base }, session)
       await delay(100)
     },
+    async overlayShown() {
+      await waitFor(
+        () => evaluate<boolean>(session, `!!document.querySelector('[data-ez-capture]')`),
+        'the region overlay',
+      )
+      await delay(50)
+    },
+    async grantActiveTab() {
+      await this.pressShortcut()
+      await this.overlayShown()
+      await this.press('Escape')
+      await waitFor(async () => !(await evaluate<boolean>(session, `!!document.querySelector('[data-ez-capture]')`)), 'the overlay to close')
+    },
+    async drag(from, to) {
+      const mouse = (type: string, at: { x: number; y: number }) =>
+        cdp.send('Input.dispatchMouseEvent', { type, x: at.x, y: at.y, button: 'left', buttons: type === 'mouseReleased' ? 0 : 1, clickCount: 1 }, session)
+      await mouse('mousePressed', from)
+      for (let step = 1; step <= 8; step++) {
+        await mouse('mouseMoved', { x: from.x + ((to.x - from.x) * step) / 8, y: from.y + ((to.y - from.y) * step) / 8 })
+      }
+      await mouse('mouseReleased', to)
+    },
+    async click(at) {
+      await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', ...at, button: 'left', buttons: 1, clickCount: 1 }, session)
+      await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', ...at, button: 'left', buttons: 0, clickCount: 1 }, session)
+    },
+    press: (name) => key(session, name),
     async saveFromMenu(srcUrl, mediaType) {
       const page = await evaluate<{ url: string; title: string }>(session, '({ url: location.href, title: document.title })')
       const id = await inWorker<CaptureId | null>(`(async () => {
@@ -288,7 +324,7 @@ export async function launch(chrome: string, options: LaunchOptions): Promise<Ha
     },
     async dialog(id) {
       const target = await waitFor(
-        async () => (await targets()).find((t) => t.type === 'iframe' && t.url.includes(`/dialog.html#${id}`)),
+        async () => (await targets()).find((t) => (t.type === 'iframe' || t.type === 'page') && t.url.includes(`/dialog.html#${id}`)),
         'the dialog iframe',
       )
       const dialogSession = await attach(target.targetId)
@@ -340,12 +376,22 @@ export async function launch(chrome: string, options: LaunchOptions): Promise<Ha
       writeFileSync(path, Buffer.from(data, 'base64'))
       return path
     },
-    async restartWorker(page) {
+    async restartWorker(page, options) {
       await cdp.send('ServiceWorker.enable', {}, page.session).catch(() => {})
       await cdp.send('ServiceWorker.stopAllWorkers', {}, page.session)
       await waitFor(async () => !(await targets()).some((t) => t.type === 'service_worker' && isWorker(t.url)), 'the worker to stop')
+      if (options?.withoutCapture) {
+        await cdp.send('ServiceWorker.startWorker', { scopeURL: `chrome-extension://${EXTENSION_ID}/` }, page.session)
+        worker = await attachWorker()
+        return
+      }
       await page.pressShortcut()
       worker = await attachWorker()
+      await page.overlayShown()
+      if (!options?.keepOverlay) {
+        await page.press('Escape')
+        await waitFor(async () => !(await evaluate<boolean>(page.session, `!!document.querySelector('[data-ez-capture]')`)), 'the overlay to close')
+      }
     },
     library: () => openLibrary({ dir: join(dataDir, 'library') }),
     installHost() {

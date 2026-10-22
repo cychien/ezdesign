@@ -1,12 +1,14 @@
 import type { PageCommand, PageReplies } from '../shared/messages.js'
 import { dismissDialog, presentDialog } from './dialog-host.js'
 import { inspectMedia, readBytes } from './locate.js'
+import { selectRegion } from './region.js'
 
 const INSTALLED = Symbol.for('ezdesign.capture.page-agent')
 
 type Handlers = { [K in PageCommand['type']]: (command: Extract<PageCommand, { type: K }>) => Promise<PageReplies[K]> }
 
 const handlers: Handlers = {
+  'select-region': () => selectRegion(),
   inspect: (command) => inspectMedia(command.srcUrl, command.mediaType, command.fullFrame),
   read: async (command) => ({ data: await readBytes(command.url) }),
   present: (command) => presentDialog(command),

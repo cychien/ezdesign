@@ -9,6 +9,7 @@ import {
   type HostState,
   type Inspection,
   type PreviewSource,
+  type RegionChoice,
   type StagingView,
 } from '../shared/messages.js'
 import { type CapturePlan, type TabRef, type Trigger, planAfterRefusal, planCapture, posterSource } from '../shared/plan.js'
@@ -55,7 +56,7 @@ interface Session {
   preview: PreviewSource
   held: Uint8Array | null
   framePng: string | null
-  pageFrameThumb: EncodedThumb | null
+  readyThumb: EncodedThumb | null
   screenCrop: { thumb: EncodedThumb | null; png: string | null } | null
   staging: Staging
   thumbSettled: boolean
@@ -64,6 +65,7 @@ interface Session {
   intent: { tags: string[]; note: string } | null
   committing: boolean
   restaged: boolean
+  cropping: Promise<void> | null
   error: string | null
   abort: AbortController
   ended: CaptureOutcome | null
@@ -81,6 +83,11 @@ const originOf = (url: string) => new URL(url).origin
 export function createCaptures(deps: CaptureDeps): Captures {
   const sessions = new Map<CaptureId, Session>()
   let latest: CaptureId | null = null
+
+  const setPreview = (s: Session, preview: PreviewSource) => {
+    s.preview = preview
+    s.dialog.port?.postMessage({ type: 'preview', preview })
+  }
 
   const render = (s: Session) => s.dialog.port?.postMessage({ type: 'view', view: viewOf(s) })
 
@@ -143,7 +150,7 @@ export function createCaptures(deps: CaptureDeps): Captures {
   }
 
   const thumbnail = async (s: Session, staged: Staged): Promise<EncodedThumb | null> => {
-    if (s.pageFrameThumb) return s.pageFrameThumb
+    if (s.readyThumb) return s.readyThumb
     const staging = () => deps.host.read(s.id, { signal: s.abort.signal })
     if (s.plan.kind === 'video') {
       const at = s.inspection?.video?.currentTime
@@ -181,6 +188,7 @@ export function createCaptures(deps: CaptureDeps): Captures {
   }
 
   const stage = async (s: Session): Promise<void> => {
+    await s.cropping
     s.staging = { type: 'pending' }
     s.thumbSettled = false
     render(s)
@@ -238,8 +246,7 @@ export function createCaptures(deps: CaptureDeps): Captures {
     try {
       const made = await thumbnail(s, staged)
       if (made && made !== s.screenCrop?.thumb && s.preview.type === 'url' && s.preview.fromScreen) {
-        s.preview = { type: 'url', src: `data:image/webp;base64,${made.webp}` }
-        s.dialog.port?.postMessage({ type: 'preview', preview: s.preview })
+        setPreview(s, { type: 'url', src: `data:image/webp;base64,${made.webp}` })
       }
       await sendThumbnail(s, made)
     } catch {
@@ -326,6 +333,22 @@ export function createCaptures(deps: CaptureDeps): Captures {
       (s.frameId === 0 || (await deps.page.ensure(tab, 0)))
     if (!inPage) s.dialog.where = 'window'
 
+    if (plan.kind === 'screenshot') {
+      const choice: RegionChoice =
+        inPage && plan.region === 'drag'
+          ? await deps.page.send(tab, 0, { to: 'page', type: 'select-region' })
+          : { type: 'viewport', viewport: { width: 0, height: 0 }, pickedAt: deps.browser.now() }
+      if (choice.type === 'cancelled') return end(s, { type: 'cancelled' })
+      s.timeline.regionPicked = choice.pickedAt
+      const shot = await deps.browser.captureVisibleTab(tab.windowId, 'png')
+      const rect = choice.type === 'rect' ? choice.rect : null
+      setPreview(s, { type: 'screenshot', dataUrl: shot, rect, viewport: choice.viewport })
+      s.cropping = deps.media.crop(shot, rect, choice.viewport, true).then((crop) => {
+        s.held = crop.original && fromBase64(crop.original.png)
+        s.readyThumb = crop.thumb
+      })
+    }
+
     if (inPage && plan.kind !== 'screenshot' && s.srcUrl !== null) {
       s.inspection = await deps.page.send(tab, s.frameId, {
         to: 'page',
@@ -336,7 +359,7 @@ export function createCaptures(deps: CaptureDeps): Captures {
       })
       const grab = s.inspection.video?.frame
       if (grab?.type === 'encoded') {
-        s.pageFrameThumb = grab.thumb
+        s.readyThumb = grab.thumb
         s.framePng = grab.png
       } else if (grab && posterSource(grab) === 'screenshot' && s.inspection.rect) {
         const shot = await deps.browser.captureVisibleTab(tab.windowId, 'png')
@@ -350,7 +373,10 @@ export function createCaptures(deps: CaptureDeps): Captures {
     }
 
     const fallback = fallbackPreview(s)
-    s.preview = inPage && plan.preview === 'element-bitmap' && s.inspection?.found ? { type: 'bitmap', nonce: s.dialog.nonce } : fallback
+    if (plan.kind !== 'screenshot') {
+      s.preview =
+        inPage && plan.preview === 'element-bitmap' && s.inspection?.found ? { type: 'bitmap', nonce: s.dialog.nonce } : fallback
+    }
 
     if (inPage) {
       const { mounted, handedOff } = await deps.page.send(tab, 0, {
@@ -363,8 +389,7 @@ export function createCaptures(deps: CaptureDeps): Captures {
       })
       if (!mounted) throw new Error('the dialog could not be shown on this page')
       if (s.preview.type === 'bitmap' && !handedOff) {
-        s.preview = fallback
-        s.dialog.port?.postMessage({ type: 'preview', preview: s.preview })
+        setPreview(s, fallback)
       }
     } else {
       s.dialog.windowId = await deps.browser.openDialogWindow(s.id)
@@ -400,7 +425,7 @@ export function createCaptures(deps: CaptureDeps): Captures {
       preview: { type: 'none' },
       held: null,
       framePng: null,
-      pageFrameThumb: null,
+      readyThumb: null,
       screenCrop: null,
       staging: { type: 'pending' },
       thumbSettled: false,
@@ -409,6 +434,7 @@ export function createCaptures(deps: CaptureDeps): Captures {
       intent: null,
       committing: false,
       restaged: false,
+      cropping: null,
       error: null,
       abort: new AbortController(),
       ended: null,
@@ -471,7 +497,7 @@ export function createCaptures(deps: CaptureDeps): Captures {
 function fallbackPreview(s: Session): PreviewSource {
   if (s.plan.kind === 'image' && s.context.mediaUrl) return { type: 'url', src: s.context.mediaUrl }
   if (s.framePng) return { type: 'url', src: `data:image/png;base64,${s.framePng}` }
-  if (s.pageFrameThumb) return { type: 'url', src: `data:image/webp;base64,${s.pageFrameThumb.webp}` }
+  if (s.readyThumb) return { type: 'url', src: `data:image/webp;base64,${s.readyThumb.webp}` }
   if (s.screenCrop?.png) return { type: 'url', src: `data:image/png;base64,${s.screenCrop.png}`, fromScreen: true }
   return { type: 'none' }
 }

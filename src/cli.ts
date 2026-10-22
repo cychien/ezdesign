@@ -8,7 +8,6 @@ import {
   POLL_RETRIES,
   URL_PREFIX,
   assertControlPortEnv,
-  captureEnabled,
 } from './constants.js'
 import { agentCommand } from './agents.js'
 import {
@@ -80,7 +79,7 @@ Usage:
       search the inspiration database by a description of what the piece has to
       show, by tags, or both. Each result's images and code are cached locally
       and printed as paths
-${captureEnabled() ? EXTENSION_HELP : ''}  ${APP_NAME} --version | --help
+${EXTENSION_HELP}  ${APP_NAME} --version | --help
 
 Environment:
   ${APP_NAME.toUpperCase()}_DATA_DIR       session state, daemon registry and log (default: ~/.${APP_NAME})
@@ -548,8 +547,6 @@ async function main(): Promise<void> {
     return
   }
 
-  if (first === 'extension' && captureEnabled()) return cmdExtension(rest)
-
   switch (first) {
     case '__daemon': {
       const succeedIdx = rest.indexOf('--succeed')
@@ -578,6 +575,8 @@ async function main(): Promise<void> {
       return cmdLogout()
     case 'inspire':
       return cmdInspire(rest)
+    case 'extension':
+      return cmdExtension(rest)
     default: {
       const agentIdx = argv.indexOf('--agent')
       const agentArg = agentIdx >= 0 ? argv[agentIdx + 1] : undefined

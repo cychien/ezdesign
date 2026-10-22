@@ -528,6 +528,38 @@ results belong in the agent's reply, not in your repository. A search that finds
 with one line, and one that cannot run - no token, a refused token, a service that cannot be
 reached - exits 2 with one line, so the agent says so and carries on.
 
+## Saving references from Chrome
+
+The capture extension saves an image, a video or a region of any page into one design library
+under `~/.ezdesign/library/`, shared by every project, with your tags and a note. Saving needs no
+dev server, no session and no daemon: Chrome talks to a small native host that ezdesign installs.
+
+```
+npx -y @cychien/ezdesign@latest extension install
+```
+
+`install` copies the host into `~/.ezdesign/native-host/`, registers it with every Chromium browser
+it finds (Chrome and its channels, Chromium, Arc, Brave, Edge, Vivaldi; macOS and Linux), and
+prints the folder to load once: open `chrome://extensions`, turn on **Developer mode**, choose
+**Load unpacked** and pick `~/.ezdesign/extension`. The folder stays put across ezdesign updates,
+and the daemon brings the host and the extension up to its own version when it starts. The host
+needs Node 22.13 or newer. `--user-data-dir <dir>` installs into one browser profile only.
+
+- **Right-click an image or a video** and choose **儲存至 ezdesign**. A dialog opens over the page
+  with a preview, tags (suggested by how often you use them) and a note; **儲存** or Cmd+Enter saves,
+  Esc or a click outside leaves nothing behind. Saving the same bytes again shows **已收藏過** and
+  adds to the item you already have.
+- **The toolbar icon or Alt+Shift+S** starts a region capture: drag a rectangle, or click once for
+  the whole visible page. On pages an extension cannot draw on, such as `chrome://` pages, the
+  visible page is captured at once and the dialog opens in its own window.
+- Images and plain video files keep their original bytes. A streaming video (YouTube, Instagram,
+  anything playing through MediaSource) and a video over 200 MB are saved as a link with the time
+  you were at and the frame on screen. An image the host is refused for (a signed-in CDN) offers
+  **允許讀取** for that site, then is read with your cookies.
+
+`ezdesign extension status` lists each browser and any problem, and exits 1 when there is one.
+`ezdesign extension uninstall` removes the host and the extension folder; the library stays.
+
 ## Development
 
 Working on ezdesign itself takes one command:

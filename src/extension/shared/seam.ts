@@ -22,6 +22,7 @@ export type CaptureOutcome =
 
 export interface CaptureTimeline {
   triggered: number
+  regionPicked?: number
   dialogShown?: number
   previewShown?: number
   confirmed?: number
@@ -32,6 +33,8 @@ export interface CaptureTimeline {
 export interface CaptureSeam {
   listeners: {
     contextMenuClicked(info: SeamClickData, tab?: SeamTab): Promise<CaptureId | null>
+    actionClicked(tab: SeamTab): Promise<CaptureId | null>
+    command(command: string, tab?: SeamTab): Promise<CaptureId | null>
   }
   settled(id: CaptureId): Promise<CaptureOutcome>
   timeline(id: CaptureId): CaptureTimeline | null

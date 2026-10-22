@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import type { Staged } from '../src/capture-wire.js'
-import type { CaptureId, DialogToWorker, HostState, PageCommand, WorkerToDialog } from '../src/extension/shared/messages.js'
+import type { CaptureId, DialogToWorker, HostState, PageCommand, RegionChoice, WorkerToDialog } from '../src/extension/shared/messages.js'
 import { createCaptures } from '../src/extension/worker/capture.js'
 import { type DialogPort, HostFailure, type HostLink } from '../src/extension/worker/ports.js'
 
@@ -24,7 +24,9 @@ function later<T>() {
 
 type Answer = (request: Record<string, unknown>) => Promise<unknown> | unknown
 
-function world(options: { state?: HostState; answers?: Record<string, Answer>; mounted?: boolean } = {}) {
+function world(
+  options: { state?: HostState; answers?: Record<string, Answer>; mounted?: boolean; region?: RegionChoice; injects?: boolean } = {},
+) {
   const sent: Record<string, unknown>[] = []
   const pageCommands: PageCommand['type'][] = []
   const answers: Record<string, Answer> = {
@@ -57,6 +59,8 @@ function world(options: { state?: HostState; answers?: Record<string, Answer>; m
     hold: () => () => {},
   }
   let n = 0
+  let shots = 0
+  const windows: number[] = []
   const dismissed: string[] = []
   const captures = createCaptures({
     host,
@@ -66,14 +70,17 @@ function world(options: { state?: HostState; answers?: Record<string, Answer>; m
         for await (const _ of pieces) void _
         return thumb
       },
-      crop: async () => ({ original: null, thumb }),
+      crop: async () => ({ original: { png: 'iVBORw0KGgo=', size: { width: 200, height: 100 } }, thumb }),
     },
     page: {
-      ensure: async () => true,
+      ensure: async () => options.injects ?? true,
       async send(_tab, _frame, command) {
         pageCommands.push(command.type)
         if (command.type === 'inspect') {
           return { found: true, viewport: { width: 800, height: 600 }, rect: null, natural: { width: 40, height: 30 }, video: command.mediaType === 'video' ? { currentTime: 3.5, frame: { type: 'encoded', thumb, png: 'iVBORw0KGgo=' } } : null } as never
+        }
+        if (command.type === 'select-region') {
+          return (options.region ?? { type: 'rect', rect: { x: 10, y: 20, width: 100, height: 50 }, viewport: { width: 800, height: 600 }, pickedAt: 0.5 }) as never
         }
         if (command.type === 'present') return { mounted: options.mounted ?? true, handedOff: true } as never
         if (command.type === 'dismiss') dismissed.push(command.captureId)
@@ -81,9 +88,15 @@ function world(options: { state?: HostState; answers?: Record<string, Answer>; m
       },
     },
     browser: {
-      captureVisibleTab: async () => 'data:image/png;base64,',
+      captureVisibleTab: async () => {
+        shots++
+        return 'data:image/png;base64,SHOT'
+      },
       dialogPath: (id) => `dialog.html#${id}`,
-      openDialogWindow: async () => 1,
+      openDialogWindow: async () => {
+        windows.push(1)
+        return 1
+      },
       closeWindow: async () => {},
       fetchWithCookies: async () => new Uint8Array([1, 2, 3]),
       userAgent: 'test',
@@ -118,7 +131,20 @@ function world(options: { state?: HostState; answers?: Record<string, Answer>; m
   const menu = (srcUrl: string, mediaType: 'image' | 'video' = 'image') =>
     captures.start({ type: 'menu', click: { mediaType, srcUrl, pageUrl: tab.url, frameId: 0 }, tab })
 
-  return { captures, sent, pageCommands, dismissed, dialog, menu, setState: (s: HostState) => (state = s) }
+  const region = (url = tab.url) => captures.start({ type: 'region', tab: { ...tab, url } })
+
+  return {
+    captures,
+    sent,
+    pageCommands,
+    dismissed,
+    dialog,
+    menu,
+    region,
+    shots: () => shots,
+    windows,
+    setState: (s: HostState) => (state = s),
+  }
 }
 
 const types = (sent: Record<string, unknown>[]) => sent.map((r) => r.t)
@@ -263,4 +289,48 @@ test('suggestions answer the prefix they were asked for', async () => {
   await flush()
   assert.deepEqual(d.seen.find((m) => m.type === 'suggestions'), { type: 'suggestions', prefix: 'ca', tags: [{ name: 'card', uses: 3 }] })
   assert.deepEqual(w.sent.find((r) => r.t === 'suggest'), { t: 'suggest', prefix: 'ca', exclude: ['hero'], limit: 8 })
+})
+
+test('a dragged region is shot, cropped and staged as a screenshot after the dialog shows', async () => {
+  const w = world()
+  const id = (await w.region())!
+  const d = w.dialog(id)
+  await flush()
+  await flush()
+  assert.deepEqual(w.pageCommands.slice(0, 2), ['select-region', 'present'])
+  assert.equal(w.shots(), 1)
+  assert.deepEqual([...d.seen].reverse().find((m) => m.type === 'preview'), {
+    type: 'preview',
+    preview: { type: 'screenshot', dataUrl: 'data:image/png;base64,SHOT', rect: { x: 10, y: 20, width: 100, height: 50 }, viewport: { width: 800, height: 600 } },
+  })
+  d.say({ type: 'confirm', tags: ['blocks'], note: '' })
+  assert.equal((await w.captures.settled(id)).type, 'saved')
+  assert.deepEqual(types(w.sent), ['upload', 'thumbnail', 'commit'])
+  assert.equal(w.sent[0]!.kind, 'screenshot')
+  assert.equal(w.captures.timeline(id)?.regionPicked, 0.5)
+  assert.deepEqual(w.captures.timeline(id)?.beforeDialog, [])
+})
+
+test('a region cancelled with Esc ends with no dialog and no screenshot', async () => {
+  const w = world({ region: { type: 'cancelled' } })
+  const id = (await w.region())!
+  assert.deepEqual(await w.captures.settled(id), { type: 'cancelled' })
+  assert.deepEqual(w.pageCommands, ['select-region'])
+  assert.equal(w.shots(), 0)
+  assert.deepEqual(w.sent, [])
+})
+
+test('on a page no script can reach, the viewport is shot at once and the dialog opens in a window', async () => {
+  const w = world({ injects: false })
+  const id = (await w.region('chrome://extensions/'))!
+  const d = w.dialog(id)
+  await flush()
+  await flush()
+  assert.deepEqual(w.pageCommands, [])
+  assert.deepEqual(w.windows, [1])
+  assert.equal(w.shots(), 1)
+  const preview = [...d.seen].reverse().find((m) => m.type === 'preview')
+  assert.ok(preview?.type === 'preview' && preview.preview.type === 'screenshot' && preview.preview.rect === null)
+  d.say({ type: 'cancel' })
+  assert.deepEqual(await w.captures.settled(id), { type: 'cancelled' })
 })
