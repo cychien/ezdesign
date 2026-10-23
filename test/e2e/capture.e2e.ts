@@ -273,6 +273,44 @@ const checks: Check[] = [
   },
 
   {
+    id: 'CX-saved-pill',
+    name: 'a save says 已儲存 on the page, and the pill is gone before the next capture looks at the tab',
+    async run(ctx) {
+      const h = await ctx.launch()
+      h.fixtures.serve('/a.jpg', { type: 'image/jpeg', body: await thePhoto(h) })
+      const src = `${h.fixtures.cross}/a.jpg`
+      const url = servePage(h, '/pill', 'Pill', `<img src="${src}" style="width:600px">`)
+      const page = await h.openTab(url)
+      await page.grantActiveTab()
+      const pill = () => h.evaluate<boolean>(page.session, `!!document.querySelector('[data-ez-capture-saved]')`)
+
+      const save = async () => {
+        const id = await page.saveFromMenu(src, 'image')
+        const dialog = await page.dialog(id)
+        await waitFor(() => dialog.evaluate<boolean>(`!document.querySelector('[data-testid=ez-capture-save]').disabled`), 'save to be enabled')
+        await dialog.click('ez-capture-save')
+        check((await settled(h, id)).type === 'saved', 'saved')
+      }
+      await save()
+      await waitFor(pill, 'the 已儲存 pill', 3000)
+      const shownAt = Date.now()
+      await waitFor(async () => !(await h.evaluate<boolean>(page.session, `!!document.querySelector('[data-ez-capture]')`)), 'the dialog to leave', 5000)
+      await delay(300)
+      check(await pill(), 'the pill outlives the dialog')
+      await h.screenshot(page.session, 'CX-saved-pill.png')
+      await waitFor(async () => !(await pill()), 'the pill to leave', 4000)
+      check(Date.now() - shownAt < 2500, 'the pill stays under two and a half seconds')
+
+      await save()
+      await waitFor(pill, 'the pill after the second save', 3000)
+      await page.pressShortcut()
+      await page.overlayShown()
+      check(!(await pill()), 'the region overlay starts with the pill gone')
+      await page.press('Escape')
+    },
+  },
+
+  {
     id: 'CX-tag-suggest',
     name: 'a typed prefix suggests live tags by use count, then key',
     async run(ctx) {

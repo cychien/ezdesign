@@ -2,14 +2,16 @@ import type { PageCommand, PageReplies } from '../shared/messages.js'
 import { dismissDialog, presentDialog } from './dialog-host.js'
 import { inspectMedia, readBytes } from './locate.js'
 import { selectRegion } from './region.js'
+import { clearSavedPill } from './saved-pill.js'
 
 const INSTALLED = Symbol.for('ezdesign.capture.page-agent')
 
 type Handlers = { [K in PageCommand['type']]: (command: Extract<PageCommand, { type: K }>) => Promise<PageReplies[K]> }
 
 const handlers: Handlers = {
-  'select-region': () => selectRegion(),
-  inspect: (command) => inspectMedia(command.srcUrl, command.mediaType, command.fullFrame),
+  // Both can be followed by a capture of the tab, which must not show the pill.
+  'select-region': () => clearSavedPill().then(selectRegion),
+  inspect: (command) => clearSavedPill().then(() => inspectMedia(command.srcUrl, command.mediaType, command.fullFrame)),
   read: async (command) => ({ data: await readBytes(command.url) }),
   present: (command) => presentDialog(command),
   dismiss: async (command) => {
