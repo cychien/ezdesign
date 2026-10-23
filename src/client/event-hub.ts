@@ -11,9 +11,19 @@
  *  there one repeated snapshot and saves the hub from knowing what a flush is. */
 
 export interface SourceLike {
+  readonly readyState: number
   addEventListener(type: string, listener: (e: { data: string }) => void): void
   close(): void
 }
+
+/** `EventSource.CLOSED`: given up, which a browser does on an answer that is
+ *  not a stream - another server on the port - and never retries by itself. */
+const CLOSED = 2
+const CLOSED_RETRY_MS = 1000
+
+/** The hub's own event, to every tab: whether the daemon's stream is up. */
+export const STREAM_STATE = 'ez:stream'
+export type StreamState = 'open' | 'down'
 
 export interface PortLike {
   postMessage(message: HubEvent): void
@@ -36,8 +46,12 @@ export class EventHub {
    *  sees a moment with no shell connected. */
   private retiring: SourceLike[] = []
   private url: string | null = null
+  private retry: ReturnType<typeof setTimeout> | undefined
 
-  constructor(private readonly open: (url: string) => SourceLike) {}
+  constructor(
+    private readonly open: (url: string) => SourceLike,
+    private readonly schedule = (run: () => void, ms: number): ReturnType<typeof setTimeout> => setTimeout(run, ms),
+  ) {}
 
   receive(port: PortLike, request: HubRequest): void {
     if (request.t === 'leave') {
@@ -52,18 +66,29 @@ export class EventHub {
   }
 
   private reopen(): void {
+    clearTimeout(this.retry)
     if (this.source) this.retiring.push(this.source)
     const next = this.open(this.url!)
     this.source = next
     next.addEventListener('open', () => {
-      if (this.source === next) this.retire()
+      if (this.source !== next) return
+      this.retire()
+      this.broadcast(STREAM_STATE, 'open' satisfies StreamState)
+    })
+    next.addEventListener('error', () => {
+      if (this.source !== next) return
+      this.broadcast(STREAM_STATE, 'down' satisfies StreamState)
+      if (next.readyState === CLOSED) this.retry = this.schedule(() => this.reopen(), CLOSED_RETRY_MS)
     })
     for (const type of this.events) {
       next.addEventListener(type, (e) => {
-        if (this.source !== next) return
-        for (const port of this.ports) port.postMessage({ type, data: e.data })
+        if (this.source === next) this.broadcast(type, e.data)
       })
     }
+  }
+
+  private broadcast(type: string, data: string): void {
+    for (const port of this.ports) port.postMessage({ type, data })
   }
 
   private retire(): void {
@@ -72,6 +97,7 @@ export class EventHub {
   }
 
   private close(): void {
+    clearTimeout(this.retry)
     this.retire()
     this.source?.close()
     this.source = null

@@ -184,7 +184,8 @@ export function installCanvas(ports: ShellPorts): CanvasUi {
     try {
       return await canvasRequest(ports.api, r)
     } catch (err) {
-      ports.notice(`canvas：${err instanceof Error ? err.message : String(err)}`)
+      // A fetch that never reached the daemon is the shell's banner to explain.
+      if (!(err instanceof TypeError)) ports.notice(`canvas：${err instanceof Error ? err.message : String(err)}`)
       return null
     }
   }

@@ -20,14 +20,20 @@ import { type ProjectRuntime, SessionDirectory } from './session-directory.js'
 import { migrateLegacySessions } from './session-migrate.js'
 import {
   DAEMON_LOG,
+  IDLE_CHECK_MS,
   IDLE_STOP_MS,
+  NO_IDLE_STOP_ENV,
   MAX_ATTACHMENT_BYTES,
   APP_NAME,
   POLL_TIMEOUT_MS,
+  SHELL_RETRY_MS,
+  SHELL_RETURN_MS,
   UPDATE_CHECK_TTL_MS,
   URL_PREFIX,
   controlPortRange,
+  envFlagOn,
 } from './constants.js'
+import { IdleCount } from './idle.js'
 import { AcpAgent } from './acp-agent.js'
 import { chatTitles, worthListing } from './chat-titles.js'
 import { readLimit, rememberedLimit, rememberLimit } from './usage-limit.js'
@@ -684,6 +690,9 @@ class SessionRuntime implements ProjectRuntime {
    *  ones canvas events go to. Overlays connect without it and are spared every
    *  canvas. */
   private readonly shellClients = new Set<Response>()
+  /** Until when a shell left open on this session's port may still be on its
+   *  way back to a daemon that has just taken the port again. */
+  private shellReturnDeadline = 0
   private pollWaiters = new Set<(r: PollResult | null) => void>()
   /** Set when a batch is handed to the agent, cleared when it polls again.
    *  Acks can't drive this: the agent acks on receipt, before it does the work. */
@@ -706,7 +715,8 @@ class SessionRuntime implements ProjectRuntime {
   private agentProgress: string | null = null
   /** SPIKE: the ACP-driven agent, when this session owns one. */
   private acp: AcpAgent | null = null
-  lastActivity = Date.now()
+  /** Since the last idle check. Born touched: a session just opened is in use. */
+  private touched = true
 
   constructor(
     readonly project: string,
@@ -841,7 +851,14 @@ class SessionRuntime implements ProjectRuntime {
   }
 
   touch(): void {
-    this.lastActivity = Date.now()
+    this.touched = true
+  }
+
+  /** One idle check's answer, which starts the next check's count over. */
+  takeBusy(): boolean {
+    const busy = this.inUse || this.touched || this.turnRunning()
+    this.touched = false
+    return busy
   }
 
   /** The harness and its effort are read when a turn starts, so they hold still until it ends. */
@@ -1732,6 +1749,9 @@ class SessionRuntime implements ProjectRuntime {
         connection: 'keep-alive',
       })
       res.flushHeaders()
+      // Down from the browser's 3 s: a daemon brought back finds its open shells
+      // within `SHELL_RETURN_MS`, before the CLI decides to open another window.
+      res.write(`retry: ${SHELL_RETRY_MS}\n\n`)
       const shell = req.query.shell === '1'
       // A shell with nothing to show gets an empty canvas, created now rather
       // than at start or restore: never a write into a project nobody is looking at.
@@ -2304,10 +2324,19 @@ class SessionRuntime implements ProjectRuntime {
     )
     const address = this.server.address()
     this.port = typeof address === 'object' && address ? address.port : 0
+    if (this.port === preferred) this.shellReturnDeadline = Date.now() + SHELL_RETURN_MS
     this.store.setPort(this.port)
     // After the bind: frame urls carry the port.
     this.canvases.start()
     return this.port
+  }
+
+  /** Whether a shell is open on this session, once any left open across a
+   *  daemon restart has had its moment to reconnect: the `ezdesign` that brought
+   *  the session back must not open a second window beside it. */
+  async shellOpen(): Promise<boolean> {
+    while (this.shellClients.size === 0 && Date.now() < this.shellReturnDeadline) await delay(100)
+    return this.shellClients.size > 0
   }
 
   /** `?path=` only when there is an app to be on a page of. */
@@ -2541,6 +2570,7 @@ export async function daemonMain(version: string, opts: DaemonOptions = {}): Pro
       shellUrl: runtime.shellUrl(parsed ? parsed.pathname + parsed.search : undefined),
       state: runtime.state,
       project: runtime.project,
+      shellOpen: await runtime.shellOpen(),
       ...(runtime.app.kind === 'attached' ? { app: runtime.app.origin } : {}),
       // What the session runs, not what this call passed: a restored session keeps its agent.
       ...(runtime.acpCommand ? { agent: runtime.acpCommand } : {}),
@@ -2639,15 +2669,18 @@ export async function daemonMain(version: string, opts: DaemonOptions = {}): Pro
   void updater.check()
   setInterval(() => void updater.check(), UPDATE_CHECK_TTL_MS / 4).unref()
 
-  setInterval(() => {
-    const now = Date.now()
-    const anyBusy = sessions.list().some((s) => s.inUse || now - s.lastActivity < IDLE_STOP_MS)
-    if (sessions.size > 0 && !anyBusy) {
-      // The one exit after which nothing needs rebuilding: no shell is open.
-      sessions.retireIdle()
-      cleanup()
-    }
-  }, 60_000).unref()
+  if (!envFlagOn(process.env[NO_IDLE_STOP_ENV])) {
+    const idle = new IdleCount(IDLE_STOP_MS / IDLE_CHECK_MS)
+    setInterval(() => {
+      // Not `some`: every session's answer starts its own count over.
+      const busy = sessions.list().filter((s) => s.takeBusy()).length > 0
+      if (idle.observe(busy) && sessions.size > 0) {
+        // The one exit after which nothing needs rebuilding: no shell is open.
+        sessions.retireIdle()
+        cleanup()
+      }
+    }, IDLE_CHECK_MS).unref()
+  }
 
   // eslint-disable-next-line no-console
   console.log(`daemon listening on 127.0.0.1:${port}`)

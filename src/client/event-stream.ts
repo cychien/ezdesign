@@ -1,7 +1,7 @@
-import type { HubEvent, HubRequest } from './event-hub.js'
+import { EventHub, type HubEvent, type HubRequest } from './event-hub.js'
 
 /** Subscribe to the daemon's event stream through the shared `EventHub`, or
- *  with a stream of this tab's own where SharedWorker is missing or its script
+ *  through a hub of this tab's own where SharedWorker is missing or its script
  *  will not load. */
 export function subscribeEvents(opts: {
   url: string
@@ -10,10 +10,8 @@ export function subscribeEvents(opts: {
   onEvent: (event: HubEvent) => void
 }): void {
   const { url, workerUrl, events, onEvent } = opts
-  const direct = () => {
-    const source = new EventSource(url)
-    for (const type of events) source.addEventListener(type, (e) => onEvent({ type, data: (e as MessageEvent<string>).data }))
-  }
+  const direct = () =>
+    new EventHub((u) => new EventSource(u)).receive({ postMessage: onEvent }, { t: 'subscribe', url, events })
   if (typeof SharedWorker === 'undefined') return direct()
   let worker: SharedWorker
   try {

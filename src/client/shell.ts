@@ -78,6 +78,7 @@ import {
   skillMarker,
   splitComment,
 } from './draft.js'
+import { STREAM_STATE, type StreamState } from './event-hub.js'
 import { subscribeEvents } from './event-stream.js'
 import { markdownEl } from './markdown.js'
 import { reduceNav } from './nav.js'
@@ -299,6 +300,11 @@ let canvasUi: CanvasUi | null = null
 let stagedApp: string | null | undefined = undefined
 
 let annotateMode: Mode = 'off'
+/** The daemon's stream has been down longer than a restart takes. Every request
+ *  would fail, so the review says why once instead of each control on its own. */
+let daemonGone = false
+let goneTimer: ReturnType<typeof setTimeout> | undefined
+const DAEMON_GONE_GRACE_MS = 4000
 let revealedAsk: string | null = null
 let deviceId = DESKTOP.id
 /** Every device on one grid instead of one at a time. */
@@ -3047,7 +3053,7 @@ resizer.addEventListener('keydown', (e) => {
 // ---------------------------------------------------------------- behavior
 
 function sendMode(mode: Mode): void {
-  if (stagedApp === null && mode !== 'off') return
+  if ((stagedApp === null || daemonGone) && mode !== 'off') return
   // A pick and a mode change cannot both be in flight: `setMode` in the overlay
   // tears the popup down, and the pick is what would be answering into it.
   abortPick('mode')
@@ -3262,7 +3268,7 @@ let sending = false
  *  report something the user never had to act on is worse than one that quietly
  *  takes the work and gets to it when it can. */
 function canSend(): boolean {
-  if (sending || noteAttach.pending() > 0) return false
+  if (sending || noteAttach.pending() > 0 || daemonGone) return false
   return snapshot?.state !== 'ended'
 }
 
@@ -4239,9 +4245,21 @@ function bannerText(): string | null {
 }
 
 function paintBanner(): void {
+  if (daemonGone) {
+    const how = h('div')
+    how.append('在專案目錄執行 ', h('code', 'ez-banner-code', 'npx ezdesign'), ' 重新啟動')
+    banner.replaceChildren(h('div', 'ez-banner-title', 'ezdesign 已停止運作'), how)
+    banner.hidden = false
+    return
+  }
   const text = bannerText()
   banner.hidden = !text
   if (text) banner.textContent = text
+}
+
+function paintAnnotateAvailability(): void {
+  const off = snapshot?.state === 'ended' || daemonGone || stagedApp === null
+  for (const { btn } of annotateBtns) btn.disabled = off
 }
 
 function render(): void {
@@ -4259,7 +4277,7 @@ function render(): void {
   if (ended) abortPick('ended')
   paintBanner()
   paintUpdate(s)
-  for (const { btn } of annotateBtns) btn.disabled = ended || stagedApp === null
+  paintAnnotateAvailability()
   paintSendState()
   paintConfig(s.acp)
   paintLimit(s.acp)
@@ -4870,12 +4888,36 @@ document.addEventListener('keyup', (e) => canvasUi?.onKeyUp(e))
  *  hands - a daemon restart onto a new build - and only a reload catches up. */
 let servedBy: string | null = null
 
+/** `down` repeats on every failed retry; the grace runs from the first. */
+function onStreamState(state: StreamState): void {
+  if (state === 'open') {
+    clearTimeout(goneTimer)
+    goneTimer = undefined
+    setDaemonGone(false)
+  } else if (!daemonGone && goneTimer === undefined) {
+    goneTimer = setTimeout(() => {
+      goneTimer = undefined
+      setDaemonGone(true)
+    }, DAEMON_GONE_GRACE_MS)
+  }
+}
+
+function setDaemonGone(gone: boolean): void {
+  if (daemonGone === gone) return
+  daemonGone = gone
+  if (gone) sendMode('off')
+  paintBanner()
+  paintSendState()
+  paintAnnotateAvailability()
+}
+
 subscribeEvents({
   url: `${API}/events?shell=1`,
   workerUrl: `${PREFIX}/events-worker.js?v=${encodeURIComponent(BUILD)}`,
   // Named events carry whole canvases, to shells only; the snapshot never does.
   events: ['message', SSE_CANVAS, SSE_CANVAS_REMOVED],
   onEvent: ({ type, data }) => {
+    if (type === STREAM_STATE) return onStreamState(data as StreamState)
     if (type !== 'message') {
       canvasUi ??= installCanvas(canvasPorts())
       canvasUi.onEvent(JSON.parse(data) as CanvasEventWire)

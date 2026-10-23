@@ -326,6 +326,7 @@ inside a frame: send (`⌘↵`) and stop (`⌘.`).
 | `EZDESIGN_DATA_DIR` | `~/.ezdesign` | Session state, the daemon registry and log, versions installed by the in-shell update, and the update-check cache |
 | `EZDESIGN_CONTROL_PORT` | `4400` | First port of the ten-port range the daemon searches for its control server |
 | `EZDESIGN_NO_UPDATE_CHECK` | unset | Set to `1` and the daemon never asks the npm registry for the latest version, so the shell never offers an update |
+| `EZDESIGN_NO_IDLE_STOP` | unset | Set to `1` and the daemon never stops itself for being idle; something else, like `npm run dev`, owns its lifetime |
 | `EZDESIGN_DESIGN_HARNESS` | unset (off) | Set to `1` in the environment the daemon starts from and the experimental 增強設計 design harness is available; unset, the shell has no switch and no agent is asked to use it |
 | `EZDESIGN_INSPIRE_URL` | `https://inspire.ezdesign.dev` | The inspiration database the `inspire` commands query |
 
@@ -335,15 +336,17 @@ port in it. `npm run dev` sets both.
 
 Sessions outlive the daemon that served them. On start, the daemon picks each session back up
 from disk and re-binds it to the port it last held, so a review shell tab you already have open
-only needs a reload, and feedback you queued before the restart is still waiting. If that port has
-since been taken, the session moves to a free one and the CLI re-resolves it. A daemon brings back
-the sessions that were live when it went down; one that stopped itself after half an hour with no
-shell open brings back none, and the next `ezdesign` or `poll` in a project wakes that project's
-session. A session that was
-driving an ACP agent starts that agent again **and asks it to resume the conversation they were
-having**, so the review carries on where it stopped. Whether that works is the agent's answer to
-give - a transcript it no longer has, or an agent that cannot resume at all, leaves the review in a
-fresh context, and only then does the thread say so.
+reconnects by itself, and feedback you queued before the restart is still waiting. If that port
+has since been taken, the session moves to a free one and the CLI re-resolves it. A daemon brings
+back the sessions that were live when it went down; one that stopped itself after half an hour
+with no shell open brings back none, and the next `ezdesign` or `poll` in a project wakes that
+project's session. Only time awake counts toward that half hour, so a laptop that sleeps with a
+shell open wakes to a review that is still there. A shell left open while its daemon is gone says
+so, and the `ezdesign` that brings the session back finds it reconnecting instead of opening a
+second window. A session that was driving an ACP agent starts that agent again **and asks it to
+resume the conversation they were having**, so the review carries on where it stopped. Whether
+that works is the agent's answer to give - a transcript it no longer has, or an agent that cannot
+resume at all, leaves the review in a fresh context, and only then does the thread say so.
 
 A session belongs to a project, not to a dev-server origin. The project is the nearest `.git` or
 `package.json` ancestor of the directory you run `ezdesign` from. A dev server that comes back on

@@ -233,3 +233,58 @@ test('CV-flag-removed: an open without a url opens the project on its canvases',
   const help = await world.run(['--help'], { cwd: P })
   assert.match(help.stdout, /ezdesign \[<url>\]/)
 })
+
+/** A review shell's event stream: reconnects whenever it drops, as a browser's does. */
+function holdShell(port: number): { connected: () => boolean; close: () => void } {
+  let live: ReturnType<typeof request> | null = null
+  let connected = false
+  let closed = false
+  const connect = () => {
+    if (closed) return
+    const req = request(`http://127.0.0.1:${port}/__ezdesign/api/events?shell=1`)
+    live = req
+    req.on('response', (res) => {
+      connected = true
+      res.on('close', retry)
+    })
+    req.on('error', retry)
+    req.end()
+  }
+  const retry = () => {
+    connected = false
+    if (!closed) setTimeout(connect, 200)
+  }
+  connect()
+  return {
+    connected: () => connected,
+    close: () => {
+      closed = true
+      live?.destroy()
+    },
+  }
+}
+
+test('a shell left open across a restart is waited for, so ezdesign opens no second window', async () => {
+  const world = await newWorld()
+  world.spawnDaemon()
+  const first = await world.liveDaemon()
+  const P = project(world, 'kept-open')
+  const Q = project(world, 'closed')
+  const p = await world.openSession(first.port, { url: 'http://localhost:5311/', project: P })
+  const q = await world.openSession(first.port, { url: 'http://localhost:5312/', project: Q })
+  assert.equal(p.shellOpen, false, 'nothing open yet')
+  const shell = holdShell(p.port)
+  await waitFor(async () => shell.connected(), 'the shell to connect')
+  assert.equal((await world.openSession(first.port, { project: P })).shellOpen, true)
+
+  await world.stopDaemon(first.port)
+  world.spawnDaemon()
+  const second = await world.liveDaemon()
+  const reopened = await world.openSession(second.port, { project: P })
+  assert.equal(reopened.port, p.port)
+  assert.equal(reopened.shellOpen, true, 'the open shell reconnected before the answer')
+  const other = await world.openSession(second.port, { project: Q })
+  assert.equal(other.port, q.port)
+  assert.equal(other.shellOpen, false, 'no shell was open on it to wait for')
+  shell.close()
+})
