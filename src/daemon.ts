@@ -1568,7 +1568,7 @@ class SessionRuntime implements ProjectRuntime {
     if (explore) {
       this.pendingExplore = null
       this.agentBusy = true
-      this.acp.prompt(explore)
+      this.promptAcp(explore)
       this.broadcast()
       return
     }
@@ -1587,7 +1587,7 @@ class SessionRuntime implements ProjectRuntime {
     const truth = truthState(this.project, this.harnessOn, this.store.harnessSeen())
     const round = this.roundOf(chat.id)
     if (round && !outcome.setup) {
-      this.acp.prompt(
+      this.promptAcp(
         exploreFollowUpPrompt(round, outcome, truth, replyLanguageLine(this.store.userWords())),
       )
       if (harnessReady(truth)) this.store.markHarnessSeen()
@@ -1599,7 +1599,7 @@ class SessionRuntime implements ProjectRuntime {
         ? historyBrief(this.store.earlierChatsSaid())
         : []
     if (history.length) this.store.markHistoryGiven()
-    this.acp.prompt(
+    this.promptAcp(
       acpPrompt(
         outcome,
         this.activeSkills,
@@ -1612,6 +1612,11 @@ class SessionRuntime implements ProjectRuntime {
       ),
     )
     if (truth.enabled) this.store.markHarnessSeen()
+  }
+
+  private promptAcp(text: string): void {
+    this.canvases.beginTurn()
+    this.acp!.prompt(text)
   }
 
   private wakePollers(): void {
