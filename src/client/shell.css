@@ -540,6 +540,53 @@ body.ez-arranging .ez-frame {
   animation: ez-pulse 1.2s ease-in-out infinite;
 }
 
+.ez-account {
+  position: relative;
+  margin-top: auto;
+  margin-bottom: 8px;
+}
+
+.ez-avatar {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--primary);
+  color: var(--primary-foreground);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.ez-account-who {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 6px 8px 8px;
+  margin-bottom: 2px;
+  border-bottom: 1px solid var(--border);
+}
+
+.ez-account-label {
+  font-size: 11px;
+  color: var(--muted-foreground);
+}
+
+.ez-account-email {
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--foreground);
+}
+
+.ez-account-menu .ez-menu-item svg {
+  color: var(--muted-foreground);
+}
+
 /* The grab band straddles the border instead of sitting beside it: a 1px border
    is not a pointer target, and the room to widen it is on the stage side, where
    nothing else is clickable. The margins give back its width, so it takes no
@@ -903,6 +950,7 @@ body.ez-arranging .ez-frame {
 .ez-config[data-open] .ez-menu,
 .ez-agent[data-open] .ez-menu,
 .ez-update-hint[data-open] .ez-menu,
+.ez-account[data-open] .ez-menu,
 .ez-canvas-menu-wrap[data-open] .ez-menu {
   display: flex;
 }
@@ -924,6 +972,14 @@ body.ez-arranging .ez-frame {
   bottom: calc(100% + 6px);
   max-height: 60vh;
   overflow-y: auto;
+}
+
+.ez-account-menu {
+  top: auto;
+  left: auto;
+  bottom: 0;
+  right: calc(100% + 8px);
+  min-width: 200px;
 }
 
 /* One option's rows. A group rather than a run of siblings because the rule

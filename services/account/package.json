@@ -1,0 +1,26 @@
+{
+  "name": "ezdesign-account",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Accounts for ezdesign: sign-in with Google or a password, as a Cloudflare Worker over D1.",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "types": "wrangler types --include-runtime=false --strict-vars=false",
+    "migrate:local": "wrangler d1 migrations apply account-local --local",
+    "migrate:production": "wrangler d1 migrations apply account --env production --remote",
+    "deploy:production": "wrangler deploy --env production"
+  },
+  "dependencies": {
+    "hono": "^4.13.8"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "^0.22.0",
+    "@cloudflare/workers-types": "^5.20260921.1",
+    "typescript": "^5.7.0",
+    "vitest": "~4.1.11",
+    "wrangler": "^4.135.0"
+  }
+}

@@ -37,6 +37,7 @@ import { type AppGuest, FrameRegistry, type Guest, senderOf } from './frame-regi
 import { type GuestKind, parseGuestMessage } from './guest-messages.js'
 import { type CanvasUi, installCanvas } from './canvas/index.js'
 import { type LibraryView, installLibrary } from './library/index.js'
+import { type AccountWire, installAccount } from './account.js'
 import { LIBRARY_TEST_IDS } from './library/names.js'
 import { chooseLibraryAttachments } from './library/picker.js'
 import {
@@ -187,6 +188,7 @@ interface SnapshotWire {
   /** The conversations this review has had, newest first. ACP mode only. */
   chats?: ChatWire[]
   update?: UpdateWire
+  account?: AccountWire
   explores?: ExploreWire[]
   canExplore?: true
   designHarness?: boolean
@@ -2721,7 +2723,8 @@ libraryBtn.setAttribute('aria-label', '素材庫')
 libraryBtn.title = '素材庫'
 libraryBtn.append(icon(Album02Icon as IconNode, 18))
 libraryBtn.onclick = () => showLibrary(!libraryShown, { animate: true })
-activityBar.append(reviewPanelBtn, libraryBtn)
+const account = installAccount(API)
+activityBar.append(reviewPanelBtn, libraryBtn, account.el)
 
 /** Over the review rather than instead of it: the stage and the sidebar keep
  *  their size underneath, so nothing re-lays out on the way in or back. */
@@ -4385,6 +4388,7 @@ function render(): void {
   if (ended) abortPick('ended')
   paintBanner()
   paintUpdate(s)
+  account.render(s.account)
   paintAnnotateAvailability()
   paintSendState()
   paintConfig(s.acp)
