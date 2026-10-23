@@ -334,7 +334,8 @@ inside a frame: send (`⌘↵`) and stop (`⌘.`).
 | `EZDESIGN_NO_IDLE_STOP` | unset | Set to `1` and the daemon never stops itself for being idle; something else, like `npm run dev`, owns its lifetime |
 | `EZDESIGN_DESIGN_HARNESS` | unset (off) | Set to `1` in the environment the daemon starts from and the experimental 增強設計 design harness is available; unset, the shell has no switch and no agent is asked to use it |
 | `EZDESIGN_INSPIRE_URL` | `https://inspire.ezdesign.dev` | The inspiration database the `inspire` commands query |
-| `EZDESIGN_ACCOUNT_URL` | `https://account.ezdesign.dev` | The account service the review shell signs in through |
+| `EZDESIGN_ACCOUNT` | unset (off) | Set to `1` in the environment the daemon starts from and the review shell offers a sign-in to ezdesign; unset, it shows no account button |
+| `EZDESIGN_API_URL` | `https://api.ezdesign.dev` | The ezdesign backend the review shell signs in through |
 
 Set `EZDESIGN_DATA_DIR` to run a second, fully isolated instance: a starting daemon only adopts a
 live daemon that serves its own data dir, so instances sharing a control range each take their own
@@ -575,13 +576,13 @@ needs Node 22.13 or newer. `--user-data-dir <dir>` installs into one browser pro
 
 ## Signing in
 
-The icon at the foot of the review shell's right-hand bar signs you in to ezdesign, with Google or
-an email and a password. It opens the sign-in page in a new tab; once you are through, the tab
-closes itself and the icon turns into your initial, whose menu shows the account and signs you
-out. One sign-in covers every review the daemon is serving. The token is kept in
-`~/.ezdesign/credentials.json`, mode 600, beside the inspiration token, and signing out revokes it.
-
-The account service is the Worker in [`services/account`](services/account/README.md).
+Some features will run on the ezdesign backend, and those need you signed in. Sign-in is off until
+the first of them ships: set `EZDESIGN_ACCOUNT=1` in the environment the daemon starts from to try
+it. The icon at the foot of the review shell's right-hand bar then signs you in, with Google or an
+email and a password. It opens the sign-in page in a new tab. When you are through, the tab closes
+itself and the icon shows your initial. Its menu shows the account and signs you out. One sign-in
+covers every review the daemon is serving. The token is kept in `~/.ezdesign/credentials.json`,
+mode 600, beside the inspiration token, and signing out revokes it.
 
 ## Development
 
