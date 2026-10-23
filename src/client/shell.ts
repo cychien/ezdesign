@@ -1615,6 +1615,7 @@ window.addEventListener('popstate', (e) => {
   const state = e.state as { ezUrl?: string } | null
   const path = new URLSearchParams(location.search).get('path')
   dispatchNav({ t: 'pop', url: state?.ezUrl ?? path ?? '/' })
+  if (libraryInUrl() !== libraryShown) showLibrary(libraryInUrl())
 })
 
 /** The page as it reads in the header and the tab. Driven from `nav.url`
@@ -2697,34 +2698,48 @@ activityBar.setAttribute('aria-label', '側邊欄')
 const reviewPanelBtn = h('button', 'ez-activity-btn')
 reviewPanelBtn.append(icon(BubbleChatIcon as IconNode, 18))
 reviewPanelBtn.onclick = () => toggleSidebar()
+/** In the url, so a reload opens straight onto the library rather than the review. */
+const VIEW_PARAM = 'view'
+const LIBRARY_VIEW = 'library'
+const libraryInUrl = () => new URLSearchParams(location.search).get(VIEW_PARAM) === LIBRARY_VIEW
+
 const libraryBtn = h('button', 'ez-activity-btn')
+// From the start, or the first paint transitions both activity buttons into place.
+libraryBtn.setAttribute('aria-pressed', String(libraryInUrl()))
 libraryBtn.dataset.testid = LIBRARY_TEST_IDS.open
 libraryBtn.setAttribute('aria-label', '素材庫')
 libraryBtn.title = '素材庫'
 libraryBtn.append(icon(Album02Icon as IconNode, 18))
-libraryBtn.onclick = () => showLibrary(!libraryShown)
+libraryBtn.onclick = () => showLibrary(!libraryShown, { animate: true })
 activityBar.append(reviewPanelBtn, libraryBtn)
 
 /** Over the review rather than instead of it: the stage and the sidebar keep
  *  their size underneath, so nothing re-lays out on the way in or back. */
 let library: LibraryView | null = null
-let libraryShown = false
-const LIBRARY_SHOWN_KEY = 'ezdesign:library-shown'
+let libraryShown = libraryInUrl()
 
-function showLibrary(shown: boolean): void {
+/** Fades in only when the user asks for it: arriving on it by reload or by
+ *  history, a fade would show the review through it first. */
+function showLibrary(shown: boolean, { animate = false } = {}): void {
   if (shown && !library) {
     library = installLibrary(API)
     root.append(library.el)
   }
   libraryShown = shown
-  if (library) library.el.hidden = !shown
+  if (library) {
+    library.el.hidden = !shown
+    library.el.toggleAttribute('data-entering', shown && animate)
+  }
   for (const covered of [stageWrap, resizer, sidebarSlot]) covered.inert = shown
   libraryBtn.setAttribute('aria-pressed', String(shown))
   paintSidebarWidth()
   if (shown) library!.refresh()
-  try {
-    sessionStorage.setItem(LIBRARY_SHOWN_KEY, shown ? '1' : '0')
-  } catch {}
+  if (libraryInUrl() !== shown) {
+    const url = new URL(location.href)
+    if (shown) url.searchParams.set(VIEW_PARAM, LIBRARY_VIEW)
+    else url.searchParams.delete(VIEW_PARAM)
+    history.replaceState(history.state, '', url)
+  }
 }
 
 // The resizer sits beside the sidebar rather than in it: it is one of the ways a
@@ -3052,9 +3067,7 @@ function focusNote(): void {
 }
 
 paintSidebarWidth()
-try {
-  if (sessionStorage.getItem(LIBRARY_SHOWN_KEY) === '1') showLibrary(true)
-} catch {}
+if (libraryInUrl()) showLibrary(true)
 document.addEventListener('visibilitychange', () => {
   // Saves happen in other tabs; coming back is when they are worth showing.
   if (libraryShown && document.visibilityState === 'visible') library?.refresh()

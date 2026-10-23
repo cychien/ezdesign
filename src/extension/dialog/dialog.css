@@ -137,6 +137,12 @@ h1 {
   object-fit: contain;
 }
 
+.preview .slot {
+  display: block;
+  max-width: 100%;
+  animation: slot-pulse 1.2s ease-in-out infinite alternate;
+}
+
 .preview canvas {
   display: block;
   max-width: 100%;
@@ -433,6 +439,12 @@ button:focus-visible {
   }
 }
 
+@keyframes slot-pulse {
+  to {
+    background: var(--paper-edge);
+  }
+}
+
 @keyframes menu-in {
   from {
     opacity: 0;
@@ -441,6 +453,10 @@ button:focus-visible {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .preview .slot {
+    animation: none;
+  }
+
   .card,
   [role='listbox'],
   [data-leaving='saved'] .card {

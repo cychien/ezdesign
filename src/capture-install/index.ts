@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { ALLOWED_ORIGINS, HOST_NAME } from '../capture-wire.js'
+import type { CaptureInstallProblem } from '../capture-setup-wire.js'
 import { DATA_DIR, installedExtensionDir, libraryDir, nativeHostDir } from '../constants.js'
 import { writeAtomic } from '../fs-atomic.js'
 import { compareVersions } from '../update-check.js'
@@ -20,6 +21,8 @@ export const HOST_BUNDLE = 'host.mjs'
 
 export class CaptureInstallError extends Error {
   constructor(
+    /** Lets the shell say what went wrong in its own words; the message is the CLI's. */
+    readonly problem: CaptureInstallProblem,
     message: string,
     readonly hint?: string,
   ) {
@@ -122,18 +125,20 @@ export async function installCapture(options: InstallOptions): Promise<InstallRe
     options.node ?? { path: process.execPath, version: process.version },
     previous ? probeNode(previous.node) : null,
   )
-  if (!choice.ok) throw new CaptureInstallError(choice.reason, 'run it again with a newer node, for example through nvm')
+  if (!choice.ok) throw new CaptureInstallError('node-too-old', choice.reason, 'run it again with a newer node, for example through nvm')
   const targets = hostTargets({ home: at.home, platform: at.platform, hostName: HOST_NAME, explicit: options.userDataDirs })
   if (targets.length === 0) {
+    const supported = at.platform === 'darwin' || at.platform === 'linux'
     throw new CaptureInstallError(
-      at.platform === 'darwin' || at.platform === 'linux'
+      supported ? 'no-browser' : 'unsupported-platform',
+      supported
         ? 'found no Chromium browser to install for (Chrome, Chromium, Arc, Brave, Edge, Vivaldi)'
         : `installing the capture host on ${at.platform} is not supported yet`,
       'pass --user-data-dir <dir> to install into one browser profile',
     )
   }
   const bundle = join(options.distDir, 'native-host.mjs')
-  if (!existsSync(bundle)) throw new CaptureInstallError(`this ezdesign has no native host at ${bundle}`)
+  if (!existsSync(bundle)) throw new CaptureInstallError('not-built', `this ezdesign has no native host at ${bundle}`)
 
   mkdirSync(at.hostDir, { recursive: true })
   const host = join(at.hostDir, HOST_BUNDLE)
@@ -309,7 +314,7 @@ export function readInstallRecord(dataDir: string = DATA_DIR): InstallRecord | n
     typeof record.extensionGeneration !== 'string' ||
     !Array.isArray(record.manifests)
   ) {
-    throw new CaptureInstallError(`${path} is not a capture install record`, 'run `ezdesign extension install` to repair it')
+    throw new CaptureInstallError('bad-record', `${path} is not a capture install record`, 'run `ezdesign extension install` to repair it')
   }
   return record as InstallRecord
 }

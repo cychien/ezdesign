@@ -5,6 +5,7 @@ import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { DatabaseSync } from 'node:sqlite'
+import { readExtensionSeen } from '../../src/capture-seen.js'
 import { EXTENSION_ID, HOST_NAME } from '../../src/capture-wire.js'
 import type { CaptureId, HostState } from '../../src/extension/shared/messages.js'
 import { openLibrary, tagKey } from '../../src/library/index.js'
@@ -220,6 +221,9 @@ const checks: Check[] = [
       check(state.type === 'ready', `host state ${JSON.stringify(state)}`)
       check(state.version === PKG_VERSION, `host version ${state.version}`)
       check(state.libraryDir === join(h.dataDir, 'library'), `library ${state.libraryDir}`)
+      const loaded = JSON.parse(readFileSync(join(h.dataDir, 'extension', 'manifest.json'), 'utf8')).version
+      const seen = readExtensionSeen(h.dataDir)
+      check(seen?.version === loaded, `the host records the extension it greeted for the shell: ${JSON.stringify(seen)}`)
       const generation = readdirSync(join(h.dataDir, 'extension', 'g'))[0]
       const setup = await h.openTab(`chrome-extension://${EXTENSION_ID}/g/${generation}/setup.html`)
       await waitFor(() => h.evaluate<boolean>(setup.session, `document.querySelector('.state')?.textContent === '已連線'`), 'the setup page to show 已連線')
@@ -307,6 +311,50 @@ const checks: Check[] = [
       await page.overlayShown()
       check(!(await pill()), 'the region overlay starts with the pill gone')
       await page.press('Escape')
+    },
+  },
+
+  {
+    id: 'CX-preview-steady',
+    name: 'a preview that loads slowly holds its place: nothing in the dialog moves when it arrives',
+    async run(ctx) {
+      const h = await ctx.launch()
+      const body = await thePhoto(h)
+      let served = 0
+      h.fixtures.serve('/slow.jpg', {
+        type: 'image/jpeg',
+        body,
+        // The page's own load is quick; the dialog's fetch of the same url is not.
+        handle: (_req, res) => {
+          const send = () => res.writeHead(200, { 'content-type': 'image/jpeg', 'content-length': String(body.length) }).end(body)
+          if (served++ === 0) send()
+          else setTimeout(send, 1500)
+        },
+      })
+      const src = `${h.fixtures.cross}/slow.jpg`
+      const page = await h.openTab(servePage(h, '/steady', 'Steady', `<img src="${src}" style="width:600px">`))
+      await page.grantActiveTab()
+      const id = await page.saveFromMenu(src, 'image')
+      const dialog = await page.dialog(id)
+      const sampling = dialog.evaluate<{ t: number; top: number; height: number; preview: boolean }[]>(`new Promise((done) => {
+        const out = [], t0 = performance.now()
+        const tick = () => {
+          const title = document.querySelector('#ez-title').getBoundingClientRect()
+          out.push({ t: Math.round(performance.now() - t0), top: title.top, height: document.querySelector('.card').getBoundingClientRect().height, preview: !!document.querySelector('[data-testid=ez-capture-preview]') })
+          if (performance.now() - t0 < 2500) requestAnimationFrame(tick)
+          else done(out)
+        }
+        requestAnimationFrame(tick)
+      })`)
+      await delay(500)
+      await h.screenshot(page.session, 'CX-preview-steady-loading.png')
+      const samples = await sampling
+      writeFileSync(join(ctx.evidence, 'samples.json'), JSON.stringify(samples, null, 2))
+      check(samples.at(-1)!.preview, 'the preview arrived within the sampling window')
+      const settledSamples = samples.filter((sample) => sample.t > 300)
+      const spread = (key: 'top' | 'height') => Math.max(...settledSamples.map((x) => x[key])) - Math.min(...settledSamples.map((x) => x[key]))
+      check(spread('top') < 1 && spread('height') < 1, `the dialog moved by ${spread('top')}px (title) / ${spread('height')}px (card) as the preview loaded`)
+      await h.screenshot(page.session, 'CX-preview-steady.png')
     },
   },
 

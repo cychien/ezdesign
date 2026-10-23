@@ -6,6 +6,7 @@ import {
   type DialogToWorker,
   type PreviewHandoff,
   type PreviewSource,
+  type Size,
   type WorkerToDialog,
 } from '../shared/messages.js'
 import { type TagField, allTags, emptyTags, reduceTags } from './tags.js'
@@ -307,31 +308,50 @@ function render(v: CaptureView): void {
   if (v.confirm === 'saved') leave('saved')
 }
 
-function drawPreview(image: CanvasImageSource, width: number, height: number, crop?: { x: number; y: number; width: number; height: number }) {
-  const box = crop ?? { x: 0, y: 0, width, height }
+const PREVIEW_MAX_HEIGHT = 'min(300px, max(96px, 100vh - 400px))'
+/** Enough pixels for the widest the dialog shows a preview, on a 2x screen. */
+const PREVIEW_MAX_PIXELS = 1200
+
+/** Sized by CSS rather than measured: the first preview message can land
+ *  before the frame has a width, and a measured box would then be empty. */
+function fit(node: HTMLElement, size: Size): void {
+  node.style.aspectRatio = `${size.width} / ${size.height}`
+  node.style.width = `min(100%, ${size.width}px, calc(${PREVIEW_MAX_HEIGHT} * ${size.width / size.height}))`
+}
+
+/** Holds the preview's place until it can be drawn, so nothing below it moves when it is. */
+function reserve(size: Size | null): void {
+  if (!size || figure.childElementCount) return
+  const slot = el('div', { class: 'slot', 'aria-hidden': 'true' })
+  fit(slot, size)
+  figure.replaceChildren(slot)
   figure.hidden = false
-  const padding = getComputedStyle(figure)
-  const maxWidth = figure.clientWidth - Number.parseFloat(padding.paddingLeft) - Number.parseFloat(padding.paddingRight)
-  const maxHeight = Math.max(96, Math.min(300, innerHeight - 400))
-  const scale = Math.min(1, maxWidth / box.width, maxHeight / box.height)
+}
+
+function drawPreview(image: CanvasImageSource, width: number, height: number, crop?: { x: number; y: number; width: number; height: number }) {
+  const source = crop ?? { x: 0, y: 0, width, height }
+  const scale = Math.min(1, PREVIEW_MAX_PIXELS / Math.max(source.width, source.height))
   const canvas = el('canvas', { 'data-testid': 'ez-capture-preview', role: 'img', 'aria-label': '預覽' })
-  canvas.style.width = `${Math.round(box.width * scale)}px`
-  canvas.width = Math.max(1, Math.round(box.width * scale * devicePixelRatio))
-  canvas.height = Math.max(1, Math.round(box.height * scale * devicePixelRatio))
+  fit(canvas, source)
+  canvas.width = Math.max(1, Math.round(source.width * scale))
+  canvas.height = Math.max(1, Math.round(source.height * scale))
   const ctx = canvas.getContext('2d')!
   ctx.imageSmoothingQuality = 'high'
-  ctx.drawImage(image, box.x, box.y, box.width, box.height, 0, 0, canvas.width, canvas.height)
+  ctx.drawImage(image, source.x, source.y, source.width, source.height, 0, 0, canvas.width, canvas.height)
   figure.replaceChildren(canvas)
+  figure.hidden = false
   requestAnimationFrame(() => post({ type: 'preview-shown', at: now() }))
 }
 
 async function showPreview(preview: PreviewSource): Promise<void> {
   switch (preview.type) {
     case 'bitmap':
+      reserve(preview.size)
       previewNonce = preview.nonce
       drawHandoff()
       return
     case 'screenshot': {
+      reserve(preview.rect ?? preview.viewport)
       const image = new Image()
       image.src = preview.dataUrl
       await image.decode()
@@ -340,10 +360,13 @@ async function showPreview(preview: PreviewSource): Promise<void> {
       return
     }
     case 'url': {
+      reserve(preview.size)
       const image = el('img', { 'data-testid': 'ez-capture-preview', alt: '預覽', src: preview.src })
+      if (preview.size) fit(image, preview.size)
+      // Swapped in whole once decoded: a picture painting in row by row moves nothing, but reads as broken.
+      await image.decode().catch(() => {})
       figure.replaceChildren(image)
       figure.hidden = false
-      await image.decode().catch(() => {})
       requestAnimationFrame(() => post({ type: 'preview-shown', at: now() }))
       return
     }

@@ -30,6 +30,8 @@ export interface HostSessionDeps {
   drained(): Promise<void>
   download: typeof downloadInto
   hostVersion: string
+  /** Best effort: a failure here must not refuse the extension. */
+  greeted(extension: { version: string }): void
 }
 
 export interface HostSession {
@@ -156,6 +158,11 @@ export function createHostSession(deps: HostSessionDeps): HostSession {
         throw error
       }
       greeted = true
+      try {
+        deps.greeted(request.extension)
+      } catch {
+        // Only the shell's install hint reads it.
+      }
       return {
         protocol: version,
         host: { version: deps.hostVersion, node: process.version },

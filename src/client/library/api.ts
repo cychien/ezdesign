@@ -1,4 +1,12 @@
-import type { LibraryItemWire, LibraryPageWire, LibraryPatchWire, LibraryTagWire } from '../../library-wire.js'
+import type { ExtensionInstallWire, ExtensionStatusWire } from '../../capture-setup-wire.js'
+import type {
+  LibraryAddedWire,
+  LibraryItemWire,
+  LibraryPageWire,
+  LibraryPasteMeta,
+  LibraryPatchWire,
+  LibraryTagWire,
+} from '../../library-wire.js'
 
 export interface LibraryQuery {
   q: string
@@ -11,11 +19,14 @@ export interface LibraryApi {
   tags(): Promise<LibraryTagWire[]>
   update(id: string, patch: LibraryPatchWire): Promise<LibraryItemWire>
   remove(id: string): Promise<void>
+  paste(original: Blob, thumbnail: Blob, meta: LibraryPasteMeta): Promise<LibraryAddedWire>
+  extensionStatus(): Promise<ExtensionStatusWire>
+  installExtension(): Promise<ExtensionInstallWire>
 }
 
 async function answer<T>(res: Response): Promise<T> {
   const body = (await res.json().catch(() => null)) as (T & { error?: string }) | null
-  if (!res.ok) throw new Error(body?.error ?? `HTTP ${res.status}`)
+  if (!res.ok) throw new Error(body?.error ?? `HTTP ${res.status}`, { cause: body })
   return body as T
 }
 
@@ -40,5 +51,14 @@ export function libraryApi(base: string): LibraryApi {
     remove: async (id) => {
       await answer(await fetch(`${base}/library/items/${id}`, { method: 'DELETE' }))
     },
+    paste: async (original, thumbnail, meta) => {
+      const form = new FormData()
+      form.append('original', original)
+      form.append('thumbnail', thumbnail)
+      form.append('meta', JSON.stringify(meta))
+      return answer(await fetch(`${base}/library/items`, { method: 'POST', body: form }))
+    },
+    extensionStatus: async () => answer(await fetch(`${base}/extension/status`)),
+    installExtension: async () => answer(await fetch(`${base}/extension/install`, { method: 'POST' })),
   }
 }

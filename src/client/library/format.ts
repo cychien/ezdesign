@@ -6,10 +6,9 @@ export function hostOf(url: string): string {
   }
 }
 
-export function bytesText(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`
-  return `${(bytes / 1024 / 1024).toFixed(1)} MB`
+/** What a reference is called: its page, or what it was when it came from no page. */
+export function sourceName(source: { pageUrl: string; pageTitle: string }): string {
+  return source.pageTitle || hostOf(source.pageUrl) || '貼上的圖片'
 }
 
 /** `m:ss`, or `h:mm:ss` from an hour on. */

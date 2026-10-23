@@ -1,5 +1,6 @@
 /** The capture library, browsed from the shell: everything the Chrome extension
- *  saved, across projects, searched by note and page title and filtered by tag.
+ *  saved or the user pasted, across projects, searched by note and page title
+ *  and filtered by tag.
  *  It covers the whole workspace while it shows, the way the sketch has it: a
  *  grid of references wants the width, and the review is one click away. */
 
@@ -9,10 +10,12 @@ import Link01Icon from '@hugeicons/core-free-icons/Link01Icon'
 import Cancel01Icon from '@hugeicons/core-free-icons/Cancel01Icon'
 import type { LibraryItemWire, LibraryPageWire, LibraryTagWire } from '../../library-wire.js'
 import { type IconNode, icon } from '../icon.js'
+import { encodeThumbnail } from '../thumbnail.js'
 import { openDetail } from './detail.js'
+import { openInstallDialog } from './install.js'
 import { LIBRARY_TEST_IDS as IDS } from './names.js'
 import { libraryApi } from './api.js'
-import { hostOf } from './format.js'
+import { sourceName } from './format.js'
 
 export interface LibraryView {
   readonly el: HTMLElement
@@ -21,6 +24,7 @@ export interface LibraryView {
 }
 
 const SEARCH_DEBOUNCE_MS = 200
+const TOAST_MS = 1800
 
 function h<K extends keyof HTMLElementTagNameMap>(tag: K, className?: string, text?: string): HTMLElementTagNameMap[K] {
   const el = document.createElement(tag)
@@ -66,7 +70,11 @@ export function installLibrary(apiBase: string): LibraryView {
   empty.hidden = true
   const sentinel = h('div', 'ez-library-sentinel')
   scroll.append(head, grid, empty, sentinel)
-  el.append(scroll)
+  const toast = h('p', 'ez-library-toast')
+  toast.setAttribute('role', 'status')
+  toast.dataset.testid = IDS.toast
+  toast.hidden = true
+  el.append(scroll, toast)
 
   let items: LibraryItemWire[] = []
   let tags: LibraryTagWire[] = []
@@ -137,7 +145,7 @@ export function installLibrary(apiBase: string): LibraryView {
       badge.append(h('span', undefined, item.link ? '連結' : '影片'))
       media.append(badge)
     }
-    const caption = h('span', 'ez-library-card-caption', item.source.pageTitle || hostOf(item.source.pageUrl))
+    const caption = h('span', 'ez-library-card-caption', sourceName(item.source))
     button.append(media, caption)
     button.onclick = () => showDetail(index)
     li.append(button)
@@ -168,15 +176,55 @@ export function installLibrary(apiBase: string): LibraryView {
       empty.append(h('p', 'ez-library-empty-title', '沒有符合的素材'), reset)
       return
     }
-    const how = h('p', 'ez-library-empty-body')
-    how.append(
-      '在 Chrome 對圖片或影片按右鍵，選「儲存至 ezdesign」；或按 ',
-      h('kbd', undefined, 'Alt+Shift+S'),
-      ' 框選畫面。',
+    empty.append(
+      h('p', 'ez-library-empty-title', '還沒有任何素材'),
+      h('p', 'ez-library-empty-body', '使用 ezdesign 插件擷取頁面，或直接貼上素材'),
     )
-    const install = h('p', 'ez-library-empty-body')
-    install.append('還沒裝擴充功能？在終端機執行 ', h('code', undefined, 'ezdesign extension install'))
-    empty.append(h('p', 'ez-library-empty-title', '還沒有收藏任何素材'), how, install)
+    const install = h('button', 'ez-library-empty-link', '安裝 ezdesign 插件')
+    install.type = 'button'
+    install.dataset.testid = IDS.install
+    install.onclick = () => openInstallDialog(api)
+    empty.append(install)
+  }
+
+  let toastTimer: ReturnType<typeof setTimeout> | undefined
+  function say(text: string, tone: 'ok' | 'error' | 'busy'): void {
+    clearTimeout(toastTimer)
+    toast.textContent = text
+    toast.dataset.tone = tone
+    toast.hidden = false
+    if (tone !== 'busy') toastTimer = setTimeout(() => (toast.hidden = true), TOAST_MS)
+  }
+
+  async function addPasted(files: File[]): Promise<void> {
+    say(files.length > 1 ? `正在加入 ${files.length} 張圖片…` : '正在加入…', 'busy')
+    let added = 0
+    let known = 0
+    for (const file of files) {
+      try {
+        const { thumbnail, size } = await thumbnailOf(file)
+        const result = await api.paste(file, new Blob([thumbnail.webp], { type: 'image/webp' }), {
+          thumbnail: { width: thumbnail.width, height: thumbnail.height },
+          source: size,
+        })
+        if (result.merged) known++
+        else added++
+      } catch (error) {
+        say(`沒加進去：${error instanceof Error ? error.message : String(error)}`, 'error')
+        if (added + known) showNewest()
+        return
+      }
+    }
+    say(added ? '已加入素材庫' : '素材庫裡已經有這張了', 'ok')
+    showNewest()
+  }
+
+  /** A paste lands at the head of an unfiltered grid, where it can be seen. */
+  function showNewest(): void {
+    search.value = ''
+    chosen.clear()
+    reload()
+    void loadTags()
   }
 
   async function load(reset: boolean): Promise<void> {
@@ -277,6 +325,14 @@ export function installLibrary(apiBase: string): LibraryView {
     search.focus()
   }
 
+  document.addEventListener('paste', (e) => {
+    if (el.hidden || document.querySelector('dialog[open]')) return
+    const files = [...(e.clipboardData?.files ?? [])].filter((f) => f.type.startsWith('image/'))
+    if (!files.length) return
+    e.preventDefault()
+    void addPasted(files)
+  })
+
   function showDetail(index: number): void {
     openDetail({
       api,
@@ -311,8 +367,29 @@ export function installLibrary(apiBase: string): LibraryView {
   }
 }
 
+/** SVG has no bitmap decode; an `<img>` takes it, and anything else the browser shows. */
+async function thumbnailOf(file: File) {
+  const bitmap = await createImageBitmap(file).catch(() => null)
+  if (bitmap) {
+    const size = { width: bitmap.width, height: bitmap.height }
+    return { thumbnail: await encodeThumbnail(bitmap, size), size }
+  }
+  const img = new Image()
+  img.src = URL.createObjectURL(file)
+  try {
+    await img.decode().catch(() => {
+      throw new Error('這個檔案打不開')
+    })
+    if (!img.naturalWidth || !img.naturalHeight) throw new Error('這張圖片沒有尺寸')
+    const size = { width: img.naturalWidth, height: img.naturalHeight }
+    return { thumbnail: await encodeThumbnail(img, size), size }
+  } finally {
+    URL.revokeObjectURL(img.src)
+  }
+}
+
 function cardLabel(item: LibraryItemWire): string {
-  const parts = [item.source.pageTitle || hostOf(item.source.pageUrl)]
+  const parts = [sourceName(item.source)]
   if (item.tags.length) parts.push(item.tags.join('、'))
   if (item.note) parts.push(item.note)
   return parts.join('，')

@@ -1,7 +1,7 @@
 /** The shell's end of the capture library. The routes are listed in
  *  `library-wire.ts`; they sit on the api router, behind `refuseCrossSite`. */
 
-import { type RequestHandler, type Response, Router } from 'express'
+import express, { type Request, type RequestHandler, type Response, Router } from 'express'
 import { URL_PREFIX } from './constants.js'
 import {
   type Item,
@@ -10,8 +10,15 @@ import {
   type Library,
   LibraryError,
   type StoredFile,
+  type ThumbnailInput,
 } from './library/index.js'
-import type { LibraryItemWire, LibraryPageWire, LibraryPatchWire } from './library-wire.js'
+import type {
+  LibraryAddedWire,
+  LibraryItemWire,
+  LibraryPageWire,
+  LibraryPasteMeta,
+  LibraryPatchWire,
+} from './library-wire.js'
 
 export interface LibraryRouteHost {
   /** The daemon's one handle, opened on first use. */
@@ -22,6 +29,7 @@ const PAGE_LIMIT = 60
 const MAX_TAGS = 100
 const MAX_NOTE = 10_000
 const ITEM_ID = /^[0-9A-HJKMNP-TV-Z]{26}$/
+const MAX_PASTE_BYTES = 64 * 1024 * 1024
 
 const itemUrl = (id: string, file: 'thumbnail' | 'original', sha256: string) =>
   `${URL_PREFIX}/api/library/items/${id}/${file}?v=${sha256.slice(0, 16)}`
@@ -69,6 +77,61 @@ export function parsePatch(raw: unknown): LibraryPatchWire | null {
     patch.note = note
   }
   return patch.tags || patch.note !== undefined ? patch : null
+}
+
+const isSize = (raw: unknown): raw is { width: number; height: number } => {
+  const { width, height } = (raw ?? {}) as Record<string, unknown>
+  return [width, height].every((n) => Number.isInteger(n) && (n as number) > 0)
+}
+
+/** Null for anything but an image file, a thumbnail and their sizes. */
+export async function parsePaste(req: Request): Promise<{ original: Uint8Array; thumbnail: ThumbnailInput } | null> {
+  if (!Buffer.isBuffer(req.body)) return null
+  const form = await new Response(req.body as Uint8Array<ArrayBuffer>, { headers: { 'content-type': req.get('content-type') ?? '' } })
+    .formData()
+    .catch(() => null)
+  const original = form?.get('original')
+  const thumbnail = form?.get('thumbnail')
+  const metaField = form?.get('meta')
+  if (!(original instanceof Blob) || original.size === 0 || !(thumbnail instanceof Blob) || typeof metaField !== 'string') {
+    return null
+  }
+  let meta: LibraryPasteMeta
+  try {
+    meta = JSON.parse(metaField) as LibraryPasteMeta
+  } catch {
+    return null
+  }
+  if (!isSize(meta?.thumbnail) || !isSize(meta.source)) return null
+  return {
+    original: new Uint8Array(await original.arrayBuffer()),
+    thumbnail: {
+      webp: new Uint8Array(await thumbnail.arrayBuffer()),
+      width: meta.thumbnail.width,
+      height: meta.thumbnail.height,
+      source: { width: meta.source.width, height: meta.source.height },
+    },
+  }
+}
+
+async function savePasted(library: Library, paste: { original: Uint8Array; thumbnail: ThumbnailInput }) {
+  const receiving = library.stage({
+    kind: 'image',
+    source: { pageUrl: '', pageTitle: '', mediaUrl: null, capturedAt: Date.now() },
+  })
+  try {
+    await receiving.write(paste.original)
+  } catch (error) {
+    await receiving.discard()
+    throw error
+  }
+  const ready = await receiving.finish()
+  try {
+    await ready.setThumbnail(paste.thumbnail)
+    return await ready.commit({ tags: [], note: '' })
+  } finally {
+    await ready.discard()
+  }
 }
 
 const queryList = (value: unknown): string[] =>
@@ -140,6 +203,8 @@ export function libraryApiRouter(host: LibraryRouteHost): Router {
         res.sendFile(
           stored.path,
           {
+            // The library lives under `~/.ezdesign`, which `send` would refuse as a dotfile path.
+            dotfiles: 'allow',
             // Content-addressed: a url names its bytes for good.
             maxAge: req.query.v ? '1y' : 0,
             immutable: Boolean(req.query.v),
@@ -158,6 +223,19 @@ export function libraryApiRouter(host: LibraryRouteHost): Router {
       }),
     )
   }
+
+  router.post('/library/items', express.raw({ type: 'multipart/form-data', limit: MAX_PASTE_BYTES }), (req, res, next) => {
+    void (async () => {
+      const paste = await parsePaste(req)
+      if (!paste) return refuse(res, 400, 'bad-request', 'a paste is a multipart form of original, thumbnail and meta')
+      const { item, merged } = await savePasted(await host.library(), paste)
+      res.status(merged ? 200 : 201).json({ item: itemWire(item), merged } satisfies LibraryAddedWire)
+    })().catch((error: unknown) => {
+      if (!(error instanceof LibraryError)) return next(error)
+      const status = error.code === 'unsupported-media' ? 415 : error.code === 'integrity' ? 400 : error.retryable ? 503 : 500
+      refuse(res, status, error.code, error.message)
+    })
+  })
 
   router.patch(
     '/library/items/:id',
