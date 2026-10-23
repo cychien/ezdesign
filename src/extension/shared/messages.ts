@@ -72,6 +72,7 @@ export interface PreviewHandoff {
 
 export interface DialogLeaving {
   type: 'ez-capture-leaving'
+  how: 'saved' | 'cancelled'
 }
 
 export const DIALOG_PORT_PREFIX = 'dialog:'

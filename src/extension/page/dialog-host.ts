@@ -1,5 +1,6 @@
 import type { CaptureId, DialogLeaving, PageCommand, PreviewHandoff } from '../shared/messages.js'
 import { lastInspected } from './locate.js'
+import { showSavedPill } from './saved-pill.js'
 
 const mounted = new Map<CaptureId, { host: HTMLElement; listening: AbortController }>()
 
@@ -48,8 +49,10 @@ export async function presentDialog(
   addEventListener(
     'message',
     (event) => {
-      if (event.source !== frame.contentWindow || (event.data as DialogLeaving | null)?.type !== 'ez-capture-leaving') return
+      const leaving = event.data as DialogLeaving | null
+      if (event.source !== frame.contentWindow || leaving?.type !== 'ez-capture-leaving') return
       frame.style.backdropFilter = 'blur(0px)'
+      if (leaving.how === 'saved') showSavedPill()
     },
     { signal: listening.signal },
   )

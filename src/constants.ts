@@ -44,12 +44,25 @@ export function resolveControlPort(raw: string | undefined): number {
   return port
 }
 
-/** Ten consecutive ports starting at the resolved start. Resolved on call, not
- *  at import: this module is a dependency of the published `@cychien/ezdesign/vite`
- *  entry point, which must never read - let alone fail on - this variable. */
-export function controlPortRange(): { start: number; end: number } {
+/** The Fetch standard's "bad ports" (https://fetch.spec.whatwg.org/#bad-port).
+ *  Node's fetch refuses them as a browser does, and the CLI, the agent and the
+ *  dev scripts all reach the daemon over fetch, so it must never listen on one:
+ *  4190 sits inside an otherwise ordinary range. */
+export const FETCH_BAD_PORTS: ReadonlySet<number> = new Set([
+  0, 1, 7, 9, 11, 13, 15, 17, 19, 20, 21, 22, 23, 25, 37, 42, 43, 53, 69, 77, 79, 87, 95, 101, 102, 103, 104, 109,
+  110, 111, 113, 115, 117, 119, 123, 135, 137, 139, 143, 161, 179, 389, 427, 465, 512, 513, 514, 515, 526, 530, 531,
+  532, 540, 548, 554, 556, 563, 587, 601, 636, 989, 990, 993, 995, 1719, 1720, 1723, 2049, 3659, 4045, 4190, 5060,
+  5061, 6000, 6566, 6665, 6666, 6667, 6668, 6669, 6679, 6697, 10080,
+])
+
+/** Ten consecutive ports starting at the resolved start; `ports` is the ones a
+ *  daemon may listen on. Resolved on call, not at import: this module is a
+ *  dependency of the published `@cychien/ezdesign/vite` entry point, which must
+ *  never read - let alone fail on - this variable. */
+export function controlPortRange(): { start: number; end: number; ports: number[] } {
   const start = resolveControlPort(process.env[CONTROL_PORT_ENV])
-  return { start, end: start + 9 }
+  const ports = Array.from({ length: 10 }, (_, i) => start + i).filter((port) => !FETCH_BAD_PORTS.has(port))
+  return { start, end: start + 9, ports }
 }
 
 /** Surfaces a bad value at the command the user just ran, instead of leaving it

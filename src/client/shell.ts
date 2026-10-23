@@ -20,6 +20,7 @@ import BubbleChatAddIcon from '@hugeicons/core-free-icons/BubbleChatAddIcon'
 import BubbleChatIcon from '@hugeicons/core-free-icons/BubbleChatIcon'
 import BubbleChatOutcomeIcon from '@hugeicons/core-free-icons/BubbleChatOutcomeIcon'
 import Edit02Icon from '@hugeicons/core-free-icons/Edit02Icon'
+import Album02Icon from '@hugeicons/core-free-icons/Album02Icon'
 import type { SessionConfigOption } from '@agentclientprotocol/sdk'
 import type { AcpAskAnswer, AcpAskField, AcpAskOption } from '../acp-ask.js'
 import { askComplete, askSendsOnPick } from '../acp-ask.js'
@@ -35,6 +36,8 @@ import { attachify, directAttachments } from './attach.js'
 import { type AppGuest, FrameRegistry, type Guest, senderOf } from './frame-registry.js'
 import { type GuestKind, parseGuestMessage } from './guest-messages.js'
 import { type CanvasUi, installCanvas } from './canvas/index.js'
+import { type LibraryView, installLibrary } from './library/index.js'
+import { LIBRARY_TEST_IDS } from './library/names.js'
 import {
   type CanvasEventWire,
   type CanvasSnapshotWire,
@@ -472,6 +475,8 @@ interface Shortcut {
   /** Only while the App tab is showing: it changes the App's previews, and doing
    *  that unseen from a canvas would be a surprise waiting on the way back. */
   appOnly?: boolean
+  /** Whether it still fires while the library covers the review. */
+  inLibrary?: boolean
 }
 
 /** Modifier-free letters and digits, because the browser has claimed most of the
@@ -529,6 +534,7 @@ const SHORTCUTS: Shortcut[] = [
     run: () => toggleSidebar(),
     whileTyping: true,
     fromCanvas: true,
+    inLibrary: true,
   },
   {
     keys: '⌘ ↵',
@@ -580,6 +586,7 @@ function runShortcut(e: KeyChord, typing: boolean, guest?: GuestKind): boolean {
     if (typing && !s.whileTyping) continue
     if (guest === 'canvas' && !s.fromCanvas) continue
     if (s.appOnly && canvasUi && canvasUi.activeTab !== 'app') continue
+    if (libraryShown && !s.inLibrary) continue
     if (!s.match(e)) continue
     s.run()
     return true
@@ -2690,7 +2697,35 @@ activityBar.setAttribute('aria-label', '側邊欄')
 const reviewPanelBtn = h('button', 'ez-activity-btn')
 reviewPanelBtn.append(icon(BubbleChatIcon as IconNode, 18))
 reviewPanelBtn.onclick = () => toggleSidebar()
-activityBar.append(reviewPanelBtn)
+const libraryBtn = h('button', 'ez-activity-btn')
+libraryBtn.dataset.testid = LIBRARY_TEST_IDS.open
+libraryBtn.setAttribute('aria-label', '素材庫')
+libraryBtn.title = '素材庫'
+libraryBtn.append(icon(Album02Icon as IconNode, 18))
+libraryBtn.onclick = () => showLibrary(!libraryShown)
+activityBar.append(reviewPanelBtn, libraryBtn)
+
+/** Over the review rather than instead of it: the stage and the sidebar keep
+ *  their size underneath, so nothing re-lays out on the way in or back. */
+let library: LibraryView | null = null
+let libraryShown = false
+const LIBRARY_SHOWN_KEY = 'ezdesign:library-shown'
+
+function showLibrary(shown: boolean): void {
+  if (shown && !library) {
+    library = installLibrary(API)
+    root.append(library.el)
+  }
+  libraryShown = shown
+  if (library) library.el.hidden = !shown
+  for (const covered of [stageWrap, resizer, sidebarSlot]) covered.inert = shown
+  libraryBtn.setAttribute('aria-pressed', String(shown))
+  paintSidebarWidth()
+  if (shown) library!.refresh()
+  try {
+    sessionStorage.setItem(LIBRARY_SHOWN_KEY, shown ? '1' : '0')
+  } catch {}
+}
 
 // The resizer sits beside the sidebar rather than in it: it is one of the ways a
 // folded-away sidebar comes back, so it cannot go inert with the rest.
@@ -2955,8 +2990,8 @@ function paintSidebarWidth(): void {
   sidebar.style.width = `${width}px`
   sidebarSlot.toggleAttribute('data-collapsed', sidebarCollapsed)
   sidebar.inert = sidebarCollapsed
-  reviewPanelBtn.setAttribute('aria-pressed', String(!sidebarCollapsed))
-  const label = sidebarCollapsed ? '打開對話' : '收起對話'
+  reviewPanelBtn.setAttribute('aria-pressed', String(!sidebarCollapsed && !libraryShown))
+  const label = sidebarCollapsed || libraryShown ? '打開對話' : '收起對話'
   reviewPanelBtn.setAttribute('aria-label', label)
   reviewPanelBtn.title = `${label}（${MOD_LABEL} \\）`
   resizer.setAttribute('aria-valuenow', String(sidebarCollapsed ? 0 : width))
@@ -2997,7 +3032,13 @@ function persistSidebarWidth(): void {
   } catch {}
 }
 
+/** From the library, the conversation is what the button promises, so it comes
+ *  back open rather than toggled. */
 function toggleSidebar(): void {
+  if (libraryShown) {
+    showLibrary(false)
+    if (!sidebarCollapsed) return
+  }
   if (sidebarCollapsed) resizeSidebar(preferredWidth)
   else collapseSidebar()
   persistSidebarWidth()
@@ -3006,11 +3047,18 @@ function toggleSidebar(): void {
 /** Whatever puts the user in the composer brings the sidebar back first: an
  *  inert element cannot take focus, and a caret nobody can see is not one. */
 function focusNote(): void {
-  if (sidebarCollapsed) toggleSidebar()
+  if (sidebarCollapsed || libraryShown) toggleSidebar()
   note.focus()
 }
 
 paintSidebarWidth()
+try {
+  if (sessionStorage.getItem(LIBRARY_SHOWN_KEY) === '1') showLibrary(true)
+} catch {}
+document.addEventListener('visibilitychange', () => {
+  // Saves happen in other tabs; coming back is when they are worth showing.
+  if (libraryShown && document.visibilityState === 'visible') library?.refresh()
+})
 addEventListener('resize', () => {
   paintSidebarWidth()
   paintFrames()
@@ -4903,7 +4951,7 @@ function escapeAnnotating(): void {
 document.addEventListener('keydown', (e) => {
   const typing = isTyping(e.target)
   if (runShortcut(e, typing)) e.preventDefault()
-  else if (!typing && canvasUi?.onKeyDown(e)) e.preventDefault()
+  else if (!typing && !libraryShown && canvasUi?.onKeyDown(e)) e.preventDefault()
 })
 document.addEventListener('keyup', (e) => canvasUi?.onKeyUp(e))
 

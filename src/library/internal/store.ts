@@ -126,11 +126,22 @@ export interface FindRecordQuery {
   beforeId: string | null
 }
 
+export interface ItemPatchRecord {
+  note?: string
+  /** Replaces the item's tags. */
+  tags?: readonly (readonly [name: string, key: string])[]
+  now: number
+}
+
 export interface Store {
   liveFileItemByBlob(sha256: string): ItemRecord | null
   item(id: string): ItemRecord | null
   commitItem(record: CommitRecord): { id: string; merged: boolean }
+  /** False when there is no live item `id`. */
+  updateItem(id: string, patch: ItemPatchRecord): boolean
+  removeItem(id: string, now: number): boolean
   suggestTags(prefixKey: string, excludeKeys: readonly string[], limit: number): { name: string; uses: number }[]
+  tags(): { name: string; uses: number }[]
   find(query: FindRecordQuery): ItemRecord[]
   close(): void
 }
@@ -342,24 +353,60 @@ class SqliteStore implements Store {
           ] satisfies SQLInputValue[]),
         )
       }
-      for (const [name, key] of record.tags) {
-        this.sql(
-          `INSERT INTO tags (id, name, key, created_at, updated_at) VALUES (?, ?, ?, ?, ?)
-           ON CONFLICT (key) WHERE deleted_at IS NULL DO NOTHING`,
-        ).run(ulid(record.now), name, key, record.now, record.now)
-        this.sql(
-          `INSERT INTO item_tags (item_id, tag_id, created_at, updated_at)
-           SELECT ?, id, ?, ? FROM tags WHERE key = ? AND deleted_at IS NULL
-           ON CONFLICT (item_id, tag_id) DO UPDATE SET deleted_at = NULL, updated_at = excluded.updated_at, rev = rev + 1
-             WHERE deleted_at IS NOT NULL`,
-        ).run(id, record.now, record.now, key)
-      }
+      for (const tag of record.tags) this.linkTag(id, tag, record.now)
       this.db.exec('COMMIT')
       return { id, merged: existing !== null }
     } catch (error) {
       this.db.exec('ROLLBACK')
       throw error
     }
+  }
+
+  updateItem(id: string, patch: ItemPatchRecord): boolean {
+    this.db.exec('BEGIN IMMEDIATE')
+    try {
+      const live = this.sql('SELECT 1 FROM items WHERE id = ? AND deleted_at IS NULL').get(id) !== undefined
+      if (live) {
+        this.sql(
+          'UPDATE items SET note = COALESCE(?, note), updated_at = ?, rev = rev + 1 WHERE id = ?',
+        ).run(patch.note ?? null, patch.now, id)
+        if (patch.tags) {
+          this.sql(
+            `UPDATE item_tags SET deleted_at = ?, updated_at = ?, rev = rev + 1
+             WHERE item_id = ? AND deleted_at IS NULL
+               AND tag_id NOT IN (
+                 SELECT id FROM tags WHERE deleted_at IS NULL AND key IN (SELECT value FROM json_each(?))
+               )`,
+          ).run(patch.now, patch.now, id, JSON.stringify(patch.tags.map(([, key]) => key)))
+          for (const tag of patch.tags) this.linkTag(id, tag, patch.now)
+        }
+      }
+      this.db.exec('COMMIT')
+      return live
+    } catch (error) {
+      this.db.exec('ROLLBACK')
+      throw error
+    }
+  }
+
+  removeItem(id: string, now: number): boolean {
+    const result = this.sql(
+      'UPDATE items SET deleted_at = ?, updated_at = ?, rev = rev + 1 WHERE id = ? AND deleted_at IS NULL',
+    ).run(now, now, id)
+    return Number(result.changes) > 0
+  }
+
+  private linkTag(itemId: string, [name, key]: readonly [name: string, key: string], now: number): void {
+    this.sql(
+      `INSERT INTO tags (id, name, key, created_at, updated_at) VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT (key) WHERE deleted_at IS NULL DO NOTHING`,
+    ).run(ulid(now), name, key, now, now)
+    this.sql(
+      `INSERT INTO item_tags (item_id, tag_id, created_at, updated_at)
+       SELECT ?, id, ?, ? FROM tags WHERE key = ? AND deleted_at IS NULL
+       ON CONFLICT (item_id, tag_id) DO UPDATE SET deleted_at = NULL, updated_at = excluded.updated_at, rev = rev + 1
+         WHERE deleted_at IS NOT NULL`,
+    ).run(itemId, now, now, key)
   }
 
   suggestTags(prefixKey: string, excludeKeys: readonly string[], limit: number): { name: string; uses: number }[] {
@@ -375,6 +422,20 @@ class SqliteStore implements Store {
        LIMIT ?`,
     )
       .all(prefixKey, prefixKey + PREFIX_END, JSON.stringify(excludeKeys), limit)
+      .map((row) => ({ name: String(row.name), uses: Number(row.uses) }))
+  }
+
+  tags(): { name: string; uses: number }[] {
+    return this.sql(
+      `SELECT t.name AS name, count(*) AS uses
+       FROM tags t
+       JOIN item_tags it ON it.tag_id = t.id AND it.deleted_at IS NULL
+       JOIN items i ON i.id = it.item_id AND i.deleted_at IS NULL
+       WHERE t.deleted_at IS NULL
+       GROUP BY t.id
+       ORDER BY uses DESC, t.key ASC`,
+    )
+      .all()
       .map((row) => ({ name: String(row.name), uses: Number(row.uses) }))
   }
 

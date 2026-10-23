@@ -26,8 +26,8 @@ import type { CanvasGuest, CanvasGuestPort } from '../frame-registry.js'
 import type { GuestMessage, Mode, RelayOp } from '../guest-messages.js'
 import type { OverlaySnapshot } from '../overlay-link.js'
 import { BoardView } from './board-view.js'
-import { confirmDialog } from './confirm-dialog.js'
-import { LABELS } from './names.js'
+import { confirmDialog } from '../confirm-dialog.js'
+import { LABELS, TEST_IDS } from './names.js'
 import { TabStrip, tabsModel } from './tabs.js'
 
 /** What the shell lends the feature. Narrow on purpose: the next contributor
@@ -178,6 +178,7 @@ export function installCanvas(ports: ShellPorts): CanvasUi {
         title: LABELS.confirmTitle(name),
         body: LABELS.confirmBody,
         go: LABELS.confirmGo,
+        testId: TEST_IDS.confirm,
       })
       if (sure) await request({ do: 'delete', canvasId: id })
     },

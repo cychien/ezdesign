@@ -1,0 +1,38 @@
+# Library
+
+The activity bar's second button, `素材庫`, covers the stage and the sidebar with the global capture library: everything the Chrome extension saved, newest first, as a grid of whole thumbnails. A search box matches notes and page titles, a row of tag toggles narrows the grid to items carrying every chosen tag, and a card opens a modal with the reference large, its source, and its tags and note, which save as they are edited. The extension's own side: after a save, the page shows a `已儲存` pill at the top centre for 1.6 s.
+
+## Sub-features
+
+- `library-open` `button "素材庫"` shows `region "素材庫"` and presses itself; `button "打開對話"` (or ⌘\) brings the review back with the sidebar open. Which one shows survives a reload of the tab (sessionStorage), not a new tab.
+- `library-browse` cards are `button "<page title>，<tags>，<note>"` with `data-item-id`; more load on scroll, 60 at a time. A video file carries a `影片` badge, a stream or over-cap video a `連結` badge.
+- `library-filter` `searchbox "搜尋素材"` (debounced, Escape clears), `group "依標籤篩選"` of toggle buttons with use counts; `全部` clears them. No match shows `沒有符合的素材` with `清除篩選`.
+- `library-detail` the modal `dialog` (`data-testid=ez-library-detail`): `combobox "標籤"` adds with Enter or a comma and suggests known tags by prefix, chips remove on click, `textbox "為什麼好"` saves 0.7 s after typing and on blur, `已儲存` confirms. ← → step through the grid; Escape or the backdrop closes and focus returns to the card.
+- `library-delete` `button "刪除"`, then `刪除這個素材？` with `取消`/`刪除`; the item is tombstoned (`deleted_at`), its files stay, and the modal moves on to the next item.
+- `library-refresh` coming back to the tab, or reopening the library, puts saves made elsewhere at the head of the grid without moving the scroll.
+- `library-empty` with nothing saved: `還沒有收藏任何素材` and how to save, including `ezdesign extension install`.
+- `capture-saved-pill` the extension's `已儲存` pill (`[data-ez-capture-saved]` on the page); proved by `CX-saved-pill` in `test/e2e/capture.e2e.ts`.
+
+## How to get to it (user POV)
+
+- Save something with the extension, then in any shell click the second activity-bar button `素材庫`.
+
+## Driving it with chrome-devtools-axi and vz.mjs
+
+Preconditions:
+
+- A stack is up. Fill its library through the real extension: `node --import tsx $V/seed-library.mts "$($V/vz.mjs get dataDir)" "$($V/vz.mjs evidence)/library-seed"`. It needs Chrome for Testing (`npx playwright install chromium`), saves twelve references of mixed sizes and tags, and replaces `<data dir>/library`. The daemon opens the library on first use, so no restart is needed.
+- `resize 1440 900` first: the default axi window is very tall.
+
+Recipes:
+
+- **Browse.** Click `button "素材庫"`, screenshot. `eval "() => document.querySelectorAll('.ez-library-card').length"` is 12.
+- **Filter.** Click two tag toggles; only items carrying both remain. Type into the search box; `curl -s "<shell origin>/__ezdesign/api/library/items?q=<text>"` lists the same ids.
+- **Edit.** Open a card, add a tag through the suggestion list, type a note; then read `<data dir>/library/library.db` with `node:sqlite` (`items.note`, live `item_tags`) rather than trusting the screen.
+- **Delete.** `刪除` then the confirm's `刪除`; the row's `deleted_at` is set and the grid and the tag counts drop by one.
+- **Refresh.** Commit an item from another process with `openLibrary({ dir: '<data dir>/library' })`, then toggle `素材庫` off and on; it is first in the grid.
+
+## Gotchas
+
+- axi's `click` on the note textarea can leave focus in the tag field after the chips rewrap; focus it with `eval` (`document.querySelector('[data-testid=ez-library-note]').focus()`) before `type`.
+- The review behind the library is `inert`, so its controls are absent from the snapshot while the library shows.

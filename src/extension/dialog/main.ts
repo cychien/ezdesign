@@ -202,7 +202,7 @@ function leave(how: 'saved' | 'cancelled'): void {
   if (closing) return
   closing = true
   document.documentElement.dataset.leaving = how
-  if (!inWindow) window.parent.postMessage({ type: 'ez-capture-leaving' } satisfies DialogLeaving, '*')
+  if (!inWindow) window.parent.postMessage({ type: 'ez-capture-leaving', how } satisfies DialogLeaving, '*')
   const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches
   const done = () => post({ type: 'closed' })
   if (reduced) setTimeout(done, 120)

@@ -395,7 +395,7 @@ button:focus-visible {
 }
 
 [data-leaving='saved'] .card {
-  transform-origin: top right;
+  transform-origin: top center;
   animation: card-save var(--t-view) var(--ease-out) both;
 }
 
@@ -429,7 +429,7 @@ button:focus-visible {
 @keyframes card-save {
   to {
     opacity: 0;
-    transform: translate(30vw, -30vh) scale(0.3);
+    transform: translateY(-36vh) scale(0.3);
   }
 }
 
