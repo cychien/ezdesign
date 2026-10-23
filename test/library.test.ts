@@ -16,6 +16,7 @@ import {
   openLibrary,
 } from '../src/library/index.js'
 import { ulid } from '../src/library/internal/ulid.js'
+import { png, webp } from './helpers/media.js'
 
 const LIBRARY_ENTRY = fileURLToPath(new URL('../src/library/index.ts', import.meta.url))
 const REPO = fileURLToPath(new URL('..', import.meta.url))
@@ -25,30 +26,6 @@ const source: CaptureSource = {
   pageTitle: 'Board',
   mediaUrl: 'https://cdn.test/a.png',
   capturedAt: 1,
-}
-
-function png(width: number, height: number, bytes = 64, seed = 'x'): Buffer {
-  const head = Buffer.alloc(33)
-  Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).copy(head)
-  head.writeUInt32BE(13, 8)
-  head.write('IHDR', 12, 'ascii')
-  head.writeUInt32BE(width, 16)
-  head.writeUInt32BE(height, 20)
-  const fill = createHash('sha256').update(seed).digest()
-  const body = Buffer.alloc(Math.max(0, bytes - head.length))
-  for (let i = 0; i < body.length; i += fill.length) fill.copy(body, i)
-  return Buffer.concat([head, body])
-}
-
-function webp(width: number, height: number): Buffer {
-  const out = Buffer.alloc(30)
-  out.write('RIFF', 0, 'ascii')
-  out.writeUInt32LE(22, 4)
-  out.write('WEBPVP8L', 8, 'ascii')
-  out.writeUInt32LE(5, 16)
-  out[20] = 0x2f
-  out.writeUInt32LE(((width - 1) & 0x3fff) | (((height - 1) & 0x3fff) << 14), 21)
-  return out
 }
 
 const mp4Head = () => {
@@ -419,6 +396,52 @@ test('CX-p1-find: text, tags and paging over live items', async () => {
   assert.deepEqual(pages.map((p) => p.length), [10, 10, 10])
   assert.deepEqual(pages.flat(), saved.reverse())
   many.close()
+})
+
+test('editing replaces tags and note, keeps a known spelling, and leaves other items alone', async () => {
+  const { open } = fresh()
+  const library = await open()
+  const a = await save(library, 'a', ['Hero', 'dark'], 'first')
+  const b = await save(library, 'b', ['dark'])
+  const named = () => library.tags().map((t) => `${t.name} ${t.uses}`)
+  assert.deepEqual(named(), ['dark 2', 'Hero 1'])
+
+  const edited = library.update(a.item.id, { tags: ['hero', ' Gradient ', 'gradient', 'a,b'] })
+  assert.deepEqual(edited?.tags, ['Gradient', 'Hero'], 'normalized, deduped by key, the existing spelling kept')
+  assert.equal(edited?.note, 'first', 'a patch without a note keeps it')
+  assert.ok(edited!.updatedAt >= a.item.updatedAt)
+  assert.deepEqual(named(), ['dark 1', 'Gradient 1', 'Hero 1'])
+  assert.deepEqual(library.get(b.item.id)?.tags, ['dark'])
+
+  assert.equal(library.update(a.item.id, { note: '為什麼好' })?.note, '為什麼好')
+  assert.deepEqual(library.get(a.item.id)?.tags, ['Gradient', 'Hero'], 'a patch without tags keeps them')
+  assert.deepEqual(library.find({ text: '為什麼' }).items.map((i) => i.id), [a.item.id], 'the new note is searchable')
+
+  assert.deepEqual(library.update(a.item.id, { tags: ['dark'] })?.tags, ['dark'], 'a tag taken off comes back on')
+  assert.deepEqual(library.update(a.item.id, { tags: ['Hero'] })?.tags, ['Hero'])
+  library.close()
+})
+
+test('a removed item leaves every read, keeps its files, and the same bytes saved again are a new item', async () => {
+  const { dir, open } = fresh()
+  const library = await open()
+  const kept = await save(library, 'kept', ['shared'])
+  const gone = await save(library, 'gone', ['shared', 'only'])
+  const files = filesUnder(join(dir, 'blobs')).length
+
+  assert.equal(library.remove(gone.item.id), true)
+  assert.equal(library.remove(gone.item.id), false, 'removing twice is a no-op')
+  assert.equal(library.get(gone.item.id), null)
+  assert.equal(library.update(gone.item.id, { note: 'x' }), null)
+  assert.deepEqual(library.find({}).items.map((i) => i.id), [kept.item.id])
+  assert.deepEqual(library.tags().map((t) => `${t.name} ${t.uses}`), ['shared 1'])
+  assert.equal(filesUnder(join(dir, 'blobs')).length, files)
+
+  const again = await save(library, 'gone', [])
+  assert.equal(again.merged, false)
+  assert.notEqual(again.item.id, gone.item.id)
+  assert.ok(existsSync(again.item.content.type === 'file' ? again.item.content.path : ''))
+  library.close()
 })
 
 test('a library written by an incompatible schema epoch refuses to open', async () => {

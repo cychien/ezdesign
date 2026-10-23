@@ -110,6 +110,8 @@ import {
   writeRegistry,
 } from './registry.js'
 import { refreshCaptureInstall } from './capture-install/index.js'
+import { type Library, openLibrary } from './library/index.js'
+import { lazyLibrary, libraryApiRouter } from './library-routes.js'
 import { installVersion, pruneInstalledVersions } from './installer.js'
 import { latestVersion, updateChecksDisabled } from './update-check.js'
 import { Updater, type UpdateWire } from './updater.js'
@@ -746,6 +748,7 @@ class SessionRuntime implements ProjectRuntime {
     readonly project: string,
     private readonly version: string,
     private readonly updater: Updater,
+    private readonly library: () => Promise<Library>,
   ) {
     this.store = new SessionStore(project)
     // Starts detached: which origin this runtime shows is the directory's call,
@@ -1750,6 +1753,9 @@ class SessionRuntime implements ProjectRuntime {
     // only - no route here can write a frame document.
     api.use(canvasApiRouter({ user: this.canvases.user, read: this.canvases.read }))
 
+    // The capture library is global, so every session shows the same one.
+    api.use(libraryApiRouter({ library: this.library }))
+
     api.get('/state', (_req, res) => res.json(this.snapshot()))
 
     api.post('/page-state', (req, res) => {
@@ -2492,8 +2498,10 @@ export async function daemonMain(version: string, opts: DaemonOptions = {}): Pro
     onChange: broadcastAll,
   })
 
+  const library = lazyLibrary(() => openLibrary())
+
   sessions = new SessionDirectory(
-    (project) => new SessionRuntime(project, version, updater),
+    (project) => new SessionRuntime(project, version, updater, library),
     {
       restorable: listRestorableSessions,
       get: persistedSession,

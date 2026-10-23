@@ -69,6 +69,7 @@ export type ItemContent =
 
 export interface Thumbnail {
   path: string
+  sha256: Sha256
   width: number
   height: number
 }
@@ -171,6 +172,13 @@ export interface CommitResult {
   merged: boolean
 }
 
+/** Fields left out are kept. */
+export interface ItemPatch {
+  /** Replaces the item's tags; normalized like `CommitInput.tags`. */
+  tags?: readonly string[]
+  note?: string
+}
+
 export interface TagUse {
   name: string
   /** Live items carrying the tag. */
@@ -209,8 +217,15 @@ export interface Library {
   /** Tags whose key starts with `prefix`'s key, most used first, then by key.
    *  An empty prefix lists the most used. */
   suggestTags(prefix: string, options?: SuggestOptions): TagUse[]
+  /** Every tag a live item carries, most used first, then by key. */
+  tags(): TagUse[]
   get(id: ItemId): Item | null
   find(query: ItemQuery): ItemPage
+  /** Null when there is no live item `id`. */
+  update(id: ItemId, patch: ItemPatch): Item | null
+  /** A tombstone: the item leaves every read, its files stay. False when there
+   *  was no live item `id`. */
+  remove(id: ItemId): boolean
   /** Discards this handle's open stages and closes the db. */
   close(): void
 }
@@ -277,6 +292,34 @@ class LocalLibrary implements Library {
     return this.store.suggestTags(tagKey(prefix), (options.exclude ?? []).map(tagKey), limit)
   }
 
+  tags(): TagUse[] {
+    this.assertOpen()
+    return this.store.tags()
+  }
+
+  update(id: ItemId, patch: ItemPatch): Item | null {
+    this.assertOpen()
+    try {
+      const found = this.store.updateItem(id, {
+        note: patch.note,
+        tags: patch.tags && uniqueTags(patch.tags),
+        now: Date.now(),
+      })
+      return found ? this.get(id) : null
+    } catch (error) {
+      throw asLibraryError(error)
+    }
+  }
+
+  remove(id: ItemId): boolean {
+    this.assertOpen()
+    try {
+      return this.store.removeItem(id, Date.now())
+    } catch (error) {
+      throw asLibraryError(error)
+    }
+  }
+
   get(id: ItemId): Item | null {
     this.assertOpen()
     const record = this.store.item(id)
@@ -332,6 +375,7 @@ class LocalLibrary implements Library {
       dimensions: record.width !== null && record.height !== null ? { width: record.width, height: record.height } : null,
       thumbnail: record.thumbnail && {
         path: contentPath(this.paths.thumbs, record.thumbnail.sha256, 'webp'),
+        sha256: record.thumbnail.sha256 as Sha256,
         width: record.thumbnail.width,
         height: record.thumbnail.height,
       },

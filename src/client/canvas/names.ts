@@ -48,7 +48,6 @@ export const LABELS = {
   confirmTitle: (name: string) => `永久刪除 "${name}"？`,
   confirmBody: '這個 canvas 的所有 frame 檔案都會被刪除，無法復原。',
   confirmGo: '刪除',
-  confirmCancel: '取消',
   board: (name: string) => `canvas ${name}`,
   /** The frame's group and its iframe's `title`, as the device previews name theirs. */
   frame: (title: string, width: number, height: number) => `${title} · ${width}×${height}`,
