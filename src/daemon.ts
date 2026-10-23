@@ -2387,9 +2387,9 @@ interface RangeDaemon {
  *  whose registry file was deleted or corrupted, or a cold start racing this one.
  *  Adopting one beats racing it for ports and leaving two daemons alive with one
  *  registry between them. One serving another data dir is only a taken port. */
-async function ownDaemonsInRange(range: { start: number; end: number }): Promise<RangeDaemon[]> {
+async function ownDaemonsInRange(range: { ports: readonly number[] }): Promise<RangeDaemon[]> {
   const found: RangeDaemon[] = []
-  for (let port = range.start; port <= range.end; port++) {
+  for (const port of range.ports) {
     try {
       const res = await fetch(`http://127.0.0.1:${port}/control/health`, {
         signal: AbortSignal.timeout(400),
@@ -2631,8 +2631,7 @@ export async function daemonMain(version: string, opts: DaemonOptions = {}): Pro
     setTimeout(() => process.exit(0), 100)
   })
 
-  const candidates = Array.from({ length: range.end - range.start + 1 }, (_, i) => range.start + i)
-  const controlServer = await listenOn(control, [...candidates, 0])
+  const controlServer = await listenOn(control, [...range.ports, 0])
   boundAt = process.hrtime.bigint()
   const controlAddress = controlServer.address()
   const port = typeof controlAddress === 'object' && controlAddress ? controlAddress.port : 0
