@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from 'node:crypto'
-import { mkdirSync, readFileSync, readdirSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
+import { constants as fsConstants, copyFileSync, mkdirSync, readFileSync, readdirSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { ATTACHMENT_GRACE_MS, SESSIONS_DIR } from './constants.js'
 import type { AcpConfigValue } from './acp-config.js'
@@ -10,6 +10,7 @@ import type {
   Anchor,
   Annotation,
   Attachment,
+  AttachmentOrigin,
   BatchView,
   ConversationEntry,
   ExploreState,
@@ -89,6 +90,14 @@ export function sanitizeAttachmentName(raw: string, mime: string): string {
     .replace(/^\.+/, '')
     .slice(0, 60)
   return cleaned || `file${extensionFor(mime)}`
+}
+
+/** A file name for a library item, built from what it is called. The stem is
+ *  cut before the extension goes on, so the sanitizer's cap cannot take it off,
+ *  and a title's slashes are kept as characters rather than read as a path. */
+export function libraryAttachmentName(title: string, mime: string): string {
+  const stem = title.replace(/[/\\]/g, '-').replace(/\s+/g, ' ').trim().slice(0, 48).trim()
+  return `${stem || 'reference'}${extensionFor(mime)}`
 }
 
 /** Clipboard screenshots all arrive as `image.png`, so a session would otherwise
@@ -650,19 +659,42 @@ export class SessionStore implements ViewStore {
   }
 
   addAttachment(rawName: string, mime: string, bytes: Buffer): Attachment {
+    return this.storeAttachment(rawName, mime, bytes.byteLength, (path) => writeFileSync(path, bytes))
+  }
+
+  /** A copy, not a link to the library's file: a session owns its attachments
+   *  outright, and the sweep deletes them. A clone where the filesystem has one. */
+  copyAttachment(title: string, mime: string, from: string, origin: AttachmentOrigin): Attachment {
+    return this.storeAttachment(
+      libraryAttachmentName(title, mime),
+      mime,
+      statSync(from).size,
+      (path) => copyFileSync(from, path, fsConstants.COPYFILE_FICLONE),
+      origin,
+    )
+  }
+
+  private storeAttachment(
+    rawName: string,
+    mime: string,
+    size: number,
+    write: (path: string) => void,
+    origin?: AttachmentOrigin,
+  ): Attachment {
     const index = this.attachmentIndex
     const taken = new Set(Object.values(index).map((a) => a.name))
     const attachment: Attachment = {
       id: newId(),
       name: dedupeName(sanitizeAttachmentName(rawName, mime), taken),
       mime,
-      size: bytes.byteLength,
+      size,
       createdAt: Date.now(),
+      ...(origin ? { origin } : {}),
     }
     mkdirSync(this.attachmentsDir, { recursive: true })
     // Bytes before index: an index entry pointing at no file would break every
     // reader, while a file no entry names is just something for the sweep.
-    writeFileSync(this.attachmentPath(attachment), bytes)
+    write(this.attachmentPath(attachment))
     this.writeJson('attachments.json', { ...index, [attachment.id]: attachment })
     return attachment
   }

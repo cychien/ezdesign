@@ -12,6 +12,7 @@ import {
   type StoredFile,
   type ThumbnailInput,
 } from './library/index.js'
+import type { AttachmentOrigin } from './protocol.js'
 import type {
   LibraryAddedWire,
   LibraryItemWire,
@@ -36,6 +37,43 @@ const itemUrl = (id: string, file: 'thumbnail' | 'original', sha256: string) =>
 
 function storedOriginal(item: Item): StoredFile | null {
   return item.content.type === 'file' ? item.content : item.content.frame
+}
+
+/** What a composer attaches for a library item: its stored bytes (a link's
+ *  frame) and where it came from. */
+export interface LibraryAttachable {
+  title: string
+  file: StoredFile
+  origin: AttachmentOrigin
+}
+
+/** Every id resolved, in order, or the first one that cannot be: a partial answer
+ *  would drop a reference the user watched themselves choose. */
+export function libraryAttachables(
+  library: Library,
+  ids: readonly string[],
+): { ok: LibraryAttachable[] } | { missing: string } {
+  const ok: LibraryAttachable[] = []
+  for (const id of ids) {
+    const item = ITEM_ID.test(id) ? library.get(id as ItemId) : null
+    const file = item && storedOriginal(item)
+    if (!item || !file) return { missing: id }
+    const { pageUrl, pageTitle, mediaUrl } = item.source
+    ok.push({
+      title: pageTitle || hostOf(pageUrl),
+      file,
+      origin: { libraryItemId: item.id, pageUrl, pageTitle, mediaUrl, note: item.note, tags: [...item.tags] },
+    })
+  }
+  return { ok }
+}
+
+function hostOf(url: string): string {
+  try {
+    return new URL(url).host
+  } catch {
+    return ''
+  }
 }
 
 export function itemWire(item: Item): LibraryItemWire {

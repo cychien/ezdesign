@@ -607,6 +607,7 @@ function openPopup(
   exploreHead.hidden = true
   const attach = attachify({
     attachments: link.attachments,
+    ...(link.chooseLibrary ? { chooseLibrary: link.chooseLibrary } : {}),
     mk: el,
     className: 'ez-input',
     placeholder: COMPOSE_PLACEHOLDER,

@@ -38,6 +38,7 @@ import { type GuestKind, parseGuestMessage } from './guest-messages.js'
 import { type CanvasUi, installCanvas } from './canvas/index.js'
 import { type LibraryView, installLibrary } from './library/index.js'
 import { LIBRARY_TEST_IDS } from './library/names.js'
+import { chooseLibraryAttachments } from './library/picker.js'
 import {
   type CanvasEventWire,
   type CanvasSnapshotWire,
@@ -1896,6 +1897,7 @@ const noteAttach = attachify({
     },
   ],
   skills: () => fetchSkills(),
+  chooseLibrary: () => chooseLibraryAttachments(API),
 })
 const note = noteAttach.editable
 note.title = '寫補充說明（N）'
@@ -4942,6 +4944,17 @@ window.addEventListener('message', (e: MessageEvent) => {
       return
     case 'ez:pick-cancelled':
       dispatchPick({ t: 'cancelled', id: msg.pickId, resumed: msg.resumed, frame: from })
+      return
+    case 'ez:library-pick':
+      chooseLibraryAttachments(API).then(
+        (files) => frames.post(from, { type: 'ez:library-picked', reqId: msg.reqId, files }),
+        (error: unknown) =>
+          frames.post(from, {
+            type: 'ez:library-picked',
+            reqId: msg.reqId,
+            error: error instanceof Error ? error.message : String(error),
+          }),
+      )
       return
     // Already screened by the overlay for its own popup and the host page's
     // fields, so nothing here is being typed into.

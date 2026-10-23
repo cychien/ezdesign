@@ -18,6 +18,9 @@ export const LIBRARY_TEST_IDS = {
   /** the empty library's button that opens the install dialog */
   install: 'ez-library-install',
   installDialog: 'ez-library-install-dialog',
+  /** the composer's `/library` modal `<dialog>` */
+  picker: 'ez-library-picker',
+  pickerConfirm: 'ez-library-picker-confirm',
   /** role=status: what became of a paste */
   toast: 'ez-library-toast',
 } as const

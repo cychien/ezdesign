@@ -47,6 +47,20 @@ export interface Attachment {
   mime: string
   size: number
   createdAt: number
+  /** Set when the file was taken from the capture library rather than pasted. */
+  origin?: AttachmentOrigin
+}
+
+/** Where a library item was captured, and what the user wrote about it. Copied
+ *  onto the attachment at the moment it is chosen: the library is free to change
+ *  or lose the item afterwards, and the comment must still say what it said. */
+export interface AttachmentOrigin {
+  libraryItemId: string
+  pageUrl: string
+  pageTitle: string
+  mediaUrl: string | null
+  note: string
+  tags: string[]
 }
 
 /** Agent-facing view: an absolute path, because the agent runs on this machine
@@ -56,6 +70,7 @@ export interface AgentAttachment {
   mime: string
   size: number
   path: string
+  origin?: AttachmentOrigin
 }
 
 /** An element the user pointed the agent *at* from inside a comment - "make this

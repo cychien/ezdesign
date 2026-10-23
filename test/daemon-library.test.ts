@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
-import { mkdtempSync } from 'node:fs'
+import { mkdtempSync, readFileSync, realpathSync } from 'node:fs'
 import { join } from 'node:path'
 import { after, before, test } from 'node:test'
 import { type CommitResult, openLibrary } from '../src/library/index.js'
@@ -17,6 +17,7 @@ import { png, webp } from './helpers/media.js'
 const world = await DaemonWorld.create()
 let api = ''
 let origin = ''
+let project = ''
 const saved: CommitResult[] = []
 
 async function save(
@@ -53,7 +54,8 @@ before(async () => {
   saved.push(await save('b', ['dark'], '', 'Vercel'))
   world.spawnDaemon()
   const { port } = await world.liveDaemon()
-  const { shellUrl } = await world.openSession(port, { project: mkdtempSync(join(world.dataDir, 'project-')) })
+  project = realpathSync(mkdtempSync(join(world.dataDir, 'project-')))
+  const { shellUrl } = await world.openSession(port, { project })
   origin = new URL(shellUrl).origin
   api = `${origin}/__ezdesign/api`
 })
@@ -82,6 +84,50 @@ test('the shell lists the library newest first, with every tag, and filters by t
   assert.deepEqual(await ids('tag=hero'), [saved[0]!.item.id])
   assert.deepEqual(await ids('tag=dark&tag=Hero'), [saved[0]!.item.id])
   assert.deepEqual(await ids('q=Vercel&tag=Hero'), [])
+})
+
+test('library items chosen in a composer become attachments that reach the agent with where they came from', async () => {
+  const post = (path: string, body: unknown) =>
+    json<Record<string, unknown>[] & { error?: string }>(path, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+  const [linear, vercel] = [saved[0]!.item.id, saved[1]!.item.id]
+  assert.equal((await post('/attachments/library', { ids: [] })).status, 400)
+  assert.equal((await post('/attachments/library', { ids: [linear, '01J00000000000000000000000'] })).status, 404)
+
+  const attached = await post('/attachments/library', { ids: [vercel, linear] })
+  assert.equal(attached.status, 200)
+  assert.deepEqual(
+    attached.body.map(({ name, mime, size }) => ({ name, mime, size })),
+    [
+      { name: 'Vercel.png', mime: 'image/png', size: png(20, 10, 64, 'b').byteLength },
+      { name: 'Linear.png', mime: 'image/png', size: png(20, 10, 64, 'a').byteLength },
+    ],
+  )
+  assert.deepEqual(attached.body[1]!.origin, {
+    libraryItemId: linear,
+    pageUrl: 'https://ref.test/a',
+    pageTitle: 'Linear',
+    mediaUrl: null,
+    note: '漸層很細緻',
+    tags: ['dark', 'Hero'],
+  })
+
+  const ids = attached.body.map((a) => a.id)
+  assert.equal((await post('/send', { note: '參考 [file 1] 和 [file 2]', attachments: ids })).status, 200)
+  const polled = await world.run(['poll'], { cwd: project })
+  assert.equal(polled.code, 0, polled.stderr)
+  const batch = JSON.parse(polled.stdout) as { attachments: { name: string; path: string; origin?: { pageUrl: string } }[] }
+  assert.deepEqual(
+    batch.attachments.map((a) => [a.name, a.origin?.pageUrl]),
+    [
+      ['Vercel.png', 'https://ref.test/b'],
+      ['Linear.png', 'https://ref.test/a'],
+    ],
+  )
+  assert.deepEqual(readFileSync(batch.attachments[1]!.path), png(20, 10, 64, 'a'))
 })
 
 test('thumbnails and originals are served as their bytes, cacheable by their content url', async () => {
