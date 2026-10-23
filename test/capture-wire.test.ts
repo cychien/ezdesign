@@ -41,7 +41,12 @@ test('CX-p2-identity: the built extension keeps the key and carries every file i
   assert.equal(built.key, manifest.key)
   assert.deepEqual([built.version, built.version_name], ['1.2.3', '1.2.3-beta.1'])
   const named = manifestReferences(built)
-  assert.deepEqual(named, ['worker.js', 'dialog.html', 'dialog.js', 'dialog.css'].map((f) => `g/${generation}/${f}`))
+  assert.deepEqual(
+    named,
+    ['worker.js', 'dialog.html', 'dialog.js', 'dialog.css', 'icon-16.png', 'icon-32.png', 'icon-48.png', 'icon-128.png'].map(
+      (f) => `g/${generation}/${f}`,
+    ),
+  )
   for (const name of [...named, ...extensionFiles.map((f) => `g/${generation}/${f.name}`)]) {
     assert.ok(existsSync(join(outDir, name)), `${name} is built`)
   }

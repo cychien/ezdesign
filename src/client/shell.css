@@ -592,10 +592,17 @@ body.ez-arranging .ez-frame {
   gap: 6px;
 }
 
-.ez-brand {
-  font-weight: 600;
-  font-size: 14px;
-  letter-spacing: -0.03em;
+/* Optical, like --brand-nudge: puts the wordmark's baseline on the version's. */
+.ez-logo {
+  display: flex;
+  position: relative;
+  top: -0.8px;
+  color: var(--ink);
+}
+
+.ez-logo > svg {
+  height: 16px;
+  width: auto;
 }
 
 .ez-version {

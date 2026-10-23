@@ -1,4 +1,9 @@
-# ezdesign
+<h1>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/brand/ezdesign-dark.svg">
+    <img alt="ezdesign" src="docs/brand/ezdesign-light.svg" height="32">
+  </picture>
+</h1>
 
 > Point at your live app. Your agent fixes it.
 
@@ -577,6 +582,7 @@ npm run dev                 # watch src/, serve the playground fixture, start an
 npm run dev -- --no-plugin  # the same page without ezdesignSource(), to see fallback-only anchors
 npm run dev:agent           # a stand-in poll-mode agent, for working on the poll contract itself
 npm run dev:cli status      # the ezdesign CLI, pointed at the dev daemon instead of the real one
+npm run brand               # regenerate the logo's PNG and SVG copies after editing src/brand.ts
 ```
 
 `npm run dev` opens the review in ACP mode, scoped to the fixture - the agent's working directory

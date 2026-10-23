@@ -180,6 +180,25 @@ test('a refresh repairs files that went missing at the same version', async () =
   assert.equal(readFileSync(host, 'utf8'), '// host 0.9.0\n')
 })
 
+test('a refresh installs a rebuilt extension of the same version', async () => {
+  const w = world()
+  await installCapture(w.options)
+  const rebuilt = join(w.root, 'dist-rebuilt')
+  const generation = '0.9.0-rebuilt000'
+  mkdirSync(join(rebuilt, 'extension', 'g', generation), { recursive: true })
+  writeFileSync(join(rebuilt, 'native-host.mjs'), '// host 0.9.0\n')
+  writeFileSync(join(rebuilt, 'extension', 'g', generation, 'icon-16.png'), 'png')
+  writeFileSync(join(rebuilt, 'extension', 'g', generation, 'worker.js'), '// worker 0.9.0\n')
+  writeFileSync(
+    join(rebuilt, 'extension', 'manifest.json'),
+    JSON.stringify({ version: '0.9.0', background: { service_worker: `g/${generation}/worker.js` } }),
+  )
+  assert.equal(await refreshCaptureInstall({ ...w.options, distDir: rebuilt }), 'refreshed')
+  assert.equal(readInstallRecord(w.options.dataDir)?.extensionGeneration, generation)
+  assert.ok(existsSync(join(w.options.dataDir!, 'extension', 'g', generation, 'icon-16.png')))
+  assert.equal(await refreshCaptureInstall({ ...w.options, distDir: rebuilt }), 'current')
+})
+
 test('a corrupt install record is surfaced, not taken for no install', async () => {
   const w = world()
   await installCapture(w.options)

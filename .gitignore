@@ -4,4 +4,6 @@ dist/
 PLAN.md
 *-plan.md
 .dev/
-docs/
+docs/*
+!docs/brand.md
+!docs/brand/
