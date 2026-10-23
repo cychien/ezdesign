@@ -3,7 +3,7 @@ import UserCircleIcon from '@hugeicons/core-free-icons/UserCircleIcon'
 import { type IconNode, icon } from './icon.js'
 
 export interface AccountWire {
-  email: string
+  email: string | null
 }
 
 export interface AccountUi {
@@ -20,7 +20,8 @@ function h<K extends keyof HTMLElementTagNameMap>(tag: K, className?: string, te
 }
 
 export function installAccount(apiBase: string): AccountUi {
-  let account: AccountWire | undefined
+  let offered = false
+  let email: string | null = null
   let painted = false
   let open = false
 
@@ -40,24 +41,26 @@ export function installAccount(apiBase: string): AccountUi {
   const signIn = () => window.open(`${apiBase}/account/login`, '_blank')
 
   function setOpen(next: boolean): void {
-    open = next && !!account
+    open = next && !!email
     el.toggleAttribute('data-open', open)
-    if (account) button.setAttribute('aria-expanded', String(open))
+    if (email) button.setAttribute('aria-expanded', String(open))
     else button.removeAttribute('aria-expanded')
   }
 
-  function render(next: AccountWire | undefined): void {
-    if (painted && account?.email === next?.email) return
+  function render(account: AccountWire | undefined): void {
+    const nextEmail = account?.email ?? null
+    if (painted && offered === !!account && email === nextEmail) return
     painted = true
-    account = next
+    offered = !!account
+    email = nextEmail
+    el.hidden = !offered
     button.textContent = ''
-    if (account) {
-      const name = `帳號：${account.email}`
-      button.setAttribute('aria-label', name)
-      button.title = account.email
+    if (email) {
+      button.setAttribute('aria-label', `帳號：${email}`)
+      button.title = email
       button.setAttribute('aria-haspopup', 'menu')
-      button.append(h('span', 'ez-avatar', account.email.charAt(0).toUpperCase()))
-      who.replaceChildren(h('span', 'ez-account-label', '已登入'), h('span', 'ez-account-email', account.email))
+      button.append(h('span', 'ez-avatar', email.charAt(0).toUpperCase()))
+      who.replaceChildren(h('span', 'ez-account-label', '已登入'), h('span', 'ez-account-email', email))
     } else {
       button.setAttribute('aria-label', '登入 ezdesign')
       button.title = '登入 ezdesign'
@@ -68,7 +71,7 @@ export function installAccount(apiBase: string): AccountUi {
   }
 
   button.onclick = () => {
-    if (account) setOpen(!open)
+    if (email) setOpen(!open)
     else signIn()
   }
 
@@ -92,8 +95,8 @@ export function installAccount(apiBase: string): AccountUi {
     el,
     render,
     signedInOrPrompt: () => {
-      if (account) return true
-      signIn()
+      if (email) return true
+      if (offered) signIn()
       return false
     },
   }

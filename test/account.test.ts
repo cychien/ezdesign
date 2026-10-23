@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, before, beforeEach, test } from 'node:test'
 import type { Request, Response } from 'express'
-import { Account, AccountError, accountBaseUrl, requireAccount } from '../src/account.js'
+import { Account, AccountError, apiBaseUrl, requireAccount, signInOffered } from '../src/account.js'
 import { credentialsFile, readAccount, readInspireToken, writeInspireToken } from '../src/credentials.js'
 import { ADA, type FakeAccountService, fakeAccountService } from './helpers/account.js'
 
@@ -33,9 +33,15 @@ function stateOf(authorizeUrl: string) {
   return { url, state: url.searchParams.get('state')!, challenge: url.searchParams.get('code_challenge')! }
 }
 
-test('the service url defaults to account.ezdesign.dev and can be pointed elsewhere', () => {
-  assert.equal(accountBaseUrl({}), 'https://account.ezdesign.dev')
-  assert.equal(accountBaseUrl({ EZDESIGN_ACCOUNT_URL: 'http://127.0.0.1:8787/' }), 'http://127.0.0.1:8787')
+test('the backend defaults to api.ezdesign.dev and can be pointed elsewhere', () => {
+  assert.equal(apiBaseUrl({}), 'https://api.ezdesign.dev')
+  assert.equal(apiBaseUrl({ EZDESIGN_API_URL: 'http://127.0.0.1:8787/' }), 'http://127.0.0.1:8787')
+})
+
+test('sign-in is offered only when EZDESIGN_ACCOUNT is on', () => {
+  assert.equal(signInOffered({}), false)
+  assert.equal(signInOffered({ EZDESIGN_ACCOUNT: '0' }), false)
+  assert.equal(signInOffered({ EZDESIGN_ACCOUNT: '1' }), true)
 })
 
 test('asks the service for a code-with-PKCE login that comes back to the loopback', () => {
@@ -89,7 +95,7 @@ test('stays signed out when the service refuses the code', async () => {
   const { it, file, changes } = account()
   const { state } = stateOf(it.authorizeUrl(CALLBACK))
   await assert.rejects(it.complete(state, 'code-1'), (e: AccountError) => e.problem === 'refused')
-  assert.equal(it.snapshot(), undefined)
+  assert.deepEqual(it.snapshot(), { email: null })
   assert.equal(existsSync(file), false)
   assert.equal(changes(), 0)
 })
@@ -104,7 +110,7 @@ test('signs out here and at the service, and leaves the inspiration token alone'
   const logout = service.requests.at(-1)!
   assert.deepEqual([logout.route, logout.authorization], ['POST /v1/logout', 'Bearer eza_ada'])
   assert.equal(readAccount(file), null)
-  assert.equal(it.snapshot(), undefined)
+  assert.deepEqual(it.snapshot(), { email: null })
   assert.equal(readInspireToken(file), 'tok_inspire')
 })
 

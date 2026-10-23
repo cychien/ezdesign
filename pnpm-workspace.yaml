@@ -1,5 +1,2 @@
-packages:
-  - services/*
 allowBuilds:
   esbuild: false
-  workerd: false

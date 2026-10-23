@@ -27,6 +27,8 @@ export const nativeHostDir = (dataDir: string = DATA_DIR): string => join(dataDi
 export const installedExtensionDir = (dataDir: string = DATA_DIR): string => join(dataDir, 'extension')
 export const NO_UPDATE_CHECK_ENV = `${ENV_PREFIX}_NO_UPDATE_CHECK`
 export const DESIGN_HARNESS_ENV = `${ENV_PREFIX}_DESIGN_HARNESS`
+export const ACCOUNT_ENV = `${ENV_PREFIX}_ACCOUNT`
+export const API_URL_ENV = `${ENV_PREFIX}_API_URL`
 export const NO_IDLE_STOP_ENV = `${ENV_PREFIX}_NO_IDLE_STOP`
 
 /** Unset, empty, `0` and `false` are off; anything else is on. */

@@ -12,7 +12,8 @@ let otherOrigin = ''
 
 before(async () => {
   service = await fakeAccountService()
-  world.env.EZDESIGN_ACCOUNT_URL = service.url
+  world.env.EZDESIGN_API_URL = service.url
+  world.env.EZDESIGN_ACCOUNT = '1'
   world.spawnDaemon()
   const { port } = await world.liveDaemon()
   const open = async () => {
@@ -53,15 +54,15 @@ test('signs in from the shell through the service and back to this session, and 
   const out = await fetch(`${origin}/__ezdesign/api/account/logout`, { method: 'POST' })
   assert.deepEqual(await out.json(), { ok: true })
   assert.equal(service.requests.at(-1)!.route, 'POST /v1/logout')
-  assert.equal((await state(origin)).account, undefined)
-  assert.equal((await state(otherOrigin)).account, undefined)
+  assert.deepEqual((await state(origin)).account, { email: null })
+  assert.deepEqual((await state(otherOrigin)).account, { email: null })
 })
 
 test('a callback this daemon did not start signs nobody in', async () => {
   const back = await fetch(`${origin}/__ezdesign/account/callback?code=code-1&state=made-up`)
   assert.equal(back.status, 400)
   assert.match(await back.text(), /這個登入已經失效/)
-  assert.equal((await state(origin)).account, undefined)
+  assert.deepEqual((await state(origin)).account, { email: null })
 })
 
 test('no other site can start or end a sign-in', async () => {

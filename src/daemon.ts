@@ -115,7 +115,7 @@ import { refreshCaptureInstall } from './capture-install/index.js'
 import { type Library, LibraryError, openLibrary } from './library/index.js'
 import { lazyLibrary, libraryApiRouter, libraryAttachables } from './library-routes.js'
 import { extensionApiRouter } from './extension-routes.js'
-import { ACCOUNT_CALLBACK_PATH, Account, type AccountWire, accountBaseUrl } from './account.js'
+import { ACCOUNT_CALLBACK_PATH, Account, type AccountWire, apiBaseUrl, signInOffered } from './account.js'
 import { accountApiRouter, crossSiteAccountCallback } from './account-routes.js'
 import { installVersion, pruneInstalledVersions } from './installer.js'
 import { latestVersion, updateChecksDisabled } from './update-check.js'
@@ -710,6 +710,7 @@ class SessionRuntime implements ProjectRuntime {
   private pendingExplore: string | null = null
   private designEffort: DesignEffort = 'medium'
   private readonly designHarnessAllowed = designHarnessEnabled()
+  private readonly signInOffered = signInOffered()
   /** What the user's browser signs the page in with, for the agent's own to open it the same way.
    *  Held in memory only, and handed out only for the token in the agent's environment. */
   private pageCookies: string | null = null
@@ -911,7 +912,7 @@ class SessionRuntime implements ProjectRuntime {
   snapshot(): SnapshotWire {
     const s = this.store.session
     const update = this.updater.snapshot()
-    const account = this.account.snapshot()
+    const account = this.signInOffered ? this.account.snapshot() : undefined
     // A dismissed round is history: the thread still names it, but nothing of it
     // is on the page and nothing about it is on offer.
     const live = this.store.explores.filter((e) => e.status !== 'dismissed')
@@ -1767,9 +1768,11 @@ class SessionRuntime implements ProjectRuntime {
     // The capture library is global, so every session shows the same one.
     api.use(libraryApiRouter({ library: this.library }))
     api.use(extensionApiRouter({ distDir, version: this.version, dataDir: libraryHome() }))
-    api.use(
-      accountApiRouter({ account: this.account, callbackUrl: () => `${this.shellOrigin}${ACCOUNT_CALLBACK_PATH}` }),
-    )
+    if (this.signInOffered) {
+      api.use(
+        accountApiRouter({ account: this.account, callbackUrl: () => `${this.shellOrigin}${ACCOUNT_CALLBACK_PATH}` }),
+      )
+    }
 
     api.get('/state', (_req, res) => res.json(this.snapshot()))
 
@@ -2379,7 +2382,9 @@ class SessionRuntime implements ProjectRuntime {
           .send(asset(file)),
       )
     }
-    rk.get(ACCOUNT_CALLBACK_PATH.slice(URL_PREFIX.length), crossSiteAccountCallback(this.account))
+    if (this.signInOffered) {
+      rk.get(ACCOUNT_CALLBACK_PATH.slice(URL_PREFIX.length), crossSiteAccountCallback(this.account))
+    }
     rk.use('/api', this.apiRouter())
     // Ours, whether or not anything answers it: never handed to the user's app.
     rk.use((_req, res) => res.sendStatus(404))
@@ -2537,7 +2542,7 @@ export async function daemonMain(version: string, opts: DaemonOptions = {}): Pro
   })
 
   const library = lazyLibrary(() => openLibrary({ dir: libraryDir(libraryHome()) }))
-  const account = new Account({ baseUrl: accountBaseUrl(), onChange: broadcastAll })
+  const account = new Account({ baseUrl: apiBaseUrl(), onChange: broadcastAll })
 
   sessions = new SessionDirectory(
     (project) => new SessionRuntime(project, version, updater, library, account),

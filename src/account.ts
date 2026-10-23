@@ -1,10 +1,9 @@
 import { createHash, randomBytes } from 'node:crypto'
 import type { RequestHandler } from 'express'
-import { APP_NAME, URL_PREFIX } from './constants.js'
+import { ACCOUNT_ENV, API_URL_ENV, APP_NAME, URL_PREFIX, envFlagOn } from './constants.js'
 import { type AccountCredential, clearAccount, credentialsFile, readAccount, writeAccount } from './credentials.js'
 
-export const DEFAULT_ACCOUNT_URL = 'https://account.ezdesign.dev'
-export const ACCOUNT_URL_ENV = `${APP_NAME.toUpperCase()}_ACCOUNT_URL`
+export const DEFAULT_API_URL = 'https://api.ezdesign.dev'
 export const ACCOUNT_CALLBACK_PATH = `${URL_PREFIX}/account/callback`
 const CLIENT_ID = APP_NAME
 const LOGIN_REQUEST_TTL_MS = 15 * 60_000
@@ -13,7 +12,7 @@ const REQUEST_TIMEOUT_MS = 15_000
 export type AccountUser = AccountCredential['user']
 
 export interface AccountWire {
-  email: string
+  email: string | null
 }
 
 export type AccountProblem = 'unknown-login' | 'refused' | 'unreachable' | 'signed-out'
@@ -27,9 +26,13 @@ export class AccountError extends Error {
   }
 }
 
-export function accountBaseUrl(env: NodeJS.ProcessEnv = process.env): string {
-  const raw = env[ACCOUNT_URL_ENV]?.trim()
-  return (raw || DEFAULT_ACCOUNT_URL).replace(/\/+$/, '')
+export function apiBaseUrl(env: NodeJS.ProcessEnv = process.env): string {
+  const raw = env[API_URL_ENV]?.trim()
+  return (raw || DEFAULT_API_URL).replace(/\/+$/, '')
+}
+
+export function signInOffered(env: NodeJS.ProcessEnv = process.env): boolean {
+  return envFlagOn(env[ACCOUNT_ENV])
 }
 
 const base64url = (bytes: Buffer) => bytes.toString('base64url')
@@ -60,8 +63,8 @@ export class Account {
     return this.credential?.user ?? null
   }
 
-  snapshot(): AccountWire | undefined {
-    return this.credential ? { email: this.credential.user.email } : undefined
+  snapshot(): AccountWire {
+    return { email: this.credential?.user.email ?? null }
   }
 
   authorizeUrl(redirectUri: string): string {
