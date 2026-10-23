@@ -91,10 +91,12 @@ export type WorkerToDialog =
   | { type: 'view'; view: CaptureView }
   | { type: 'suggestions'; prefix: string; tags: { name: string; uses: number }[] }
 
+/** `size` is the picture's pixel size when known before it loads, so the dialog
+ *  can hold its place instead of growing when it arrives. */
 export type PreviewSource =
-  | { type: 'bitmap'; nonce: string }
+  | { type: 'bitmap'; nonce: string; size: Size | null }
   | { type: 'screenshot'; dataUrl: string; rect: ViewportRect | null; viewport: Size }
-  | { type: 'url'; src: string; fromScreen?: boolean }
+  | { type: 'url'; src: string; fromScreen?: boolean; size: Size | null }
   | { type: 'none' }
 
 export type HostState =

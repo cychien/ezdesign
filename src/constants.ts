@@ -16,6 +16,13 @@ export const DAEMON_LOG = join(DATA_DIR, 'daemon.log')
 export const VERSIONS_DIR = join(DATA_DIR, 'versions')
 export const UPDATE_CHECK_FILE = join(DATA_DIR, 'update-check.json')
 export const libraryDir = (dataDir: string = DATA_DIR): string => join(dataDir, 'library')
+const LIBRARY_HOME_ENV = `${ENV_PREFIX}_LIBRARY_HOME`
+/** The data dir of the capture side: the library the shell shows, and the host
+ *  and extension folder it installs. Set, it is outside the data dir: a dev
+ *  daemon keeps its sessions apart from the real ones, but the extension saves
+ *  into the real library, and that is the one worth browsing. */
+export const libraryHome = (env: NodeJS.ProcessEnv = process.env): string =>
+  env[LIBRARY_HOME_ENV]?.trim() || DATA_DIR
 export const nativeHostDir = (dataDir: string = DATA_DIR): string => join(dataDir, 'native-host')
 export const installedExtensionDir = (dataDir: string = DATA_DIR): string => join(dataDir, 'extension')
 export const NO_UPDATE_CHECK_ENV = `${ENV_PREFIX}_NO_UPDATE_CHECK`

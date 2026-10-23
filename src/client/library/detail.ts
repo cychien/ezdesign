@@ -2,7 +2,6 @@
  *  its note, and whether it stays. Edits save as they are made - there is no
  *  form to submit, so closing never loses anything. */
 
-import ArrowUpRight01Icon from '@hugeicons/core-free-icons/ArrowUpRight01Icon'
 import Cancel01Icon from '@hugeicons/core-free-icons/Cancel01Icon'
 import ArrowLeft01Icon from '@hugeicons/core-free-icons/ArrowLeft01Icon'
 import ArrowRight01Icon from '@hugeicons/core-free-icons/ArrowRight01Icon'
@@ -12,7 +11,7 @@ import { normalizeTag, tagKey } from '../../library/policy.js'
 import { confirmDialog } from '../confirm-dialog.js'
 import { type IconNode, icon } from '../icon.js'
 import type { LibraryApi } from './api.js'
-import { bytesText, hostOf, playbackText } from './format.js'
+import { hostOf, playbackText, sourceName } from './format.js'
 import { LIBRARY_TEST_IDS as IDS } from './names.js'
 
 export interface DetailOptions {
@@ -61,6 +60,8 @@ export function openDetail(options: DetailOptions): void {
   prev.dataset.side = 'prev'
   const next = iconButton('ez-library-detail-step', '下一個（→）', ArrowRight01Icon, 18)
   next.dataset.side = 'next'
+  stage.append(prev, next)
+  let shown: HTMLElement | null = null
 
   const side = h('div', 'ez-library-detail-side')
   const head = h('header', 'ez-library-detail-head')
@@ -69,7 +70,7 @@ export function openDetail(options: DetailOptions): void {
   titleLink.target = '_blank'
   titleLink.rel = 'noopener noreferrer'
   const titleText = h('span')
-  titleLink.append(titleText, icon(ArrowUpRight01Icon as IconNode, 14))
+  titleLink.append(titleText)
   const close = iconButton('ez-library-detail-close', '關閉（Esc）', Cancel01Icon)
   const meta = h('p', 'ez-library-detail-meta')
   const notice = h('p', 'ez-library-detail-notice')
@@ -175,15 +176,20 @@ export function openDetail(options: DetailOptions): void {
     } else if (original || item.thumbnail) {
       const img = h('img', 'ez-library-detail-media')
       img.src = (original ?? item.thumbnail)!.url
-      img.alt = item.source.pageTitle
+      img.alt = sourceName(item.source)
       media = img
     } else {
       media = h('p', 'ez-library-detail-missing', '沒有可以顯示的畫面')
     }
-    stage.replaceChildren(media, prev, next)
+    if (shown) shown.replaceWith(media)
+    else stage.prepend(media)
+    shown = media
     const list = options.items()
+    const focusedStep = [prev, next].find((b) => b === document.activeElement)
     prev.hidden = index <= 0
     next.hidden = index >= list.length - 1
+    // A step button hidden under focus drops focus to <body>, out of reach of the dialog's arrow keys.
+    if (focusedStep?.hidden) [prev, next, close].find((b) => !b.hidden)?.focus()
   }
 
   function paintTags(): void {
@@ -309,16 +315,17 @@ export function openDetail(options: DetailOptions): void {
   note.addEventListener('blur', flushNote)
 
   function paint(): void {
-    titleText.textContent = item.source.pageTitle || hostOf(item.source.pageUrl)
-    titleLink.href = item.source.pageUrl
-    titleLink.title = item.source.pageUrl
-    const where = [hostOf(item.source.pageUrl), dateFormat.format(item.source.capturedAt)]
-    const size: string[] = []
-    if (item.dimensions) size.push(`${item.dimensions.width} × ${item.dimensions.height}`)
-    if (item.original && !item.link) size.push(bytesText(item.original.bytes))
-    meta.replaceChildren(
-      ...[where, size].filter((group) => group.length).map((group) => h('span', undefined, group.join(' · '))),
-    )
+    titleText.textContent = sourceName(item.source)
+    // A paste came from no page: without an href it is plain text, not a link.
+    if (item.source.pageUrl) {
+      titleLink.href = item.source.pageUrl
+      titleLink.title = item.source.pageUrl
+    } else {
+      titleLink.removeAttribute('href')
+      titleLink.removeAttribute('title')
+    }
+    const when = dateFormat.format(item.source.capturedAt)
+    meta.textContent = item.source.pageUrl ? `${hostOf(item.source.pageUrl)} · ${when}` : when
     notice.hidden = !item.link
     if (item.link) {
       const at = item.link.playbackTime !== null ? `，停在 ${playbackText(item.link.playbackTime)}` : ''

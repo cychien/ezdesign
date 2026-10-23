@@ -10,6 +10,7 @@ import {
   type Inspection,
   type PreviewSource,
   type RegionChoice,
+  type Size,
   type StagingView,
 } from '../shared/messages.js'
 import { type CapturePlan, type TabRef, type Trigger, planAfterRefusal, planCapture, posterSource } from '../shared/plan.js'
@@ -246,7 +247,7 @@ export function createCaptures(deps: CaptureDeps): Captures {
     try {
       const made = await thumbnail(s, staged)
       if (made && made !== s.screenCrop?.thumb && s.preview.type === 'url' && s.preview.fromScreen) {
-        setPreview(s, { type: 'url', src: `data:image/webp;base64,${made.webp}` })
+        setPreview(s, { type: 'url', src: `data:image/webp;base64,${made.webp}`, size: sizeOf(made) })
       }
       await sendThumbnail(s, made)
     } catch {
@@ -375,7 +376,9 @@ export function createCaptures(deps: CaptureDeps): Captures {
     const fallback = fallbackPreview(s)
     if (plan.kind !== 'screenshot') {
       s.preview =
-        inPage && plan.preview === 'element-bitmap' && s.inspection?.found ? { type: 'bitmap', nonce: s.dialog.nonce } : fallback
+        inPage && plan.preview === 'element-bitmap' && s.inspection?.found
+          ? { type: 'bitmap', nonce: s.dialog.nonce, size: s.inspection.natural }
+          : fallback
     }
 
     if (inPage) {
@@ -494,11 +497,16 @@ export function createCaptures(deps: CaptureDeps): Captures {
   }
 }
 
+const sizeOf = (thumb: EncodedThumb): Size => ({ width: thumb.width, height: thumb.height })
+
 function fallbackPreview(s: Session): PreviewSource {
-  if (s.plan.kind === 'image' && s.context.mediaUrl) return { type: 'url', src: s.context.mediaUrl }
-  if (s.framePng) return { type: 'url', src: `data:image/png;base64,${s.framePng}` }
-  if (s.readyThumb) return { type: 'url', src: `data:image/webp;base64,${s.readyThumb.webp}` }
-  if (s.screenCrop?.png) return { type: 'url', src: `data:image/png;base64,${s.screenCrop.png}`, fromScreen: true }
+  const natural = s.inspection?.natural ?? null
+  if (s.plan.kind === 'image' && s.context.mediaUrl) return { type: 'url', src: s.context.mediaUrl, size: natural }
+  if (s.framePng) return { type: 'url', src: `data:image/png;base64,${s.framePng}`, size: natural }
+  if (s.readyThumb) return { type: 'url', src: `data:image/webp;base64,${s.readyThumb.webp}`, size: sizeOf(s.readyThumb) }
+  if (s.screenCrop?.png) {
+    return { type: 'url', src: `data:image/png;base64,${s.screenCrop.png}`, fromScreen: true, size: s.screenCrop.thumb && sizeOf(s.screenCrop.thumb) }
+  }
   return { type: 'none' }
 }
 

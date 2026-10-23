@@ -2,6 +2,7 @@ import { spawn, spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { connect } from 'node:net'
+import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -52,6 +53,9 @@ export function devEnv() {
     // `dev.mjs` owns the daemon's lifetime; one that stopped itself would be
     // restarted with no sessions under the shell left open.
     EZDESIGN_NO_IDLE_STOP: '1',
+    // The extension's host saves into the real library, so 素材庫 shows that one
+    // and installs that host.
+    EZDESIGN_LIBRARY_HOME: process.env.EZDESIGN_LIBRARY_HOME || join(homedir(), '.ezdesign'),
   }
 }
 

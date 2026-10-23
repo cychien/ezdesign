@@ -1,5 +1,7 @@
 import { once } from 'node:events'
 import type { Writable } from 'node:stream'
+import { recordExtensionSeen } from '../capture-seen.js'
+import { DATA_DIR } from '../constants.js'
 import { openLibrary } from '../library/index.js'
 import { checkCaller } from './caller.js'
 import { downloadInto } from './download.js'
@@ -23,6 +25,7 @@ async function run(stdout: Writable): Promise<number> {
     },
     download: downloadInto,
     hostVersion: HOST_VERSION,
+    greeted: (extension) => recordExtensionSeen(DATA_DIR, extension.version),
   })
   for (const signal of ['SIGTERM', 'SIGINT'] as const) {
     process.once(signal, () => void session.close().then(() => exit(stdout, 0)))

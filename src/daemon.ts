@@ -32,6 +32,8 @@ import {
   UPDATE_CHECK_TTL_MS,
   URL_PREFIX,
   controlPortRange,
+  libraryHome,
+  libraryDir,
   envFlagOn,
 } from './constants.js'
 import { IdleCount } from './idle.js'
@@ -112,6 +114,7 @@ import {
 import { refreshCaptureInstall } from './capture-install/index.js'
 import { type Library, openLibrary } from './library/index.js'
 import { lazyLibrary, libraryApiRouter } from './library-routes.js'
+import { extensionApiRouter } from './extension-routes.js'
 import { installVersion, pruneInstalledVersions } from './installer.js'
 import { latestVersion, updateChecksDisabled } from './update-check.js'
 import { Updater, type UpdateWire } from './updater.js'
@@ -1755,6 +1758,7 @@ class SessionRuntime implements ProjectRuntime {
 
     // The capture library is global, so every session shows the same one.
     api.use(libraryApiRouter({ library: this.library }))
+    api.use(extensionApiRouter({ distDir, version: this.version, dataDir: libraryHome() }))
 
     api.get('/state', (_req, res) => res.json(this.snapshot()))
 
@@ -2498,7 +2502,7 @@ export async function daemonMain(version: string, opts: DaemonOptions = {}): Pro
     onChange: broadcastAll,
   })
 
-  const library = lazyLibrary(() => openLibrary())
+  const library = lazyLibrary(() => openLibrary({ dir: libraryDir(libraryHome()) }))
 
   sessions = new SessionDirectory(
     (project) => new SessionRuntime(project, version, updater, library),
@@ -2699,7 +2703,7 @@ export async function daemonMain(version: string, opts: DaemonOptions = {}): Pro
   // reading them per request, so pruning the version it runs from while it is
   // still answering would break every session it has not handed over.
   if (predecessorGone) pruneInstalledVersions(join(distDir, 'cli.mjs'))
-  void refreshCaptureInstall({ distDir, version }).catch((err: unknown) =>
+  void refreshCaptureInstall({ distDir, version, dataDir: libraryHome() }).catch((err: unknown) =>
     console.error(`capture extension refresh failed: ${err instanceof Error ? err.message : String(err)}`),
   )
 

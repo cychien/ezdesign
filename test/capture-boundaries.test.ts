@@ -104,7 +104,12 @@ test('the wire imports only zod, and the wire and the library never see each oth
 })
 
 test('the extension bundles only browser-safe sources', () => {
-  const allowed = new Set(['src/capture-wire.ts', 'src/library/policy.ts', 'src/client/region.ts'])
+  const allowed = new Set([
+    'src/capture-wire.ts',
+    'src/library/policy.ts',
+    'src/client/region.ts',
+    'src/client/thumbnail.ts',
+  ])
   const bad = imports.filter(
     (i) =>
       inside(i.from, 'src/extension') &&

@@ -2,13 +2,15 @@
  *
  *      GET    /library/items?q=&tag=&before=   -> LibraryPageWire
  *      GET    /library/tags                    -> {tags: LibraryTagWire[]}
+ *      POST   /library/items  multipart, see LibraryPasteMeta -> LibraryAddedWire
  *      GET    /library/items/:id/thumbnail     -> the WebP thumbnail
  *      GET    /library/items/:id/original      -> the file, or a link's frame
  *      PATCH  /library/items/:id  LibraryPatchWire -> LibraryItemWire
  *      DELETE /library/items/:id               -> {ok: true}
  *
- *  Errors are `{error, code}`; `code` is `not-found`, `bad-request`, or a
- *  `LibraryErrorCode` when the library cannot open (503). */
+ *  Errors are `{error, code}`; `code` is `not-found`, `bad-request`, a
+ *  `LibraryErrorCode` when the library cannot open (503), or the one that
+ *  refused a paste (`unsupported-media`, `integrity`). */
 
 export type LibraryKindWire = 'image' | 'screenshot' | 'video'
 
@@ -38,6 +40,20 @@ export interface LibraryPageWire {
 export interface LibraryTagWire {
   name: string
   uses: number
+}
+
+/** A pasted image: the file as `original`, the shell's WebP as `thumbnail`,
+ *  and this as the JSON `meta` field. */
+export interface LibraryPasteMeta {
+  thumbnail: { width: number; height: number }
+  /** The pasted image's own pixel size. */
+  source: { width: number; height: number }
+}
+
+/** `merged` when the library already held the same bytes. */
+export interface LibraryAddedWire {
+  item: LibraryItemWire
+  merged: boolean
 }
 
 /** Fields left out are kept; `tags` replaces the item's. */

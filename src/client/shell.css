@@ -132,6 +132,9 @@
 
   /* Deleting, on hover only: the one moment a red is earned. */
   --danger: oklch(52% 0.2 25);
+
+  /* Drawn over a picture's own edge pixels, so a pale one keeps its shape. */
+  --image-outline: oklch(0% 0 0 / 0.06);
 }
 
 * {
@@ -4416,6 +4419,9 @@ body.ez-arranging .ez-frame {
   z-index: 30;
   display: flex;
   background: var(--background);
+}
+
+.ez-library[data-entering] {
   animation: ez-fade-in var(--t-view) var(--ease-out) both;
 }
 
@@ -4566,7 +4572,7 @@ body.ez-arranging .ez-frame {
 .ez-library-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(184px, 1fr));
-  gap: 22px 18px;
+  gap: 22px 16px;
   margin: 0;
   padding: 6px 32px 40px;
   list-style: none;
@@ -4589,11 +4595,15 @@ body.ez-arranging .ez-frame {
   outline: none;
 }
 
+/* Inner corners are the tile's radius less their inset, so they run parallel. */
 .ez-library-card-media {
+  --tile-radius: 14px;
+  --tile-inset: 10px;
+  --badge-inset: 8px;
   position: relative;
   display: block;
   aspect-ratio: 1;
-  border-radius: 10px;
+  border-radius: var(--tile-radius);
   background: var(--muted);
   transition:
     background-color var(--t-pop) var(--ease-out),
@@ -4612,34 +4622,33 @@ body.ez-arranging .ez-frame {
    against - a grid row sized by its content gives them none. */
 .ez-library-card-frame {
   position: absolute;
-  inset: 14px;
+  inset: var(--tile-inset);
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
-/* Whole, not cropped: a reference is kept for its composition. The hairline
-   gives a white screenshot an edge against the tile. */
+/* Whole, not cropped: a reference is kept for its composition. */
 .ez-library-card-media img {
   display: block;
   max-width: 100%;
   max-height: 100%;
-  border-radius: 3px;
-  box-shadow:
-    0 0 0 1px oklch(0% 0 0 / 0.06),
-    0 1px 3px oklch(0% 0 0 / 0.06);
+  border-radius: max(0px, var(--tile-radius) - var(--tile-inset));
+  outline: 1px solid var(--image-outline);
+  outline-offset: -1px;
+  box-shadow: 0 1px 3px oklch(0% 0 0 / 0.06);
 }
 
 .ez-library-card-badge {
   position: absolute;
-  top: 8px;
-  left: 8px;
+  top: var(--badge-inset);
+  left: var(--badge-inset);
   display: inline-flex;
   align-items: center;
   gap: 3px;
   height: 20px;
   padding: 0 7px 0 5px;
-  border-radius: 6px;
+  border-radius: calc(var(--tile-radius) - var(--badge-inset));
   background: oklch(0% 0 0 / 0.62);
   backdrop-filter: blur(8px);
   color: #fff;
@@ -4715,6 +4724,181 @@ body.ez-arranging .ez-frame {
   background: var(--muted);
 }
 
+.ez-library-empty-link {
+  margin-top: 6px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--foreground);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  text-decoration: underline;
+  text-decoration-color: var(--ink-ghost);
+  text-underline-offset: 3px;
+  cursor: pointer;
+  transition: text-decoration-color var(--t-pop) var(--ease-out);
+}
+
+.ez-library-empty-link:hover {
+  text-decoration-color: currentColor;
+}
+
+/* What became of a paste, over the grid where the item lands. */
+.ez-library-toast {
+  position: absolute;
+  top: 16px;
+  left: 50%;
+  /* Over the sticky head. */
+  z-index: 2;
+  margin: 0;
+  padding: 6px 12px;
+  border-radius: 8px;
+  background: oklch(0% 0 0 / 0.78);
+  backdrop-filter: blur(16px) saturate(1.6);
+  box-shadow:
+    inset 0 0 0 1px oklch(100% 0 0 / 0.1),
+    0 4px 16px oklch(0% 0 0 / 0.16);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.5;
+  white-space: nowrap;
+  pointer-events: none;
+  transform: translateX(-50%);
+  animation: ez-toast-in var(--t-view) var(--ease-out) both;
+}
+
+.ez-library-toast[hidden] {
+  display: none;
+}
+
+@keyframes ez-toast-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -6px) scale(0.96);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ez-library-toast {
+    animation-name: ez-fade-in;
+  }
+}
+
+.ez-install {
+  width: min(460px, calc(100vw - 32px));
+}
+
+.ez-install-steps {
+  display: grid;
+  gap: 14px;
+  margin: 14px 0 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: step;
+}
+
+.ez-install-step {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  column-gap: 10px;
+  row-gap: 6px;
+  font-size: 14px;
+  line-height: 20px;
+  counter-increment: step;
+}
+
+.ez-install-step::before {
+  content: counter(step);
+  grid-row: 1 / span 3;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--muted);
+  color: var(--muted-foreground);
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.ez-install-step > * {
+  grid-column: 2;
+}
+
+.ez-install-copy {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 4px 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--muted);
+}
+
+.ez-install-copy code {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font: 12px/1.5 ui-monospace, 'SF Mono', Menlo, monospace;
+}
+
+.ez-install-copy-button {
+  display: grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: none;
+  color: var(--muted-foreground);
+  cursor: pointer;
+}
+
+.ez-install-copy-button:hover {
+  background: var(--border);
+  color: var(--foreground);
+}
+
+.ez-install-hint {
+  color: var(--muted-foreground);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.ez-install .ez-dialog-actions {
+  align-items: center;
+}
+
+.ez-install-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 auto 0 0;
+  color: var(--muted-foreground);
+  font-size: 13px;
+}
+
+.ez-install-status[data-tone='ok'] {
+  color: var(--attach-ink);
+}
+
+.ez-install-waiting {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: ez-pulse 1.4s ease-in-out infinite;
+}
+
+.ez-install-body .ez-library-empty-action {
+  margin-top: 12px;
+}
+
 /* One reference, large: the picture on the left, what can change on the right. */
 .ez-library-detail {
   width: min(1120px, calc(100vw - 48px));
@@ -4760,7 +4944,8 @@ body.ez-arranging .ez-frame {
   max-width: 100%;
   max-height: 100%;
   border-radius: 4px;
-  box-shadow: 0 0 0 1px oklch(0% 0 0 / 0.06);
+  outline: 1px solid var(--image-outline);
+  outline-offset: -1px;
 }
 
 .ez-library-detail-missing {
@@ -4824,8 +5009,6 @@ body.ez-arranging .ez-frame {
 .ez-library-detail-title {
   display: inline-flex;
   flex: 1;
-  align-items: flex-start;
-  gap: 4px;
   min-width: 0;
   padding-top: 3px;
   color: var(--foreground);
@@ -4843,13 +5026,7 @@ body.ez-arranging .ez-frame {
   -webkit-line-clamp: 2;
 }
 
-.ez-library-detail-title svg {
-  flex-shrink: 0;
-  margin-top: 3px;
-  color: var(--ink-faint);
-}
-
-.ez-library-detail-title:hover span {
+.ez-library-detail-title[href]:hover span {
   text-decoration: underline;
   text-underline-offset: 2px;
 }
@@ -4874,17 +5051,10 @@ body.ez-arranging .ez-frame {
 }
 
 .ez-library-detail-meta {
-  display: flex;
-  flex-wrap: wrap;
-  column-gap: 12px;
   margin: -12px 0 0;
   color: var(--muted-foreground);
   font-size: 12px;
   font-variant-numeric: tabular-nums;
-}
-
-.ez-library-detail-meta span {
-  white-space: nowrap;
 }
 
 .ez-library-detail-notice {

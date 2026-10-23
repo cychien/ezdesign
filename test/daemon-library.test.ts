@@ -4,7 +4,13 @@ import { mkdtempSync } from 'node:fs'
 import { join } from 'node:path'
 import { after, before, test } from 'node:test'
 import { type CommitResult, openLibrary } from '../src/library/index.js'
-import type { LibraryItemWire, LibraryPageWire, LibraryTagWire } from '../src/library-wire.js'
+import type {
+  LibraryAddedWire,
+  LibraryItemWire,
+  LibraryPageWire,
+  LibraryPasteMeta,
+  LibraryTagWire,
+} from '../src/library-wire.js'
 import { DaemonWorld } from './helpers/daemon.js'
 import { png, webp } from './helpers/media.js'
 
@@ -13,8 +19,15 @@ let api = ''
 let origin = ''
 const saved: CommitResult[] = []
 
-async function save(seed: string, tags: string[], note: string, pageTitle: string, svg = false): Promise<CommitResult> {
-  const library = await openLibrary({ dir: join(world.dataDir, 'library') })
+async function save(
+  seed: string,
+  tags: string[],
+  note: string,
+  pageTitle: string,
+  svg = false,
+  dir = join(world.dataDir, 'library'),
+): Promise<CommitResult> {
+  const library = await openLibrary({ dir })
   try {
     const bytes = svg ? Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>`) : png(20, 10, 64, seed)
     const stage = library.stage({
@@ -45,7 +58,8 @@ before(async () => {
   api = `${origin}/__ezdesign/api`
 })
 
-after(() => world.dispose())
+const elsewhere = await DaemonWorld.create()
+after(() => Promise.all([world.dispose(), elsewhere.dispose()]))
 
 test('the shell lists the library newest first, with every tag, and filters by text and tag', async () => {
   const page = await json<LibraryPageWire>('/library/items')
@@ -124,4 +138,55 @@ test('another site cannot read or change the library', async () => {
   const res = await fetch(`${api}/library/items/${id}`, { method: 'DELETE', headers: { origin: 'https://evil.test' } })
   assert.equal(res.status, 403)
   assert.equal((await fetch(`${api}/library/items`, { headers: { 'sec-fetch-site': 'cross-site' } })).status, 403)
+})
+
+test('a pasted image is saved with its thumbnail, once, and anything else is refused', async () => {
+  const fits: LibraryPasteMeta = { thumbnail: { width: 20, height: 10 }, source: { width: 20, height: 10 } }
+  const paste = (original: Buffer, meta: unknown = fits) => {
+    const form = new FormData()
+    form.append('original', new Blob([new Uint8Array(original)]), 'image.png')
+    form.append('thumbnail', new Blob([new Uint8Array(webp(20, 10))], { type: 'image/webp' }))
+    form.append('meta', JSON.stringify(meta))
+    return json<LibraryAddedWire & { code?: string }>('/library/items', { method: 'POST', body: form })
+  }
+  const bytes = png(20, 10, 64, 'pasted')
+  const first = await paste(bytes)
+  assert.equal(first.status, 201)
+  assert.equal(first.body.merged, false)
+  const item = first.body.item
+  assert.deepEqual(item.source, { pageUrl: '', pageTitle: '', mediaUrl: null, capturedAt: item.source.capturedAt })
+  assert.deepEqual(item.dimensions, { width: 20, height: 10 })
+  assert.equal((await json<LibraryPageWire>('/library/items')).body.items[0]!.id, item.id)
+  assert.deepEqual(Buffer.from(await (await fetch(origin + item.original!.url)).arrayBuffer()), bytes)
+  assert.equal((await fetch(origin + item.thumbnail!.url)).status, 200)
+
+  const again = await paste(bytes)
+  assert.equal(again.status, 200)
+  assert.deepEqual([again.body.merged, again.body.item.id], [true, item.id])
+
+  const html = await paste(Buffer.from('<!doctype html><title>x</title>'))
+  assert.deepEqual([html.status, html.body.code], [415, 'unsupported-media'])
+  const lying = await paste(png(20, 10, 64, 'other'), { thumbnail: { width: 40, height: 10 }, source: { width: 20, height: 10 } })
+  assert.deepEqual([lying.status, lying.body.code], [400, 'integrity'])
+  assert.equal((await paste(png(20, 10, 64, 'third'), { thumbnail: { width: 20 } })).status, 400)
+  assert.equal((await json('/library/items', { method: 'POST', body: 'x', headers: { 'content-type': 'text/plain' } })).status, 400)
+  const crossSite = await fetch(`${api}/library/items`, { method: 'POST', body: new FormData(), headers: { origin: 'https://evil.test' } })
+  assert.equal(crossSite.status, 403)
+
+  assert.equal((await fetch(`${api}/library/items/${item.id}`, { method: 'DELETE' })).status, 200)
+})
+
+test('EZDESIGN_LIBRARY_HOME shows a library outside the data dir, the one the extension saves into', async () => {
+  // Under a dot directory, as the real `~/.ezdesign/library` is.
+  const real = join(elsewhere.dataDir, 'real-home', '.ezdesign')
+  const saved = await save('real', ['real'], '', 'Saved by the extension', false, join(real, 'library'))
+  elsewhere.env.EZDESIGN_LIBRARY_HOME = real
+  elsewhere.spawnDaemon()
+  const { port } = await elsewhere.liveDaemon()
+  const { shellUrl } = await elsewhere.openSession(port, { project: mkdtempSync(join(elsewhere.dataDir, 'project-')) })
+  const page = (await (await fetch(`${new URL(shellUrl).origin}/__ezdesign/api/library/items`)).json()) as LibraryPageWire
+  assert.deepEqual(page.items.map((i) => i.id), [saved.item.id])
+  for (const file of [page.items[0]!.original!.url, page.items[0]!.thumbnail!.url]) {
+    assert.equal((await fetch(new URL(file, shellUrl))).status, 200, file)
+  }
 })
