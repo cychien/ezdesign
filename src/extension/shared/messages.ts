@@ -70,6 +70,10 @@ export interface PreviewHandoff {
   bitmap: ImageBitmap
 }
 
+export interface DialogLeaving {
+  type: 'ez-capture-leaving'
+}
+
 export const DIALOG_PORT_PREFIX = 'dialog:'
 
 export type DialogToWorker =

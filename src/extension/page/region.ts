@@ -16,7 +16,9 @@ const STYLE = `
   }
   .hint {
     position: fixed; top: 16px; left: 50%; transform: translateX(-50%); pointer-events: none;
-    padding: 6px 12px; border-radius: 8px; background: #171717; color: #fff;
+    padding: 6px 12px; border-radius: 8px; color: #fff;
+    background: oklch(0% 0 0 / 0.78); backdrop-filter: blur(16px) saturate(1.6);
+    box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.1), 0 4px 16px oklch(0% 0 0 / 0.16);
     font: 500 12px/1.5 -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans TC', sans-serif;
   }
   [hidden] { display: none; }
@@ -58,7 +60,7 @@ export function selectRegion(): Promise<RegionChoice> {
   size.hidden = true
   const hint = document.createElement('div')
   hint.className = 'hint'
-  hint.textContent = '拖曳框出要存的區域，點一下存整個畫面，Esc 取消'
+  hint.textContent = '拖曳框出要存的區域，Esc 取消'
   root.append(style, layer, ...shades, box, size, hint)
   document.documentElement.append(host)
 
