@@ -33,6 +33,7 @@ const SAMPLES: Record<string, Record<string, unknown>> = {
   'ez:wheel': { dx: 1, dy: 2 },
   'ez:scroll': { ratio: 0.5 },
   'ez:relay': { reqId: 'r1', op: { op: 'discard-upload', id: 'a1' } },
+  'ez:library-pick': { reqId: 'l1' },
 }
 
 const upTypes = Object.entries(GUEST_PROTOCOL)
@@ -70,6 +71,7 @@ test('CV-p3-protocol-table: an unknown or shell-to-guest type, or malformed data
   assert.equal(parseGuestMessage({ type: 'toString' }, APP), null)
   assert.equal(parseGuestMessage({ type: 'ez:mode', mode: 'everything' }, APP), null)
   assert.equal(parseGuestMessage({ type: 'ez:picked', pickId: 'p1' }, APP), null)
+  assert.equal(parseGuestMessage({ type: 'ez:library-pick', reqId: 7 }, CANVAS), null)
   assert.equal(parseGuestMessage('ez:ready', APP), null)
   assert.equal(parseGuestMessage(null, APP), null)
 })

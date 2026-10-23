@@ -38,6 +38,7 @@ import { type GuestKind, parseGuestMessage } from './guest-messages.js'
 import { type CanvasUi, installCanvas } from './canvas/index.js'
 import { type LibraryView, installLibrary } from './library/index.js'
 import { LIBRARY_TEST_IDS } from './library/names.js'
+import { chooseLibraryAttachments } from './library/picker.js'
 import {
   type CanvasEventWire,
   type CanvasSnapshotWire,
@@ -75,7 +76,9 @@ import type { AnchorWire, DraftWire, NumberedRef, RefWire } from './draft.js'
 import {
   bodyFromComment,
   fileMarker,
+  groupPicks,
   nextRefNumber,
+  pickChipText,
   refChipText,
   refMarker,
   skillMarker,
@@ -116,13 +119,19 @@ interface AnnotationWire {
   }
   /** Full records, not echoes: the queue holds the annotation itself, and the
    *  editor has to be able to hand every field back unchanged. */
-  attachments?: { id: string; name: string }[]
+  attachments?: { id: string; name: string; origin?: { pick: string } }[]
   references?: NumberedRef[]
 }
 
 /** A bare string is what logs written before references carried a number hold.
  *  It has no marker to sit in, so it is appended rather than inlined. */
 type RefEcho = string | { n: number; label: string }
+
+/** A file as the log keeps it. A bare string is a paste; a library pick's files
+ *  carry the pick, which is what folds them back into one chip. */
+type FileEcho = string | { name: string; pick: string }
+
+const echoName = (file: FileEcho) => (typeof file === 'string' ? file : file.name)
 
 interface ConversationWire {
   role: 'user' | 'agent' | 'system'
@@ -135,10 +144,10 @@ interface ConversationWire {
   items?: {
     comment: string
     where: string
-    attachments?: string[]
+    attachments?: FileEcho[]
     references?: RefEcho[]
   }[]
-  attachments?: string[]
+  attachments?: FileEcho[]
   references?: RefEcho[]
 }
 
@@ -1896,6 +1905,7 @@ const noteAttach = attachify({
     },
   ],
   skills: () => fetchSkills(),
+  chooseLibrary: () => chooseLibraryAttachments(API),
 })
 const note = noteAttach.editable
 note.title = '寫補充說明（N）'
@@ -4070,7 +4080,7 @@ function paintQueue(annotations: AnnotationWire[]): void {
     const row = commentEl(
       a.comment,
       a.references,
-      a.attachments?.map((f) => f.name),
+      a.attachments?.map((f) => (f.origin ? { name: f.name, pick: f.origin.pick } : f.name)),
       'ez-qi-comment',
     )
     if (a.comment || a.references?.length || a.attachments?.length) li.append(row.box)
@@ -4208,7 +4218,7 @@ function fileChips(names: string[]): HTMLElement | null {
 function commentEl(
   text: string,
   refs: RefEcho[] | undefined,
-  files: string[] | undefined,
+  files: FileEcho[] | undefined,
   className?: string,
   skills?: string[],
 ): { box: HTMLElement; unplacedFiles: string[] } {
@@ -4216,12 +4226,25 @@ function commentEl(
   const numbered = new Map(
     (refs ?? []).flatMap((r) => (typeof r === 'string' ? [] : [[r.n, r.label] as const])),
   )
-  const names = files ?? []
+  const echoes = files ?? []
+  const names = echoes.map(echoName)
   const placedRefs = new Set<number>()
   const placedFiles = new Set<number>()
-  for (const part of splitComment(text)) {
+  let picks = 0
+  const pickOf = (n: number) => {
+    const echo = echoes[n - 1]
+    return typeof echo === 'object' ? echo.pick : undefined
+  }
+  for (const part of groupPicks(splitComment(text), pickOf)) {
     if (part.t === 'text') {
       box.appendChild(document.createTextNode(part.v))
+      continue
+    }
+    if (part.t === 'pick') {
+      for (const n of part.files) placedFiles.add(n)
+      const chip = chipEl(pickChipText(++picks), Album02Icon as IconNode)
+      chip.title = part.files.map((n) => names[n - 1]).join('\n')
+      box.appendChild(chip)
       continue
     }
     if (part.t === 'skill') {
@@ -4942,6 +4965,17 @@ window.addEventListener('message', (e: MessageEvent) => {
       return
     case 'ez:pick-cancelled':
       dispatchPick({ t: 'cancelled', id: msg.pickId, resumed: msg.resumed, frame: from })
+      return
+    case 'ez:library-pick':
+      chooseLibraryAttachments(API).then(
+        (files) => frames.post(from, { type: 'ez:library-picked', reqId: msg.reqId, files }),
+        (error: unknown) =>
+          frames.post(from, {
+            type: 'ez:library-picked',
+            reqId: msg.reqId,
+            error: error instanceof Error ? error.message : String(error),
+          }),
+      )
       return
     // Already screened by the overlay for its own popup and the host page's
     // fields, so nothing here is being typed into.

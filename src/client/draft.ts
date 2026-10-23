@@ -68,6 +68,9 @@ export type DraftNode =
    *  field and the daemon turns it into the leading `/name` the agent expands,
    *  so emitting it into the text too would name it twice. */
   | { t: 'skill'; name: string }
+  /** References chosen from the library in one go, as one chip. To the agent
+   *  they are files like any other: each takes its own `[file n]`. */
+  | { t: 'pick'; files: { id: string; name: string }[] }
 
 /** What the popup was anchored to, captured as data rather than as a live node,
  *  so a save is still machine-precise when the node itself is gone. */
@@ -123,6 +126,11 @@ export const refMarker = (n: number): string => `[ref ${n}]`
 export const refChipText = (n: number, chosen = false): string =>
   `${chosen ? '探索樣式' : '選取元素'} ${n}`
 
+/** What a library pick's chip reads. Counted in the order the picks appear in
+ *  the comment: unlike a reference, its number is in no marker the agent reads,
+ *  so there is nothing for a renumbering to fall out of step with. */
+export const pickChipText = (n: number): string => `選取素材 ${n}`
+
 /** How an attachment appears in the comment text. Files are marked for the same
  *  reason references are: a comment can point at one mid sentence, so *where* it
  *  sat is part of what the user said - "check this csv against that screenshot"
@@ -150,6 +158,33 @@ export type CommentPart =
   | { t: 'ref'; n: number }
   | { t: 'file'; n: number }
   | { t: 'skill'; n: number }
+
+/** A comment's parts with each library pick's run of `[file n]` markers folded
+ *  back into the one chip the user saw. A run is markers joined by the single
+ *  spaces `draftText` writes, whose files share a pick. */
+export type GroupedPart = CommentPart | { t: 'pick'; files: number[] }
+
+export function groupPicks(parts: CommentPart[], pickOf: (n: number) => string | undefined): GroupedPart[] {
+  const out: GroupedPart[] = []
+  for (let i = 0; i < parts.length; i++) {
+    const part = parts[i]!
+    const pick = part.t === 'file' ? pickOf(part.n) : undefined
+    if (part.t !== 'file' || !pick) {
+      out.push(part)
+      continue
+    }
+    const files = [part.n]
+    for (;;) {
+      const gap = parts[i + 1]
+      const next = parts[i + 2]
+      if (gap?.t !== 'text' || gap.v !== ' ' || next?.t !== 'file' || pickOf(next.n) !== pick) break
+      files.push(next.n)
+      i += 2
+    }
+    out.push({ t: 'pick', files })
+  }
+  return out
+}
 
 /** A comment split at its markers, so a reader can render the reference inline
  *  rather than leaving `[ref 1]` showing. */
@@ -184,6 +219,7 @@ export function draftText(body: DraftNode[]): string {
     else if (node.t === 'ref' && node.anchor) out.push(refMarker(node.n))
     else if (node.t === 'file' && node.id) out.push(fileMarker(++file))
     else if (node.t === 'skill') out.push(skillMarker(++skill))
+    else if (node.t === 'pick') out.push(node.files.map(() => fileMarker(++file)).join(' '))
   }
   return out.join('').replaceAll(NBSP, ' ').trim()
 }
@@ -204,16 +240,21 @@ export function draftText(body: DraftNode[]): string {
 export function bodyFromComment(
   text: string,
   refs: NumberedRef[],
-  files: { id: string; name: string }[],
+  files: { id: string; name: string; origin?: { pick: string } }[],
   skills: string[] = [],
 ): DraftNode[] {
   const byNumber = new Map(refs.map((r) => [r.n, r]))
   const placedRefs = new Set<number>()
   const placedFiles = new Set<number>()
   const body: DraftNode[] = []
-  for (const part of splitComment(text)) {
+  for (const part of groupPicks(splitComment(text), (n) => files[n - 1]?.origin?.pick)) {
     if (part.t === 'text') {
       body.push({ t: 'text', v: part.v })
+      continue
+    }
+    if (part.t === 'pick') {
+      for (const n of part.files) placedFiles.add(n)
+      body.push({ t: 'pick', files: part.files.map((n) => ({ id: files[n - 1]!.id, name: files[n - 1]!.name })) })
       continue
     }
     if (part.t === 'ref') {
@@ -294,7 +335,7 @@ export function nextRefNumber(body: DraftNode[]): number {
  *  count, so `[file n]` is the id at index n-1. A chip whose upload has not
  *  landed has no id yet, so it is neither marked nor listed. */
 export function draftFileIds(body: DraftNode[]): string[] {
-  return body.flatMap((n) => (n.t === 'file' && n.id ? [n.id] : []))
+  return body.flatMap((n) => (n.t === 'file' && n.id ? [n.id] : n.t === 'pick' ? n.files.map((f) => f.id) : []))
 }
 
 /** Names of the chips a snapshot cannot carry: an upload in flight belongs to

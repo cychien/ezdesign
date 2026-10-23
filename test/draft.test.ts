@@ -11,6 +11,7 @@ import {
   draftSkills,
   draftText,
   dropDraftRef,
+  groupPicks,
   hasPendingRef,
   nextRefNumber,
   normalizeDraft,
@@ -479,4 +480,45 @@ test('a marker naming a skill that is gone stays as text', () => {
   const body = bodyFromComment('跑 [skill 2] 看看', [], [], ['onlyone'])
   assert.deepEqual(draftSkills(body), [])
   assert.equal(draftText(body).includes('[skill 2]'), true)
+})
+
+const pick = (...files: [string, string][]): DraftNode => ({
+  t: 'pick',
+  files: files.map(([id, name]) => ({ id, name })),
+})
+
+test('a library pick is one chip in the box and a file marker per file in the text', () => {
+  const body = [text('照 '), pick(['a1', 'linear.png'], ['a2', 'apple.png']), text(`${NBSP}做，再看 `), file('a3', 'x.png')]
+  assert.equal(draftText(body), '照 [file 1] [file 2] 做，再看 [file 3]')
+  assert.deepEqual(draftFileIds(body), ['a1', 'a2', 'a3'])
+})
+
+test('a run of markers from one pick folds back into one part, and nothing else does', () => {
+  const picks: Record<number, string> = { 1: 'p1', 2: 'p1', 3: 'p2', 5: 'p1' }
+  assert.deepEqual(groupPicks(splitComment('[file 1] [file 2] [file 3] [file 4] x [file 5]'), (n) => picks[n]), [
+    { t: 'pick', files: [1, 2] },
+    { t: 'text', v: ' ' },
+    { t: 'pick', files: [3] },
+    { t: 'text', v: ' ' },
+    { t: 'file', n: 4 },
+    { t: 'text', v: ' x ' },
+    { t: 'pick', files: [5] },
+  ])
+})
+
+test('an edited comment gets its pick back as one chip', () => {
+  const files = [
+    { id: 'f1', name: 'linear.png', origin: { pick: 'p1' } },
+    { id: 'f2', name: 'apple.png', origin: { pick: 'p1' } },
+    { id: 'f3', name: 'shot.png' },
+  ]
+  const body = bodyFromComment('參考 [file 1] [file 2] 和 [file 3]', [], files)
+  assert.deepEqual(body, [
+    text('參考 '),
+    pick(['f1', 'linear.png'], ['f2', 'apple.png']),
+    text(' 和 '),
+    file('f3', 'shot.png'),
+    text(NBSP),
+  ])
+  assert.equal(draftText(body), '參考 [file 1] [file 2] 和 [file 3]')
 })

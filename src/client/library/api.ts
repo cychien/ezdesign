@@ -1,6 +1,7 @@
 import type { ExtensionInstallWire, ExtensionStatusWire } from '../../capture-setup-wire.js'
 import type {
   LibraryAddedWire,
+  LibraryAttachedWire,
   LibraryItemWire,
   LibraryPageWire,
   LibraryPasteMeta,
@@ -20,6 +21,8 @@ export interface LibraryApi {
   update(id: string, patch: LibraryPatchWire): Promise<LibraryItemWire>
   remove(id: string): Promise<void>
   paste(original: Blob, thumbnail: Blob, meta: LibraryPasteMeta): Promise<LibraryAddedWire>
+  /** Copies items into this session's attachments, in the order given. */
+  attach(ids: readonly string[]): Promise<LibraryAttachedWire[]>
   extensionStatus(): Promise<ExtensionStatusWire>
   installExtension(): Promise<ExtensionInstallWire>
 }
@@ -58,6 +61,14 @@ export function libraryApi(base: string): LibraryApi {
       form.append('meta', JSON.stringify(meta))
       return answer(await fetch(`${base}/library/items`, { method: 'POST', body: form }))
     },
+    attach: async (ids) =>
+      answer(
+        await fetch(`${base}/attachments/library`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ ids }),
+        }),
+      ),
     extensionStatus: async () => answer(await fetch(`${base}/extension/status`)),
     installExtension: async () => answer(await fetch(`${base}/extension/install`, { method: 'POST' })),
   }

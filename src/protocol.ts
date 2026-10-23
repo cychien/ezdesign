@@ -47,7 +47,28 @@ export interface Attachment {
   mime: string
   size: number
   createdAt: number
+  /** Set when the file was taken from the capture library rather than pasted. */
+  origin?: AttachmentOrigin
 }
+
+/** Where a library item was captured, and what the user wrote about it. Copied
+ *  onto the attachment at the moment it is chosen: the library is free to change
+ *  or lose the item afterwards, and the comment must still say what it said. */
+export interface AttachmentOrigin {
+  /** Shared by every file chosen in one go, which the user sees as one chip. */
+  pick: string
+  libraryItemId: string
+  pageUrl: string
+  pageTitle: string
+  mediaUrl: string | null
+  note: string
+  tags: string[]
+}
+
+/** An attachment as the log keeps it: its name, and the pick it was chosen in
+ *  when it came from the library, so the pick still reads as one chip. A bare
+ *  string is a file pasted in, or an entry written before picks existed. */
+export type AttachmentEcho = string | { name: string; pick: string }
 
 /** Agent-facing view: an absolute path, because the agent runs on this machine
  *  and would rather open the file than be handed bytes. */
@@ -56,6 +77,7 @@ export interface AgentAttachment {
   mime: string
   size: number
   path: string
+  origin?: AttachmentOrigin
 }
 
 /** An element the user pointed the agent *at* from inside a comment - "make this
@@ -247,8 +269,8 @@ export type BatchView = { tab: 'app'; page: string } | { tab: 'canvas'; canvasId
 export interface ConversationItem {
   comment: string
   where: string
-  /** names only: the log shows what was attached, not where it lives */
-  attachments?: string[]
+  /** the log shows what was attached, not where it lives */
+  attachments?: AttachmentEcho[]
   references?: ReferenceEcho[]
 }
 
@@ -267,7 +289,7 @@ export interface ConversationEntry {
    *  first one, by date; see `SessionStore.visibleConversation`. */
   chatId?: string
   items?: ConversationItem[]
-  attachments?: string[]
+  attachments?: AttachmentEcho[]
   references?: ReferenceEcho[]
   /** The skills this batch named. Worth recording because an explicitly invoked
    *  skill leaves no other trace: the agent expands it into the prompt rather

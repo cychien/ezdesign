@@ -35,6 +35,8 @@ export interface OverlayLink {
   /** `POST /annotations`, or its relay. Rejects on refusal. */
   annotate(body: Record<string, unknown> & { anchor: AnchorWire }): Promise<void>
   readonly attachments: AttachmentTransport
+  /** Asks the shell to open the library. Absent unframed: there is no shell. */
+  readonly chooseLibrary?: () => Promise<{ id: string; name: string }[]>
   /** Called with every snapshot, the first as soon as one is known. */
   subscribe(onSnapshot: (snapshot: OverlaySnapshot) => void): void
   /** Whether a message event is from the shell this overlay answers to. */
@@ -50,10 +52,37 @@ export function linkFromScript(script: HTMLScriptElement | null, api: string): O
   return shellOrigin ? relayLink({ shellOrigin }) : inertLink()
 }
 
+/** No timeout, unlike a relay call: the answer waits on the user browsing. */
+function libraryChooser(
+  post: (message: Record<string, unknown>) => void,
+  fromShell: (e: MessageEvent) => boolean,
+): () => Promise<{ id: string; name: string }[]> {
+  const pending = new Map<string, { resolve: (files: { id: string; name: string }[]) => void; reject: (err: Error) => void }>()
+  let seq = 0
+  window.addEventListener('message', (e: MessageEvent) => {
+    if (!fromShell(e)) return
+    const data = e.data as { type?: string; reqId?: string; files?: unknown; error?: unknown }
+    if (data?.type !== 'ez:library-picked' || typeof data.reqId !== 'string') return
+    const waiting = pending.get(data.reqId)
+    pending.delete(data.reqId)
+    if (!waiting) return
+    if (typeof data.error === 'string') waiting.reject(new Error(data.error))
+    else waiting.resolve(Array.isArray(data.files) ? (data.files as { id: string; name: string }[]) : [])
+  })
+  return () =>
+    new Promise((resolve, reject) => {
+      const reqId = `l${++seq}-${Date.now().toString(36)}`
+      pending.set(reqId, { resolve, reject })
+      post({ type: 'ez:library-pick', reqId })
+    })
+}
+
 export function directLink(api: string): OverlayLink {
+  const post = (message: Record<string, unknown>) => window.parent?.postMessage(message, location.origin)
+  const fromShell = (e: MessageEvent) => e.source === window.parent && e.origin === location.origin
   return {
     kind: 'direct',
-    post: (message) => window.parent?.postMessage(message, location.origin),
+    post,
     annotate: async (body) => {
       const res = await fetch(`${api}/annotations`, {
         method: 'POST',
@@ -63,6 +92,7 @@ export function directLink(api: string): OverlayLink {
       if (!res.ok) throw new Error(`annotation rejected (${res.status})`)
     },
     attachments: directAttachments(api),
+    ...(window.parent !== window ? { chooseLibrary: libraryChooser(post, fromShell) } : {}),
     subscribe: (onSnapshot) => {
       if (window.parent === window) {
         const events = new EventSource(`${api}/events`)
@@ -140,6 +170,7 @@ export function relayLink(config: { shellOrigin: string }): OverlayLink {
         request({ op: 'discard-upload', id }).catch(() => {})
       },
     },
+    chooseLibrary: libraryChooser(post, fromShell),
     subscribe: (onSnapshot) => {
       listeners.push(onSnapshot)
       if (last) onSnapshot(last)

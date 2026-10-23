@@ -7,6 +7,7 @@
  *      GET    /library/items/:id/original      -> the file, or a link's frame
  *      PATCH  /library/items/:id  LibraryPatchWire -> LibraryItemWire
  *      DELETE /library/items/:id               -> {ok: true}
+ *      POST   /attachments/library  {ids}      -> LibraryAttachedWire[]
  *
  *  Errors are `{error, code}`; `code` is `not-found`, `bad-request`, a
  *  `LibraryErrorCode` when the library cannot open (503), or the one that
@@ -60,4 +61,10 @@ export interface LibraryAddedWire {
 export interface LibraryPatchWire {
   tags?: string[]
   note?: string
+}
+
+/** A library item copied into the session's attachments, as a composer chips it. */
+export interface LibraryAttachedWire {
+  id: string
+  name: string
 }

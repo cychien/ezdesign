@@ -106,6 +106,9 @@ export const GUEST_PROTOCOL = {
   'ez:snapshot': down(BOTH),
   /** Relay: `{reqId, ok, body}` settling an `ez:relay`. */
   'ez:relay-done': down(CANVAS),
+  /** `{reqId, files}` or `{reqId, error}` settling an `ez:library-pick`;
+   *  `files` is empty when the user called it off. */
+  'ez:library-picked': down(BOTH),
 
   // ------------------------------------------------------------ guest -> shell
   'ez:ready': up(BOTH, (r) => {
@@ -199,6 +202,12 @@ export const GUEST_PROTOCOL = {
   'ez:scroll': up(APP, (r) => {
     const ratio = num(r.ratio)
     return ratio === null ? null : { ratio }
+  }),
+  /** A composer's `/library`: the library opens in the shell, over every frame,
+   *  and the shell copies what was chosen into the session's attachments. */
+  'ez:library-pick': up(BOTH, (r) => {
+    const reqId = str(r.reqId)
+    return reqId === null ? null : { reqId }
   }),
   /** Relay: a canvas guest has no api of its own (`refuseCrossSite`). */
   'ez:relay': up(CANVAS, (r, sender) => {

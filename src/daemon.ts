@@ -78,7 +78,7 @@ import {
 } from './preferences.js'
 import { readInspireToken } from './credentials.js'
 import type { AttachmentLocator } from './label.js'
-import { shortAnchor, toAgentAttachments, toAgentItem, toConversationItem } from './label.js'
+import { attachmentEcho, shortAnchor, toAgentAttachments, toAgentItem, toConversationItem } from './label.js'
 import { type IncomingVariant, ExploreMcp, MCP_ROUTE, isExploreTool } from './mcp-explore.js'
 import type {
   Anchor,
@@ -112,8 +112,8 @@ import {
   writeRegistry,
 } from './registry.js'
 import { refreshCaptureInstall } from './capture-install/index.js'
-import { type Library, openLibrary } from './library/index.js'
-import { lazyLibrary, libraryApiRouter } from './library-routes.js'
+import { type Library, LibraryError, openLibrary } from './library/index.js'
+import { lazyLibrary, libraryApiRouter, libraryAttachables } from './library-routes.js'
 import { extensionApiRouter } from './extension-routes.js'
 import { installVersion, pruneInstalledVersions } from './installer.js'
 import { latestVersion, updateChecksDisabled } from './update-check.js'
@@ -367,7 +367,9 @@ function acpPrompt(
       : []),
     'Each item resolves to source: trust `anchor.source` (file:line) when present, else',
     'use `anchor.components` / `anchor.section` / `anchor.selector` / `anchor.text`.',
-    '`[file n]` in a comment is `attachments[n-1]` (read the file at `path`);',
+    '`[file n]` in a comment is `attachments[n-1]` (read the file at `path`); one with an',
+    '`origin` is a reference from their library: `origin.pageUrl` is where it was captured',
+    'and `origin.note` what they wrote about it;',
     '`[ref n]` names the entry in `references` whose `n` matches.',
     'A reference carrying a `variant` is one the user chose in an explore round. Its html is',
     'the look they settled on, not code to paste: it is a stand-in that rendered in a shadow',
@@ -1386,7 +1388,7 @@ class SessionRuntime implements ProjectRuntime {
       role: 'user',
       text: input.direction ? `探索 ${label}：${input.direction}` : `探索 ${label}`,
       ts: Date.now(),
-      ...(round.attachments?.length ? { attachments: round.attachments.map((a) => a.name) } : {}),
+      ...(round.attachments?.length ? { attachments: round.attachments.map(attachmentEcho) } : {}),
       ...(round.references?.length
         ? { references: round.references.map((r) => ({ n: r.n, label: r.label })) }
         : {}),
@@ -1861,6 +1863,28 @@ class SessionRuntime implements ProjectRuntime {
       }
     })
 
+    // Library items chosen in a composer become this session's own attachments,
+    // in the order chosen, so they chip, send and reach the agent like a paste.
+    api.post('/attachments/library', (req, res, next) => {
+      const ids = attachmentIds(req.body?.ids)
+      if (!ids?.length) return res.status(400).json({ error: 'ids must be a non-empty array of item ids' })
+      this.library().then(
+        (library) => {
+          const found = libraryAttachables(library, ids)
+          if ('missing' in found) {
+            return res.status(404).json({ error: `素材 ${found.missing} 已經不在素材庫裡了` })
+          }
+          const pick = newId()
+          res.json(
+            found.ok.map(({ title, file, origin }) =>
+              this.store.copyAttachment(title, file.mediaType, file.path, { pick, ...origin }),
+            ),
+          )
+        },
+        (error: unknown) => (error instanceof LibraryError ? res.status(503).json({ error: error.message }) : next(error)),
+      ).catch(next)
+    })
+
     // The queue is editable until it is sent: the same fields `POST /annotations`
     // accepts, validated the same way, so a comment reopened in the shell can be
     // saved back with its files and picked elements changed.
@@ -1938,7 +1962,7 @@ class SessionRuntime implements ProjectRuntime {
         ts: Date.now(),
         batchId: batch.batchId,
         items: batch.items.map(toConversationItem),
-        ...(batch.attachments?.length ? { attachments: batch.attachments.map((a) => a.name) } : {}),
+        ...(batch.attachments?.length ? { attachments: batch.attachments.map(attachmentEcho) } : {}),
         ...(batch.references?.length
           ? { references: batch.references.map((r) => ({ n: r.n, label: r.label })) }
           : {}),

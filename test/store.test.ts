@@ -202,6 +202,30 @@ test('hostile names cannot escape the attachments directory', () => {
   }
 })
 
+test('a library item is copied in under its page title, keeping its extension and where it came from', () => {
+  const store = new SessionStore('/tmp/project-9006')
+  const from = join(mkdtempSync(join(tmpdir(), 'ezdesign-lib-')), 'blob')
+  writeFileSync(from, 'library-bytes')
+  const origin = {
+    pick: 'p1',
+    libraryItemId: '01J00000000000000000000000',
+    pageUrl: 'https://ref.test/a',
+    pageTitle: 'Pricing / Plans',
+    mediaUrl: null,
+    note: '',
+    tags: [],
+  }
+  const a = store.copyAttachment('Pricing / Plans', 'image/png', from, origin)
+  assert.equal(a.name, 'Pricing - Plans.png')
+  assert.equal(a.size, 13)
+  assert.deepEqual(a.origin, origin)
+  assert.equal(readFileSync(store.attachmentPath(a), 'utf8'), 'library-bytes')
+
+  const long = store.copyAttachment('x'.repeat(80), 'image/webp', from, origin)
+  assert.equal(long.name, `${'x'.repeat(48)}.webp`)
+  assert.equal(store.copyAttachment('', 'image/png', from, origin).name, 'reference.png')
+})
+
 test('unknown ids resolve to null rather than a partial list', () => {
   const store = new SessionStore('/tmp/project-9005')
   const a = store.addAttachment('a.png', 'image/png', bytes('x'))

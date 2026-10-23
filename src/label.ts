@@ -4,6 +4,7 @@ import type {
   AgentItem,
   Annotation,
   Attachment,
+  AttachmentEcho,
   ConversationItem,
   FrameRef,
   Reference,
@@ -22,7 +23,13 @@ export type FrameNames = (ref: FrameRef) => { canvas: string; frame: string } | 
 /** Absolute path, because the agent shares this machine and would rather open
  *  the file than be handed bytes. */
 export function toAgentAttachment(a: Attachment, files: AttachmentLocator): AgentAttachment {
-  return { name: a.name, mime: a.mime, size: a.size, path: files.attachmentPath(a) }
+  return {
+    name: a.name,
+    mime: a.mime,
+    size: a.size,
+    path: files.attachmentPath(a),
+    ...(a.origin ? { origin: a.origin } : {}),
+  }
 }
 
 export function toAgentAttachments(
@@ -138,8 +145,12 @@ export function viewportTag(anchor: Anchor): string {
   return `${vp.width}px`
 }
 
+export function attachmentEcho(a: Attachment): AttachmentEcho {
+  return a.origin ? { name: a.name, pick: a.origin.pick } : a.name
+}
+
 export function toConversationItem(a: Annotation): ConversationItem {
-  const attachments = a.attachments?.map((x) => x.name)
+  const attachments = a.attachments?.map(attachmentEcho)
   const references = a.references?.map((r) => ({ n: r.n, label: r.label }))
   return {
     comment: a.comment,
