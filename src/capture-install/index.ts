@@ -276,7 +276,9 @@ export async function refreshCaptureInstall(options: Placement & { version: stri
   const intact =
     existsSync(join(at.hostDir, HOST_BUNDLE)) &&
     existsSync(at.wrapper) &&
-    currentGeneration(at.extensionDir) === record.extensionGeneration
+    currentGeneration(at.extensionDir) === record.extensionGeneration &&
+    // One version can be built twice with a different extension: the generation is its content.
+    record.extensionGeneration === currentGeneration(join(options.distDir, 'extension'))
   if (order === 0 && intact) return 'current'
   const userDataDirs = record.manifests.map((m) => dirname(dirname(m))).filter((dir) => existsSync(dir))
   await installCapture({ ...options, userDataDirs })
