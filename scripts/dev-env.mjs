@@ -49,6 +49,9 @@ export function devEnv() {
     ...process.env,
     EZDESIGN_DATA_DIR: DEV_DATA_DIR,
     EZDESIGN_CONTROL_PORT: String(devControlPort()),
+    // `dev.mjs` owns the daemon's lifetime; one that stopped itself would be
+    // restarted with no sessions under the shell left open.
+    EZDESIGN_NO_IDLE_STOP: '1',
   }
 }
 

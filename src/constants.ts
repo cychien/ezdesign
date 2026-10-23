@@ -20,6 +20,7 @@ export const nativeHostDir = (dataDir: string = DATA_DIR): string => join(dataDi
 export const installedExtensionDir = (dataDir: string = DATA_DIR): string => join(dataDir, 'extension')
 export const NO_UPDATE_CHECK_ENV = `${ENV_PREFIX}_NO_UPDATE_CHECK`
 export const DESIGN_HARNESS_ENV = `${ENV_PREFIX}_DESIGN_HARNESS`
+export const NO_IDLE_STOP_ENV = `${ENV_PREFIX}_NO_IDLE_STOP`
 
 /** Unset, empty, `0` and `false` are off; anything else is on. */
 export function envFlagOn(raw: string | undefined): boolean {
@@ -75,4 +76,10 @@ export const POLL_TIMEOUT_MS = 50_000
  *  daemon restart, which the CLI survives by re-resolving the session port. */
 export const POLL_RETRIES = 5
 export const IDLE_STOP_MS = 30 * 60_000
+export const IDLE_CHECK_MS = 60_000
+/** How soon a shell's event stream retries a daemon that is gone. */
+export const SHELL_RETRY_MS = 1000
+/** How long a daemon that has taken a session's port back waits for the shells
+ *  left open on it to reconnect: one retry, its connect, and slack. */
+export const SHELL_RETURN_MS = 2000
 export const SOURCE_ATTR = 'data-ez-source'

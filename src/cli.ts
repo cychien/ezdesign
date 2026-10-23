@@ -271,12 +271,13 @@ async function cmdOpen(
     hint?: string
     agent?: string
     app?: string
+    shellOpen?: boolean
   }
   if (!res.ok) fail(body.error ?? `daemon returned ${res.status}`, body.hint)
-  await openShell(body.shellUrl!)
+  if (!body.shellOpen) await openShell(body.shellUrl!)
   console.log(`session: ${project}`)
   if (body.app) console.log(`app:     ${body.app}`)
-  console.log(`shell:   ${body.shellUrl}`)
+  console.log(`shell:   ${body.shellUrl}${body.shellOpen ? ' (already open in your browser)' : ''}`)
   // The daemon's answer, not the flag: a restored session keeps its agent.
   if (body.agent) {
     console.log(`agent:   ${body.agent} (ACP) - review runs in the shell`)
