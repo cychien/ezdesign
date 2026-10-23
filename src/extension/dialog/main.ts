@@ -2,6 +2,7 @@ import { deviceCrop } from '../shared/geometry.js'
 import {
   type CaptureView,
   DIALOG_PORT_PREFIX,
+  type DialogLeaving,
   type DialogToWorker,
   type PreviewHandoff,
   type PreviewSource,
@@ -17,7 +18,7 @@ const port = chrome.runtime.connect({ name: DIALOG_PORT_PREFIX + captureId })
 const post = (message: DialogToWorker) => port.postMessage(message)
 const now = () => performance.timeOrigin + performance.now()
 
-const TAG_PLACEHOLDER = '加入標籤，按 Enter 或逗號'
+const TAG_PLACEHOLDER = '可留空或多個，以 Enter 或逗號隔開'
 const STREAM_NOTICE = '串流影片只會儲存連結、目前時間和畫面'
 const TOO_LARGE_NOTICE = '影片超過 200 MB，只會儲存連結和畫面'
 
@@ -58,7 +59,7 @@ const suggestionList = el('ul', {
   'data-testid': 'ez-capture-tag-suggestions',
   hidden: '',
 })
-const note = el('textarea', { 'aria-label': '備註', 'data-testid': 'ez-capture-note', rows: '3', placeholder: '為什麼存這個？' })
+const note = el('textarea', { 'aria-label': '為什麼好', 'data-testid': 'ez-capture-note', rows: '3', placeholder: '可留空' })
 const status = el('p', { class: 'status', role: 'status', 'data-testid': 'ez-capture-status' })
 const installCode = el('code')
 const copyButton = el('button', { type: 'button', class: 'quiet' }, '複製')
@@ -67,11 +68,11 @@ const grantButton = el('button', { type: 'button', class: 'grant', hidden: '' })
 const cancelButton = el('button', { type: 'button', 'data-testid': 'ez-capture-cancel' }, '取消')
 const saveButton = el('button', { type: 'button', class: 'primary', 'data-testid': 'ez-capture-save' }, '儲存')
 
+const header = el('header', {}, title, source)
 card.append(
-  el('header', {}, title, source),
-  figure,
+  ...(inWindow ? [header, figure] : [figure, header]),
   el('div', { class: 'field' }, el('span', { class: 'label', 'aria-hidden': 'true' }, '標籤'), el('div', { class: 'combo' }, tagBox, suggestionList)),
-  el('div', { class: 'field' }, el('span', { class: 'label', 'aria-hidden': 'true' }, '備註'), note),
+  el('div', { class: 'field' }, el('span', { class: 'label', 'aria-hidden': 'true' }, '為什麼好'), note),
   status,
   install,
   grantButton,
@@ -201,6 +202,7 @@ function leave(how: 'saved' | 'cancelled'): void {
   if (closing) return
   closing = true
   document.documentElement.dataset.leaving = how
+  if (!inWindow) window.parent.postMessage({ type: 'ez-capture-leaving' } satisfies DialogLeaving, '*')
   const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches
   const done = () => post({ type: 'closed' })
   if (reduced) setTimeout(done, 120)
@@ -307,19 +309,19 @@ function render(v: CaptureView): void {
 
 function drawPreview(image: CanvasImageSource, width: number, height: number, crop?: { x: number; y: number; width: number; height: number }) {
   const box = crop ?? { x: 0, y: 0, width, height }
-  const maxWidth = figure.clientWidth || 392
-  const maxHeight = Math.max(96, Math.min(240, innerHeight - 440))
+  figure.hidden = false
+  const padding = getComputedStyle(figure)
+  const maxWidth = figure.clientWidth - Number.parseFloat(padding.paddingLeft) - Number.parseFloat(padding.paddingRight)
+  const maxHeight = Math.max(96, Math.min(300, innerHeight - 400))
   const scale = Math.min(1, maxWidth / box.width, maxHeight / box.height)
   const canvas = el('canvas', { 'data-testid': 'ez-capture-preview', role: 'img', 'aria-label': '預覽' })
   canvas.style.width = `${Math.round(box.width * scale)}px`
-  canvas.style.height = `${Math.round(box.height * scale)}px`
   canvas.width = Math.max(1, Math.round(box.width * scale * devicePixelRatio))
   canvas.height = Math.max(1, Math.round(box.height * scale * devicePixelRatio))
   const ctx = canvas.getContext('2d')!
   ctx.imageSmoothingQuality = 'high'
   ctx.drawImage(image, box.x, box.y, box.width, box.height, 0, 0, canvas.width, canvas.height)
   figure.replaceChildren(canvas)
-  figure.hidden = false
   requestAnimationFrame(() => post({ type: 'preview-shown', at: now() }))
 }
 
