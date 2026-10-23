@@ -116,7 +116,7 @@ function workspace() {
     project,
     view,
     frameOrigin: () => 'http://localhost:5000',
-    overlay: () => ({ version: '1', shellOrigin: 'http://127.0.0.1:5000' }),
+    overlay: () => ({ assets: '1', shellOrigin: 'http://127.0.0.1:5000' }),
     hasApp: () => true,
     onChange: () => {},
   })

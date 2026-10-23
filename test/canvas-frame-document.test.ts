@@ -48,7 +48,7 @@ test('a quoted > inside an attribute does not end the tag', () => {
 })
 
 test('the relay overlay goes in once, after the head, on the shell origin', () => {
-  const config = { version: '1.2.3', shellOrigin: 'http://127.0.0.1:5000', place: { canvasId: 'c', frameId: 'f' } }
+  const config = { assets: '1.2.3', shellOrigin: 'http://127.0.0.1:5000', place: { canvasId: 'c', frameId: 'f' } }
   const once = injectFrameOverlay('<!doctype html><html><head><meta charset="utf-8"></head><body></body></html>', config)
   assert.equal(
     once,

@@ -25,7 +25,7 @@ function setup() {
     project,
     view,
     frameOrigin: () => 'http://localhost:5000',
-    overlay: () => ({ version: '1', shellOrigin: 'http://127.0.0.1:5000' }),
+    overlay: () => ({ assets: '1', shellOrigin: 'http://127.0.0.1:5000' }),
     hasApp: () => true,
     onChange: () => {},
   })
@@ -93,7 +93,7 @@ test('CV-tool-errors: every refusal names its problem and writes nothing', () =>
       project,
       view,
       frameOrigin: () => 'http://localhost:5000',
-      overlay: () => ({ version: '1', shellOrigin: 'http://127.0.0.1:5000' }),
+      overlay: () => ({ assets: '1', shellOrigin: 'http://127.0.0.1:5000' }),
       hasApp: () => true,
       onChange: () => {},
     })

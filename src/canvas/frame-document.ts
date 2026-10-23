@@ -47,8 +47,9 @@ export function isFrameHost(host: string | undefined): boolean {
 /** How the overlay inside a frame is configured. Written onto its script tag
  *  as data attributes and read once at boot by `linkFromScript`. */
 export interface FrameOverlayConfig {
-  /** Daemon version, in the asset urls, so forty frames fetch the overlay once. */
-  version: string
+  /** The overlay build's content key, in its asset urls: forty frames fetch it
+   *  once, and a rebuild is a new url. */
+  assets: string
   /** `http://127.0.0.1:<port>`: the only window the relay posts to. */
   shellOrigin: string
   /** Informational: the shell attributes anchors from the window a message came
@@ -152,7 +153,7 @@ const FRAME_OVERLAY_MARK = 'data-ez-link="relay"'
 export function injectFrameOverlay(html: string, config: FrameOverlayConfig): string {
   if (html.includes(FRAME_OVERLAY_MARK)) return html
   const shell = escapeAttr(config.shellOrigin)
-  const v = encodeURIComponent(config.version)
+  const v = encodeURIComponent(config.assets)
   const snippet =
     `<link rel="stylesheet" href="${shell}${URL_PREFIX}/overlay.css?v=${v}">` +
     `<script defer src="${shell}${URL_PREFIX}/overlay.js?v=${v}" ${FRAME_OVERLAY_MARK} data-ez-shell="${shell}"></script>`
