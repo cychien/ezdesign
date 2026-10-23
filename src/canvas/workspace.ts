@@ -502,7 +502,7 @@ class Workspace {
         rect: f.rect,
         file: f.file,
         hash: f.hash,
-        src: frameUrl(origin, canvas.id, f.id, f.hash),
+        src: frameUrl(origin, canvas.id, f.id, this.servedRev(f.hash)),
       })),
     }
   }
@@ -598,9 +598,10 @@ class Workspace {
       return null
     }
     const hash = sha1(bytes)
+    const rev = this.servedRev(hash)
     const key = `${canvasId}/${frameId}`
     const cached = this.served.get(key)
-    if (cached?.hash === hash) return cached
+    if (cached?.hash === rev) return cached
     if (hash !== frame.hash) {
       frame.hash = hash
       this.writeManifest(held)
@@ -611,9 +612,15 @@ class Workspace {
       file: `${CANVASES_DIR}/${canvasId}/${frame.file}`,
       overlay: { ...this.opts.overlay(), place: { canvasId, frameId } },
     })
-    const served = { hash, html }
+    const served = { hash: rev, html }
     this.served.set(key, served)
     return served
+  }
+
+  /** What a served frame is cached under: its file, and the overlay injected
+   *  into it, so a rebuilt overlay reaches a frame whose file has not changed. */
+  private servedRev(fileHash: string): string {
+    return sha1(`${fileHash}:${this.opts.overlay().assets}`)
   }
 
   // -------------------------------------------------------------- user edits

@@ -1,6 +1,6 @@
-import { randomBytes, timingSafeEqual } from 'node:crypto'
+import { createHash, randomBytes, timingSafeEqual } from 'node:crypto'
 import { EventEmitter } from 'node:events'
-import { accessSync, constants, readFileSync } from 'node:fs'
+import { accessSync, constants, readFileSync, statSync } from 'node:fs'
 import { type Server, createServer } from 'node:http'
 import { delimiter, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -150,6 +150,31 @@ function inspireAccess(): Inspire {
 }
 
 const asset = (name: string) => readFileSync(join(distDir, name))
+
+let overlayKeyed: { stamp: string; key: string } | null = null
+
+/** The overlay build's content, as a cache key for the url every canvas frame
+ *  loads it from. Not the package version: a rebuild keeps that, and an
+ *  immutable url under it would go on serving the old overlay. */
+function overlayAssetKey(): string {
+  const files = ['overlay.js', 'overlay.css'].map((name) => join(distDir, name))
+  let stamp: string
+  try {
+    stamp = files.map((file) => {
+      const stat = statSync(file)
+      return `${stat.mtimeMs}:${stat.size}`
+    }).join('|')
+  } catch {
+    // Run from source, with no build beside it: nothing to serve, so nothing to key.
+    return 'unbuilt'
+  }
+  if (overlayKeyed?.stamp !== stamp) {
+    const hash = createHash('sha1')
+    for (const file of files) hash.update(readFileSync(file))
+    overlayKeyed = { stamp, key: hash.digest('hex').slice(0, 12) }
+  }
+  return overlayKeyed.key
+}
 
 /** The client percent-encodes it, because a filename is free to hold bytes no
  *  HTTP header may carry. A value that survived that unencoded is still a usable
@@ -732,7 +757,7 @@ class SessionRuntime implements ProjectRuntime {
       project,
       view: this.store,
       frameOrigin: () => `http://${FRAME_HOST}:${this.port}`,
-      overlay: () => ({ version: this.version, shellOrigin: this.shellOrigin }),
+      overlay: () => ({ assets: overlayAssetKey(), shellOrigin: this.shellOrigin }),
       hasApp: () => this.app.kind === 'attached',
       onChange: (change) => this.canvasChanged(change),
       // eslint-disable-next-line no-console
@@ -2296,16 +2321,17 @@ class SessionRuntime implements ProjectRuntime {
     // under an open shell - by a self-update, or by a `@latest` CLI run. The
     // reload that follows has to fetch the new code, and a heuristically cached
     // copy would leave the previous version's UI driving the new daemon.
-    // A canvas frame asks for `?v=<version>`: forty frames then fetch the overlay
-    // once, and a replaced daemon is a different url.
+    // A canvas frame asks for the overlay at `?v=<its content key>`: forty frames
+    // then fetch it once, and a rebuild or a replaced daemon is a different url.
     for (const file of ['overlay.js', 'overlay.css', 'shell.js', 'shell.css', 'events-worker.js']) {
       const type = file.endsWith('.css') ? 'text/css' : 'text/javascript'
+      const keyed = file.startsWith('overlay.')
       rk.get(`/${file}`, (req, res) =>
         res
           .type(type)
           .set(
             'cache-control',
-            req.query.v === this.version ? 'public, max-age=31536000, immutable' : 'no-store',
+            keyed && req.query.v === overlayAssetKey() ? 'public, max-age=31536000, immutable' : 'no-store',
           )
           .send(asset(file)),
       )

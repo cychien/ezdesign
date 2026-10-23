@@ -574,68 +574,6 @@
   background: var(--ez-mark);
 }
 
-/* The dark pill the overlay already uses for anything it floats over a page it
-   knows nothing about - see .ez-badge and .ez-select-btn. The pink is carried by
-   the icon alone: a pink banner would compete with the wash it is explaining.
-
-   Anchored to the bottom, not the top. A page puts its nav, its logo and its
-   primary button along the top edge, which is exactly the band a user is most
-   likely to be pointing at - and unlike the popup, this pill has no subject to
-   stay near, so it can simply get out of the way. Nothing else the overlay draws
-   lives down here while a pick is out: the popup is suspended and the text
-   selection bubble is suppressed. */
-.ez-pick-banner {
-  position: fixed;
-  bottom: 16px;
-  left: 50%;
-  /* Scale before the centring shift, about the corner `left`/`bottom` pin: the
-     shift is then measured in drawn pixels and still lands on the middle. */
-  transform-origin: bottom left;
-  transform: scale(var(--ez-ui-scale, 1)) translateX(-50%);
-  z-index: 2147483605;
-  display: none;
-  align-items: center;
-  gap: 8px;
-  max-width: calc((100vw - 24px) / var(--ez-ui-scale, 1));
-  padding: 7px 8px 7px 12px;
-  border-radius: 999px;
-  background: var(--ez-ink);
-  box-shadow:
-    0 0 0 1px oklch(100% 0 0 / 0.25),
-    0 6px 20px oklch(0% 0 0 / 0.3);
-  color: #fff;
-  font-size: 12px;
-  line-height: 1.5;
-  white-space: nowrap;
-}
-
-.ez-pick-banner svg {
-  flex-shrink: 0;
-  color: var(--ez-ref-accent);
-}
-
-.ez-pick-text {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  min-width: 0;
-}
-
-.ez-pick-cancel {
-  flex-shrink: 0;
-  padding: 3px 9px;
-  border: 0;
-  border-radius: 999px;
-  background: oklch(100% 0 0 / 0.14);
-  color: inherit;
-  font: inherit;
-  font-size: 11.5px;
-  cursor: pointer;
-}
-
-.ez-pick-cancel:hover {
-  background: oklch(100% 0 0 / 0.24);
-}
-
 /* Said once, at the top of a popup that came back from another page: the user
    needs to know their comment is about to be filed against a recorded position
    rather than a live element, or that a file did not make it back. Warm rather

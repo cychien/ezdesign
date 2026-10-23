@@ -74,6 +74,8 @@ export interface BoardHost {
   /** Escape on the board, or a click on its empty background: stand down any
    *  pick or popup. */
   escape(): void
+  /** A frame's title clicked while a pick is out: the whole frame answers it. */
+  chooseFrame(frame: FrameWire): void
 }
 
 /** How long the camera has to stay still for a gesture to be over. */
@@ -133,6 +135,9 @@ export class BoardView {
   private frames: FrameWire[] = []
   private readonly cards = new Map<FrameId, Card>()
   private readonly mounted = new Set<FrameId>()
+  private picking = false
+  /** The frame whose title the pointer is over while picking. */
+  private pickTarget: FrameId | null = null
   private readonly loading = new Set<FrameId>()
   private selection = new Set<FrameId>()
   private readonly history = new EditHistory()
@@ -201,6 +206,8 @@ export class BoardView {
     this.el.addEventListener('pointerup', (e) => this.onPointerUp(e))
     this.el.addEventListener('pointercancel', (e) => this.onPointerUp(e, true))
     this.el.addEventListener('dblclick', (e) => this.onDoubleClick(e))
+    this.heads.addEventListener('pointerover', (e) => this.onHeadOver(e))
+    this.heads.addEventListener('pointerleave', () => this.markPickTarget(null))
     this.apply(canvas)
   }
 
@@ -296,6 +303,27 @@ export class BoardView {
    *  has it. */
   setAnnotating(mode: Mode): void {
     this.el.classList.toggle('ez-annotating', mode !== 'off')
+  }
+
+  /** While a pick is out, a frame's title answers it with the whole frame,
+   *  rather than selecting the frame to drag. */
+  setPicking(on: boolean): void {
+    this.picking = on
+    this.el.classList.toggle('ez-picking-frames', on)
+    if (!on) this.markPickTarget(null)
+  }
+
+  private onHeadOver(e: PointerEvent): void {
+    if (!this.picking) return
+    const head = (e.target as HTMLElement).closest<HTMLElement>('.ez-board-frame-head')
+    this.markPickTarget((head?.dataset.frameId as FrameId | undefined) ?? null)
+  }
+
+  private markPickTarget(id: FrameId | null): void {
+    if (id === this.pickTarget) return
+    if (this.pickTarget) this.cards.get(this.pickTarget)?.el.classList.remove('ez-pick-target')
+    this.pickTarget = id
+    if (id) this.cards.get(id)?.el.classList.add('ez-pick-target')
   }
 
   /** The frame a guest id names, when it is one of this board's. */
@@ -666,6 +694,13 @@ export class BoardView {
     if (this.spaceHeld) {
       start({ t: 'pan', pointer: e.pointerId, x: e.clientX, y: e.clientY, camera: this.camera })
       this.el.classList.add('ez-panning')
+      return
+    }
+    const pickedHead = this.picking ? target.closest<HTMLElement>('.ez-board-frame-head') : null
+    if (pickedHead) {
+      e.preventDefault()
+      const card = this.cards.get(pickedHead.dataset.frameId as FrameId)
+      if (card) this.host.chooseFrame(card.frame)
       return
     }
     const cardEl = target.closest<HTMLElement>('.ez-board-frame, .ez-board-frame-head')

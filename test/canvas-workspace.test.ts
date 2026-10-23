@@ -21,16 +21,20 @@ class MemoryView implements ViewStore {
   }
 }
 
+const sha1 = (text: string) => createHash('sha1').update(text).digest('hex').slice(0, 12)
+const servedRev = (fileHash: string, assets = 'k1') => sha1(`${fileHash}:${assets}`)
+
 function setup(opts: { app?: boolean; now?: () => number } = {}) {
   const project = mkdtempSync(join(tmpdir(), 'ezdesign-canvas-'))
   const view = new MemoryView()
   const changes: CanvasChange[] = []
   let app = opts.app ?? false
+  let assets = 'k1'
   const workspace: CanvasWorkspace = openCanvasWorkspace({
     project,
     view,
     frameOrigin: () => 'http://localhost:5000',
-    overlay: () => ({ version: '9.9.9', shellOrigin: 'http://127.0.0.1:5000' }),
+    overlay: () => ({ assets, shellOrigin: 'http://127.0.0.1:5000' }),
     hasApp: () => app,
     onChange: (change) => changes.push(change),
     ...(opts.now ? { now: opts.now } : {}),
@@ -55,7 +59,16 @@ function setup(opts: { app?: boolean; now?: () => number } = {}) {
     }
     return out
   }
-  return { project, view, changes, workspace, root, tree, setApp: (on: boolean) => (app = on) }
+  return {
+    project,
+    view,
+    changes,
+    workspace,
+    root,
+    tree,
+    setApp: (on: boolean) => (app = on),
+    rebuildOverlay: (key: string) => (assets = key),
+  }
 }
 
 const unwrap = <T>(o: { ok: true; value: T } | { ok: false; problem: unknown }): T => {
@@ -196,14 +209,36 @@ test('the App tab leaving with no canvas open opens an empty one only while a sh
   assert.equal(ctx.view.view.activeTab, 'app')
 })
 
+// The overlay is cached as immutable under its url. A rebuild that kept the url
+// would leave every frame running the old overlay until the cache expired.
+test('a rebuilt overlay gives every frame a new url and a document that loads it', () => {
+  const { workspace, root, rebuildOverlay } = setup()
+  seedCanvas(root, 'aaaaaaaaaaaa', 'seeded', [{ id: 'bbbbbbbbbbbb', html: DOC }])
+  workspace.start()
+  const frame = () => workspace.read.frameDocument('aaaaaaaaaaaa' as CanvasId, 'bbbbbbbbbbbb' as never)!
+  const src = () => workspace.read.wire('aaaaaaaaaaaa' as CanvasId)!.frames[0]!.src
+  const before = { doc: frame(), src: src() }
+  assert.match(before.doc.html, /overlay\.js\?v=k1"/)
+
+  rebuildOverlay('k2')
+  const after = frame()
+  assert.notEqual(src(), before.src)
+  assert.equal(src().endsWith(`?rev=${after.hash}`), true, 'the url names the document it gets')
+  assert.match(after.html, /overlay\.js\?v=k2"/)
+  assert.equal(workspace.read.wire('aaaaaaaaaaaa' as CanvasId)!.frames[0]!.hash, sha1(DOC), 'the file did not change')
+})
+
 test('a frame is served stamped with its file and line, and an outside edit moves its hash', () => {
   const { workspace, root, changes } = setup()
   seedCanvas(root, 'aaaaaaaaaaaa', 'seeded', [{ id: 'bbbbbbbbbbbb', html: DOC }])
   workspace.start()
   const wire = workspace.read.wire('aaaaaaaaaaaa' as CanvasId)!
-  const hash = createHash('sha1').update(DOC).digest('hex').slice(0, 12)
+  const hash = sha1(DOC)
   assert.equal(wire.frames[0]!.hash, hash, 'start re-hashes what was edited while down')
-  assert.equal(wire.frames[0]!.src, `http://localhost:5000/__ezdesign/frames/aaaaaaaaaaaa/bbbbbbbbbbbb?rev=${hash}`)
+  assert.equal(
+    wire.frames[0]!.src,
+    `http://localhost:5000/__ezdesign/frames/aaaaaaaaaaaa/bbbbbbbbbbbb?rev=${servedRev(hash)}`,
+  )
   assert.equal(wire.frames[0]!.file, '.ezdesign/canvases/aaaaaaaaaaaa/frames/bbbbbbbbbbbb.html')
 
   const doc = workspace.read.frameDocument('aaaaaaaaaaaa' as CanvasId, 'bbbbbbbbbbbb' as never)!
@@ -214,7 +249,7 @@ test('a frame is served stamped with its file and line, and an outside edit move
   writeFileSync(join(root, 'aaaaaaaaaaaa', 'frames', 'bbbbbbbbbbbb.html'), edited)
   changes.length = 0
   const again = workspace.read.frameDocument('aaaaaaaaaaaa' as CanvasId, 'bbbbbbbbbbbb' as never)!
-  assert.equal(again.hash, createHash('sha1').update(edited).digest('hex').slice(0, 12))
+  assert.equal(again.hash, servedRev(sha1(edited)))
   assert.deepEqual(changes, [{ kind: 'updated', canvasId: 'aaaaaaaaaaaa' }])
   assert.equal(workspace.read.hasFrame({ canvasId: 'aaaaaaaaaaaa', frameId: 'bbbbbbbbbbbb' }), true)
   assert.equal(workspace.read.hasFrame({ canvasId: 'aaaaaaaaaaaa', frameId: 'cccccccccccc' }), false)

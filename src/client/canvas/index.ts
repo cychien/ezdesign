@@ -21,6 +21,7 @@ import type {
   OpId,
   ViewWire,
 } from '../../canvas/wire.js'
+import type { RefWire } from '../draft.js'
 import type { CanvasGuest, CanvasGuestPort } from '../frame-registry.js'
 import type { GuestMessage, Mode, RelayOp } from '../guest-messages.js'
 import type { OverlaySnapshot } from '../overlay-link.js'
@@ -45,6 +46,8 @@ export interface ShellPorts {
   onTabShown: (tab: TabId | null) => void
   /** Escape, or a click on the empty board: stand down any pick or popup. */
   escape: () => void
+  /** A whole frame, chosen by its title while a pick is out. */
+  chooseFrame: (ref: RefWire) => void
   /** Say something went wrong, where the user is looking. */
   notice: (text: string) => void
   annotateMode: () => Mode
@@ -160,6 +163,7 @@ export function installCanvas(ports: ShellPorts): CanvasUi {
   /** What each canvas guest was last pushed, by signature. */
   const pushed = new Map<string, string>()
   let shown: TabId | null = null
+  let picking = false
   let snapshot: CanvasShellSnapshot | null = null
 
   ports.stageWrap.classList.add('ez-tabbed')
@@ -205,8 +209,14 @@ export function installCanvas(ports: ShellPorts): CanvasUi {
         )) as CanvasWire | null,
       saveCamera: (camera) => void request({ do: 'view', view: { camera: { canvasId: id, camera } } }),
       escape: ports.escape,
+      chooseFrame: (frame) =>
+        ports.chooseFrame({
+          anchor: { source: frame.file, frame: { canvasId: id, frameId: frame.id } },
+          label: frame.title,
+        }),
     })
     made.setAnnotating(ports.annotateMode())
+    made.setPicking(picking)
     boards.set(id, made)
     ports.stageWrap.append(made.el)
     return made
@@ -350,7 +360,9 @@ export function installCanvas(ports: ShellPorts): CanvasUi {
     },
 
     setPicking(on) {
+      picking = on
       ports.stageWrap.classList.toggle('ez-picking', on)
+      for (const b of boards.values()) b.setPicking(on)
     },
 
     get activeTab() {
