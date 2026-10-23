@@ -179,6 +179,9 @@ test('CX-chunked: a transfer cut off midway leaves no file and no row', async (t
     sendUpload(h, bytes, 2 * EXTENSION_CHUNK_BYTES)
     if (cut === 'port-closed') h.child.stdin.end()
     else {
+      h.child.stdin.on('error', (error: NodeJS.ErrnoException) => {
+        if (error.code !== 'EPIPE') throw error
+      })
       await new Promise((resolve) => setTimeout(resolve, 300))
       h.child.kill('SIGKILL')
     }
