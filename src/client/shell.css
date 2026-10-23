@@ -3209,7 +3209,7 @@ body.ez-arranging .ez-frame {
    Centred and sized to its contents rather than stretched edge to edge. What is
    in it is a handful of chips, and a bar the width of the stage spends the whole
    bottom edge of the page saying so. */
-.ez-strip {
+.ez-stage-dock {
   position: absolute;
   left: 50%;
   bottom: 12px;
@@ -3222,12 +3222,20 @@ body.ez-arranging .ez-frame {
   max-width: calc(100% - 24px);
 }
 
-/* The dark pill the overlay already uses for anything it floats over a page -
-   see `.ez-pick-banner`. Dark because this one is over the app's own design and
-   has to stay legible above whatever is behind it, and because it is the same
-   gesture in the same place as the picker's: chrome about the page, not of it.
-   The violet is carried by the icon alone. */
-.ez-strip-pill {
+.ez-strip {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+}
+
+/* Dark because these float over the app's own design and have to stay legible
+   above whatever is behind them: chrome about the page, not of it. The colour is
+   carried by the icon alone - a pink pill would compete with the wash the pick
+   pill is explaining. */
+.ez-strip-pill,
+.ez-pick-pill {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -3246,6 +3254,41 @@ body.ez-arranging .ez-frame {
 .ez-strip-pill > svg {
   flex-shrink: 0;
   color: var(--explore-on-ink);
+}
+
+.ez-pick-pill[hidden] {
+  display: none;
+}
+
+.ez-pick-pill {
+  white-space: nowrap;
+}
+
+.ez-pick-pill > svg {
+  flex-shrink: 0;
+  color: var(--ref-accent);
+}
+
+.ez-pick-pill-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.ez-pick-pill-cancel {
+  flex-shrink: 0;
+  padding: 3px 9px;
+  border: 0;
+  border-radius: 999px;
+  background: oklch(100% 0 0 / 0.14);
+  color: inherit;
+  font: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+
+.ez-pick-pill-cancel:hover {
+  background: oklch(100% 0 0 / 0.24);
 }
 
 /* The chips are the point of the strip, so they get the room that is left and
@@ -4209,6 +4252,21 @@ body.ez-arranging .ez-frame {
 
 .ez-board-frame-head.ez-selected .ez-board-frame-title {
   color: var(--ink);
+}
+
+/* While a pick is out a title picks its whole frame: said by the same pink the
+   picker frames an element with. */
+.ez-picking-frames .ez-board-frame-head {
+  cursor: pointer;
+}
+
+.ez-board-frame.ez-pick-target {
+  outline: calc(2px / var(--ez-zoom, 1)) solid var(--ref-accent);
+  outline-offset: calc(-1px / var(--ez-zoom, 1));
+}
+
+.ez-picking-frames .ez-board-frame-head:hover .ez-board-frame-title {
+  color: var(--ref-accent);
 }
 
 .ez-guides {

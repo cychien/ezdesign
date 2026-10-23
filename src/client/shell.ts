@@ -84,7 +84,7 @@ import { markdownEl } from './markdown.js'
 import { reduceNav } from './nav.js'
 import { threadOrder } from './thread.js'
 import type { NavEffect, NavEvent, NavState } from './nav.js'
-import { modLabel, reducePick } from './pick.js'
+import { modLabel, pickHint, reducePick } from './pick.js'
 import type { PickEffect, PickEvent, PickState } from './pick.js'
 import { type IconNode, icon } from './icon.js'
 import {
@@ -1422,7 +1422,22 @@ const shownItems = GRID_DEVICES.map((d) => {
 
 const shownWrap = h('div', 'ez-shown')
 shownWrap.append(shownBtn, shownMenu)
-stageWrap.append(stage, shownWrap, strip)
+
+/** While a pick is out: what to do, and the way out of it. Drawn once over the
+ *  stage rather than inside each frame, which on a grid or a canvas would say it
+ *  again on every preview. */
+const pickPill = h('div', 'ez-pick-pill')
+pickPill.hidden = true
+const pickPillText = h('span', 'ez-pick-pill-text')
+const pickPillCancel = h('button', 'ez-pick-pill-cancel', '取消')
+pickPillCancel.onclick = () => abortPick('escape')
+pickPill.append(icon(AlignSelectionIcon as IconNode, 14), pickPillText, pickPillCancel)
+
+/** The bottom of the stage, where both pills stand: stacked, so a pick taken
+ *  while a variant strip is up does not land on top of it. */
+const stageDock = h('div', 'ez-stage-dock')
+stageDock.append(strip, pickPill)
+stageWrap.append(stage, shownWrap, stageDock)
 
 let shownMenuOpen = false
 
@@ -3083,6 +3098,13 @@ function paintVeil(): void {
   else delete stage.dataset.ezVeil
 }
 
+function paintPickPill(): void {
+  const tab = canvasUi?.activeTab
+  const hint = pickHint(pickState, MOD_LABEL, Boolean(tab && tab !== 'app'))
+  pickPill.hidden = hint === null
+  pickPillText.textContent = hint ?? ''
+}
+
 function dispatchPick(e: PickEvent): void {
   const was = pickState
   const out = reducePick(pickState, e)
@@ -3090,6 +3112,7 @@ function dispatchPick(e: PickEvent): void {
   for (const effect of out.effects) applyPickEffect(effect)
   canvasUi?.setPicking(pickState !== null)
   paintVeil()
+  paintPickPill()
   // One place for every way a pick can end without an answer - aborted, timed
   // out, called off from the page - so none of them can leave a placeholder
   // stranded in the note box. A no-op when there is none, which is every
@@ -3118,12 +3141,7 @@ function applyPickEffect(effect: PickEffect): void {
         paintSendState()
       }
       for (const f of pickFrames(effect.frame)) {
-        frames.post(f.id, {
-          type: 'ez:pick',
-          pickId: effect.id,
-          host: effect.host,
-          ...(effect.returnTo ? { returnTo: effect.returnTo } : {}),
-        })
+        frames.post(f.id, { type: 'ez:pick', pickId: effect.id, host: effect.host })
       }
       return
     case 'arm-others':
@@ -3241,8 +3259,10 @@ function canvasPorts(): Parameters<typeof installCanvas>[0] {
       deviceRow.hidden = stagedApp === null || tab !== 'app'
       if (tab === 'app') paintFrames()
       paintPage()
+      paintPickPill()
     },
     escape: () => void abortPick('escape'),
+    chooseFrame: (ref) => dispatchPick({ t: 'chosen', ref }),
     notice: (text) => stripNotice(text),
     annotateMode: () => annotateMode,
   }

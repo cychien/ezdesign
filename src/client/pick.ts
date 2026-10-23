@@ -44,6 +44,9 @@ export interface PickState {
   home: string | null
   /** Last page the iframe reported. */
   page: string | null
+  /** The page the popup is waiting on, while its frame shows another one: the
+   *  pill says the pick will take the user back there. */
+  returnTo: string | null
   /** When the current arm attempt started, for the timeout. */
   armedAt: number
   /** Navigations spent getting back. Bounded: an app that redirects away from the
@@ -59,6 +62,9 @@ export type PickEvent =
   | { t: 'armed'; id: string; host: PickHost; now: number; frame?: string }
   | { t: 'draft'; id: string; draft: DraftWire; frame?: string }
   | { t: 'picked'; id: string; ref: RefWire; page: string; frame?: string }
+  /** The shell answered it itself: a whole canvas frame, chosen by its title on
+   *  the board. No overlay took the click, so every frame stands down. */
+  | { t: 'chosen'; ref: RefWire }
   /** The overlay handled the whole thing itself: its popup was still alive. */
   | { t: 'draft-done'; id: string }
   /** `resumed` says whether the overlay handed a live popup back. If it did,
@@ -74,7 +80,7 @@ export type PickEvent =
  *  every frame there is - which is the only kind of effect a shell showing a
  *  single preview ever produces. */
 export type PickEffect =
-  | { do: 'arm-overlay'; id: string; host: PickHost; returnTo?: string; frame?: string }
+  | { do: 'arm-overlay'; id: string; host: PickHost; frame?: string }
   /** Every frame but `except`: a popup's pick is answerable anywhere. */
   | { do: 'arm-others'; id: string; host: PickHost; except: string }
   /** Another frame answered a popup's pick: the ref goes into the popup still
@@ -131,16 +137,25 @@ function notHome(state: PickState, frame: string | undefined): boolean {
 
 const done = (effects: PickEffect[]): Result => ({ state: null, effects })
 
-/** The shell's banner is deliberately quiet while picking: the overlay is showing
- *  one inside the page, where the user is looking, and two would be noise. It
- *  speaks only for the states the in-page banner cannot express - because there
- *  is no overlay to show it, or because the page is on its way somewhere. */
+/** The shell's banner is deliberately quiet while picking: the pick pill is
+ *  already saying it at the bottom of the stage, and two would be noise. It
+ *  speaks only for the states the pill cannot express - because there is no
+ *  overlay to answer it, or because the page is on its way somewhere. */
 function banner(state: PickState | null): PickEffect {
   if (!state) return { do: 'banner', text: null }
   if (state.phase === 'returning') {
     return { do: 'banner', text: `回到 ${state.draft?.subject?.page ?? ''} 繼續留言…` }
   }
   return { do: 'banner', text: null }
+}
+
+/** One pill for the whole stage, however many frames the pick is out to: each
+ *  frame drawing its own repeats it on every preview of a grid or canvas. Shown
+ *  once an overlay is listening, so a page that cannot answer does not ask. */
+export function pickHint(state: PickState | null, mod: string, onBoard = false): string | null {
+  if (!state?.armed || state.phase !== 'picking') return null
+  if (state.returnTo) return `${mod} + 點擊元素或直接拖曳框選・完成後回到 ${state.returnTo}`
+  return onBoard ? `${mod} + 點擊元素或拖曳框選・點標題選整個 frame` : `${mod} + 點擊元素，或拖曳框選範圍`
 }
 
 export function reducePick(state: PickState | null, e: PickEvent): Result {
@@ -159,6 +174,7 @@ export function reducePick(state: PickState | null, e: PickEvent): Result {
         draft: null,
         ref: null,
         page: null,
+        returnTo: null,
         armedAt: e.now,
         returns: 0,
       }
@@ -185,6 +201,7 @@ export function reducePick(state: PickState | null, e: PickEvent): Result {
           draft: null,
           ref: null,
           page: null,
+          returnTo: null,
           armedAt: e.now,
           returns: 0,
         }
@@ -325,14 +342,19 @@ export function reducePick(state: PickState | null, e: PickEvent): Result {
           ],
         }
       }
-      // A fresh overlay in a document that never saw the pick. Re-arm it, and
-      // tell it where the composer is waiting so its banner can say so. Only the
-      // frame that reported: a pick still out to all of them leaves the others
-      // armed exactly as they were.
-      const next: PickState = { ...here, armed: false, armedAt: e.now }
+      // A fresh overlay in a document that never saw the pick. Re-arm it. Only
+      // the frame that reported: a pick still out to all of them leaves the
+      // others armed exactly as they were.
       // Only the popup's own frame is going back anywhere; another frame is just
       // somewhere the answer might come from.
       const returning = !state.home || e.frame === state.home
+      const away = returning && state.draft?.subject && !draftBelongsHere(state.draft, e.page)
+      const next: PickState = {
+        ...here,
+        armed: false,
+        armedAt: e.now,
+        returnTo: returning ? (away ? state.draft!.subject!.page : null) : state.returnTo,
+      }
       return {
         state: next,
         effects: [
@@ -340,12 +362,27 @@ export function reducePick(state: PickState | null, e: PickEvent): Result {
             do: 'arm-overlay',
             id: state.id,
             host: state.host,
-            ...(returning && state.draft?.subject ? { returnTo: state.draft.subject.page } : {}),
             ...at(e.frame ?? state.frame),
           },
           banner(next),
         ],
       }
+    }
+
+    case 'chosen': {
+      if (!state || state.phase !== 'picking') return { state, effects: [] }
+      const standAll: PickEffect = { do: 'abort-overlay', id: state.id, ...at(state.frame) }
+      if (state.host === 'note') return done([{ do: 'insert-note', ref: e.ref }, standAll, banner(null)])
+      // A popup's pick goes back into the popup, suspended at home - the same
+      // road as an answer from another frame.
+      if (!state.home) return done([standAll, banner(null)])
+      const filled = state.draft ? { ...state.draft, body: resolveDraftRef(state.draft.body, e.ref) } : null
+      return done([
+        { do: 'focus', frame: state.home },
+        { do: 'deliver', id: state.id, ref: e.ref, draft: filled, frame: state.home },
+        { do: 'disarm-others', id: state.id, keep: state.home },
+        banner(null),
+      ])
     }
 
     case 'abort': {

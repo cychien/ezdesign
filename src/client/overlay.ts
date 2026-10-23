@@ -9,7 +9,6 @@ import { GRACE_MS, draftExpired, draftPendingNames, normalizeDraft } from './dra
 import type { AnchorWire, DraftSubject, DraftWire, RefWire } from './draft.js'
 import { type IconNode, icon } from './icon.js'
 import { type OverlaySnapshot, linkFromScript } from './overlay-link.js'
-import { modLabel } from './pick.js'
 import { type Candidate, SWAPPED_ATTR, VariantSwapper, captureElement } from './variant.js'
 import { following, scrollRange, scrollRatio } from './scroll-sync.js'
 import {
@@ -40,9 +39,6 @@ interface Pick {
    *  highlight there is, so without this it would be left on whatever the mouse
    *  last crossed. */
   prevHighlight: Element | null
-  /** Where the composer this pick answers into is waiting, when that is not the
-   *  page we are on. Only the shell knows it after a navigation. */
-  returnTo?: string
   /** Stamped once: the expiry a restore checks is measured from the moment the
    *  draft was taken, not from the last time an upload nudged it. */
   draftAt: number
@@ -173,10 +169,6 @@ const ui = {
   badge: el('div', 'ez-badge'),
   pin: el('div', 'ez-pin'),
   markers: el('div', 'ez-markers'),
-  /** Shown only while picking: a wash at the edges of the viewport, and a pill
-   *  saying what the modifier does. The page stays clickable underneath, so the
-   *  chrome is the only thing telling the user this moment is different. */
-  banner: el('div', 'ez-pick-banner'),
   /** The box being dragged, with its size read out in the corner. */
   region: el('div', 'ez-region'),
   regionSize: el('div', 'ez-region-size'),
@@ -1096,11 +1088,6 @@ function scheduleRepaint(): void {
 
 // ---------------------------------------------------------------- picking
 
-/** Every modifier a browser reads on a link is already spoken for - new tab,
- *  download, new window - so a pick cannot borrow one to *pass a click through*.
- *  It takes the modifier for itself instead: the plain click stays the page's, and
- *  the modified one never reaches the browser's own handling because we cancel it. */
-const MOD_LABEL = modLabel(navigator.userAgent)
 const PICKING_LABEL = '選取中…'
 
 let pickSeq = 0
@@ -1155,22 +1142,6 @@ function resumePopup(view?: Pick): void {
  *  the frame's edge, where it can follow the frame's corner. */
 let inExplore = false
 
-function paintPickChrome(): void {
-  const on = Boolean(pick)
-  ui.banner.style.display = on ? 'flex' : 'none'
-  if (!pick) return
-  const back = pick.returnTo && pick.returnTo !== location.pathname ? pick.returnTo : null
-  ui.banner.textContent = ''
-  const text = el('span', 'ez-pick-text')
-  text.textContent = back
-    ? `${MOD_LABEL} + 點擊元素或直接拖曳框選・完成後回到 ${back}`
-    : `${MOD_LABEL} + 點擊元素，或拖曳框選範圍`
-  const cancel = el('button', 'ez-pick-cancel')
-  cancel.textContent = '取消'
-  cancel.onclick = () => cancelPick('escape')
-  ui.banner.append(icon(AlignSelectionIcon as IconNode, 14), text, cancel)
-}
-
 function currentDraft(): DraftWire | null {
   if (!pick || pick.host !== 'popup' || !ui.popupAttach || !popupSubject) return null
   return {
@@ -1205,7 +1176,7 @@ function postDraft(): void {
   if (draft) post({ type: 'ez:draft', pickId: draft.id, draft })
 }
 
-function armPick(host: 'popup' | 'note', id: string, returnTo?: string): boolean {
+function armPick(host: 'popup' | 'note', id: string): boolean {
   if (ended || pick) return false
   // A popup-host pick does *not* require a popup here. On a re-arm after the app
   // navigated, this document never saw one - the shell is holding it - and the
@@ -1217,7 +1188,6 @@ function armPick(host: 'popup' | 'note', id: string, returnTo?: string): boolean
     host,
     suspended: false,
     prevHighlight: highlightTarget,
-    returnTo,
     draftAt: Date.now(),
     scroll: { x: window.scrollX, y: window.scrollY },
   }
@@ -1236,7 +1206,6 @@ function armPick(host: 'popup' | 'note', id: string, returnTo?: string): boolean
   // page, and drawing on it would promise a pick that a plain click will not make.
   hoverTarget = null
   moveHighlight(null)
-  paintPickChrome()
   scheduleRepaint()
   return true
 }
@@ -1278,7 +1247,6 @@ function endPick(): Pick {
   document.documentElement.removeAttribute('data-ez-pick-hot')
   hoverTarget = null
   moveHighlight(done.prevHighlight)
-  paintPickChrome()
   scheduleRepaint()
   return done
 }
@@ -1962,11 +1930,9 @@ function boot(): void {
     ui.pin,
     ui.markers,
     ui.region,
-    ui.banner,
   )
   moveHighlight(null)
   movePin(null)
-  paintPickChrome()
 
   document.addEventListener('mousedown', onMouseDown, true)
   document.addEventListener('mousemove', onMouseMove, true)
@@ -2012,7 +1978,6 @@ function boot(): void {
       ratio?: number
       pickId?: string
       host?: 'popup' | 'note'
-      returnTo?: string
       draft?: DraftWire
       ref?: RefWire
       held?: boolean
@@ -2045,7 +2010,7 @@ function boot(): void {
       setFrameZoom(typeof data.zoom === 'number' ? data.zoom : 1)
     }
     if (data?.type === 'ez:pick' && data.pickId) {
-      armPick(data.host ?? 'note', data.pickId, data.returnTo)
+      armPick(data.host ?? 'note', data.pickId)
     }
     if (data?.type === 'ez:hold') {
       held = Boolean(data.held)

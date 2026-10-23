@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { resolveDraftRef } from '../src/client/draft.js'
-import { ARM_TIMEOUT_MS, modLabel, reducePick } from '../src/client/pick.js'
+import { ARM_TIMEOUT_MS, modLabel, pickHint, reducePick } from '../src/client/pick.js'
 import type { PickEffect, PickEvent, PickState } from '../src/client/pick.js'
 import type { DraftNode, DraftWire, RefWire } from '../src/client/draft.js'
 
@@ -106,6 +106,7 @@ test('landing on another page navigates back, then restores', () => {
       page: '/docs',
       armedAt: 0,
       returns: 0,
+      returnTo: null,
     },
     { t: 'picked', id: 'p1', ref: ref('src/b.tsx:8'), page: '/docs' },
   )
@@ -138,19 +139,51 @@ test('landing on the page the composer belongs to restores at once', () => {
 
 // This is the case shell ownership exists for: the app navigated the iframe and
 // the overlay died without a word.
-test('a fresh overlay is re-armed, and told where to come back to', () => {
+test('a fresh overlay is re-armed, and the pill says where it comes back to', () => {
   const { state, effects } = run([
     { t: 'armed', id: 'p1', host: 'popup', now: 0 },
     { t: 'draft', id: 'p1', draft: draft('/pricing') },
     { t: 'ready', page: '/docs', now: 50 },
   ])
   assert.equal(state?.armed, false, 'and waits for the new one to confirm')
-  assert.deepEqual(effects[0], {
-    do: 'arm-overlay',
-    id: 'p1',
-    host: 'popup',
-    returnTo: '/pricing',
-  })
+  assert.deepEqual(effects[0], { do: 'arm-overlay', id: 'p1', host: 'popup' })
+  assert.equal(state?.returnTo, '/pricing')
+  assert.equal(pickHint(state, '⌘'), null, 'nothing is said until the new overlay listens')
+  const armed = reducePick(state, { t: 'armed', id: 'p1', host: 'popup', now: 60 }).state
+  assert.equal(pickHint(armed, '⌘'), '⌘ + 點擊元素或直接拖曳框選・完成後回到 /pricing')
+})
+
+test('the pill drops the way back once the frame is on the page again', () => {
+  const { state } = run([
+    { t: 'armed', id: 'p1', host: 'popup', now: 0, frame: 'a' },
+    { t: 'draft', id: 'p1', draft: draft('/pricing'), frame: 'a' },
+    { t: 'ready', page: '/docs', now: 50, frame: 'a' },
+    { t: 'armed', id: 'p1', host: 'popup', now: 60, frame: 'a' },
+    { t: 'ready', page: '/pricing', now: 70, frame: 'a' },
+    { t: 'armed', id: 'p1', host: 'popup', now: 80, frame: 'a' },
+  ])
+  assert.equal(pickHint(state, '⌘'), '⌘ + 點擊元素，或拖曳框選範圍')
+})
+
+// A popup's pick is out to every frame; another frame reloading under it says
+// nothing about where the popup is.
+test('another frame reporting in leaves the way back alone', () => {
+  const { state } = run([
+    { t: 'armed', id: 'p1', host: 'popup', now: 0, frame: 'a' },
+    { t: 'draft', id: 'p1', draft: draft('/pricing'), frame: 'a' },
+    { t: 'ready', page: '/docs', now: 50, frame: 'a' },
+    { t: 'ready', page: '/pricing', now: 55, frame: 'b' },
+  ])
+  assert.equal(state?.returnTo, '/pricing')
+})
+
+test('the note box pill asks for the click', () => {
+  const armed = run([
+    { t: 'arm', id: 'p1', host: 'note', now: 0 },
+    { t: 'armed', id: 'p1', host: 'note', now: 10 },
+  ]).state
+  assert.equal(pickHint(armed, 'Ctrl'), 'Ctrl + 點擊元素，或拖曳框選範圍')
+  assert.equal(pickHint(null, 'Ctrl'), null)
 })
 
 test('a re-arm restarts the timeout rather than inheriting the old one', () => {
@@ -220,6 +253,7 @@ test('an app that redirects away from home is chased twice, then given up on', (
       page: '/docs',
       armedAt: 0,
       returns: 1,
+      returnTo: null,
     },
     { t: 'ready', page: '/login', now: 1 },
   )
@@ -325,6 +359,7 @@ test('once a frame holds the pick, the others are not listened to', () => {
     page: '/',
     armedAt: 0,
     returns: 0,
+    returnTo: null,
   }
   const stray = reducePick(held, {
     t: 'picked',
@@ -362,6 +397,7 @@ test('a ready from a frame that does not hold the pick changes nothing', () => {
     page: '/docs',
     armedAt: 0,
     returns: 1,
+    returnTo: null,
   }
   const other = reducePick(returning, { t: 'ready', page: '/docs', now: 1, frame: 'desktop' })
   assert.equal(other.state?.returns, 1, 'the budget is untouched')
@@ -450,4 +486,55 @@ test('a frame that reloads under an unclaimed pick is re-armed on its own', () =
   ])
   assert.equal(state?.frame, null, 'still anyone’s to answer')
   assert.deepEqual(effects[0], { do: 'arm-overlay', id: 'p1', host: 'note', frame: 'desktop' })
+})
+
+const wholeFrame: RefWire = {
+  anchor: { source: '.ezdesign/canvases/c/frames/f.html', frame: { canvasId: 'c', frameId: 'f' } },
+  label: 'Hero A',
+}
+
+test('a frame chosen on the board answers the note box, and every frame stands down', () => {
+  const { state, effects } = run([
+    { t: 'arm', id: 'p1', host: 'note', now: 0 },
+    { t: 'armed', id: 'p1', host: 'note', now: 10, frame: 'a' },
+    { t: 'chosen', ref: wholeFrame },
+  ])
+  assert.equal(state, null)
+  assert.deepEqual(effects.slice(0, 2), [
+    { do: 'insert-note', ref: wholeFrame },
+    { do: 'abort-overlay', id: 'p1' },
+  ])
+})
+
+// The popup is still alive, suspended in its frame: the ref goes into it rather
+// than into a rebuilt copy.
+test('a frame chosen on the board goes back into the popup that asked', () => {
+  const { state, effects } = run([
+    { t: 'armed', id: 'p1', host: 'popup', now: 0, frame: 'a' },
+    { t: 'draft', id: 'p1', draft: draft('/pricing'), frame: 'a' },
+    { t: 'chosen', ref: wholeFrame },
+  ])
+  assert.equal(state, null)
+  assert.deepEqual(dos(effects), ['focus', 'deliver', 'disarm-others', 'banner'])
+  const deliver = effects[1] as Extract<PickEffect, { do: 'deliver' }>
+  assert.equal(deliver.frame, 'a')
+  assert.deepEqual(deliver.ref, wholeFrame)
+})
+
+test('nothing is chosen once the pick is on its way back', () => {
+  const out = run([
+    { t: 'armed', id: 'p1', host: 'popup', now: 0 },
+    { t: 'draft', id: 'p1', draft: draft('/pricing') },
+    { t: 'picked', id: 'p1', ref: ref('b'), page: '/docs' },
+  ])
+  assert.equal(out.state?.phase, 'returning')
+  assert.deepEqual(reducePick(out.state, { t: 'chosen', ref: wholeFrame }).effects, [])
+})
+
+test('on a board the pill says a title picks the whole frame', () => {
+  const armed = run([
+    { t: 'arm', id: 'p1', host: 'note', now: 0 },
+    { t: 'armed', id: 'p1', host: 'note', now: 10 },
+  ]).state
+  assert.equal(pickHint(armed, '⌘', true), '⌘ + 點擊元素或拖曳框選・點標題選整個 frame')
 })
