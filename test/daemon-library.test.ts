@@ -106,7 +106,10 @@ test('library items chosen in a composer become attachments that reach the agent
       { name: 'Linear.png', mime: 'image/png', size: png(20, 10, 64, 'a').byteLength },
     ],
   )
+  const pick = (attached.body[0]!.origin as { pick: string }).pick
+  assert.match(pick, /^[0-9a-f]{12}$/)
   assert.deepEqual(attached.body[1]!.origin, {
+    pick,
     libraryItemId: linear,
     pageUrl: 'https://ref.test/a',
     pageTitle: 'Linear',
@@ -117,6 +120,11 @@ test('library items chosen in a composer become attachments that reach the agent
 
   const ids = attached.body.map((a) => a.id)
   assert.equal((await post('/send', { note: '參考 [file 1] 和 [file 2]', attachments: ids })).status, 200)
+  const state = await json<{ conversation: { attachments?: unknown[] }[] }>('/state')
+  assert.deepEqual(state.body.conversation.at(-1)!.attachments, [
+    { name: 'Vercel.png', pick },
+    { name: 'Linear.png', pick },
+  ])
   const polled = await world.run(['poll'], { cwd: project })
   assert.equal(polled.code, 0, polled.stderr)
   const batch = JSON.parse(polled.stdout) as { attachments: { name: string; path: string; origin?: { pageUrl: string } }[] }

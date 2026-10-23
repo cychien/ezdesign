@@ -44,7 +44,7 @@ function storedOriginal(item: Item): StoredFile | null {
 export interface LibraryAttachable {
   title: string
   file: StoredFile
-  origin: AttachmentOrigin
+  origin: Omit<AttachmentOrigin, 'pick'>
 }
 
 /** Every id resolved, in order, or the first one that cannot be: a partial answer

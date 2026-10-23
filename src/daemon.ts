@@ -78,7 +78,7 @@ import {
 } from './preferences.js'
 import { readInspireToken } from './credentials.js'
 import type { AttachmentLocator } from './label.js'
-import { shortAnchor, toAgentAttachments, toAgentItem, toConversationItem } from './label.js'
+import { attachmentEcho, shortAnchor, toAgentAttachments, toAgentItem, toConversationItem } from './label.js'
 import { type IncomingVariant, ExploreMcp, MCP_ROUTE, isExploreTool } from './mcp-explore.js'
 import type {
   Anchor,
@@ -1388,7 +1388,7 @@ class SessionRuntime implements ProjectRuntime {
       role: 'user',
       text: input.direction ? `探索 ${label}：${input.direction}` : `探索 ${label}`,
       ts: Date.now(),
-      ...(round.attachments?.length ? { attachments: round.attachments.map((a) => a.name) } : {}),
+      ...(round.attachments?.length ? { attachments: round.attachments.map(attachmentEcho) } : {}),
       ...(round.references?.length
         ? { references: round.references.map((r) => ({ n: r.n, label: r.label })) }
         : {}),
@@ -1874,9 +1874,10 @@ class SessionRuntime implements ProjectRuntime {
           if ('missing' in found) {
             return res.status(404).json({ error: `素材 ${found.missing} 已經不在素材庫裡了` })
           }
+          const pick = newId()
           res.json(
             found.ok.map(({ title, file, origin }) =>
-              this.store.copyAttachment(title, file.mediaType, file.path, origin),
+              this.store.copyAttachment(title, file.mediaType, file.path, { pick, ...origin }),
             ),
           )
         },
@@ -1961,7 +1962,7 @@ class SessionRuntime implements ProjectRuntime {
         ts: Date.now(),
         batchId: batch.batchId,
         items: batch.items.map(toConversationItem),
-        ...(batch.attachments?.length ? { attachments: batch.attachments.map((a) => a.name) } : {}),
+        ...(batch.attachments?.length ? { attachments: batch.attachments.map(attachmentEcho) } : {}),
         ...(batch.references?.length
           ? { references: batch.references.map((r) => ({ n: r.n, label: r.label })) }
           : {}),

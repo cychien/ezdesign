@@ -207,6 +207,7 @@ test('a library item is copied in under its page title, keeping its extension an
   const from = join(mkdtempSync(join(tmpdir(), 'ezdesign-lib-')), 'blob')
   writeFileSync(from, 'library-bytes')
   const origin = {
+    pick: 'p1',
     libraryItemId: '01J00000000000000000000000',
     pageUrl: 'https://ref.test/a',
     pageTitle: 'Pricing / Plans',

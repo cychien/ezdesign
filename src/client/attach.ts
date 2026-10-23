@@ -20,6 +20,7 @@ import {
   draftText,
   hasPendingRef,
   nextRefNumber,
+  pickChipText,
   refChipText,
   restorableBody,
 } from './draft.js'
@@ -150,6 +151,9 @@ const REF_ATTR = 'data-ez-ref'
  *  a second: everything that walks the box keys off the attribute, and a skill is
  *  neither a file to delete nor a reference to number. */
 const SKILL_ATTR = 'data-ez-skill'
+/** A library pick: its files as JSON. Its own attribute, so the upload
+ *  bookkeeping keyed off `CHIP_ATTR` never sees it. */
+const PICK_ATTR = 'data-ez-pick'
 
 export function attachify({
   attachments,
@@ -233,8 +237,6 @@ export function attachify({
   const uploading = new Set<HTMLElement>()
   let errorTimer = 0
 
-  const chips = () => [...editable.querySelectorAll<HTMLElement>(`[${CHIP_ATTR}]`)]
-
   function showError(message: string): void {
     error.textContent = message
     error.hidden = false
@@ -245,12 +247,20 @@ export function attachify({
   }
 
   function paintEmpty(): void {
-    const empty = !editable.textContent?.trim() && chips().length === 0
+    const empty = !editable.textContent?.trim() && !editable.querySelector('.ez-chip')
     editable.toggleAttribute('data-empty', empty)
+  }
+
+  /** Numbered by position, as every reader of the sent comment numbers them. */
+  function paintPicks(): void {
+    editable.querySelectorAll(`[${PICK_ATTR}] .ez-chip-name`).forEach((name, i) => {
+      name.textContent = pickChipText(i + 1)
+    })
   }
 
   function changed(): void {
     paintEmpty()
+    paintPicks()
     onChange?.()
   }
 
@@ -298,6 +308,12 @@ export function attachify({
       ? [ref.variant.name, ref.label].filter(Boolean).join(' · ')
       : (ref?.label ?? '')
     if (title) chip.title = title
+    return chip
+  }
+
+  const pickChip = (files: { id: string; name: string }[]) => {
+    const chip = makeChip('', PICK_ATTR, JSON.stringify(files), Album02Icon as IconNode)
+    chip.title = files.map((f) => f.name).join('\n')
     return chip
   }
 
@@ -385,7 +401,7 @@ export function attachify({
       selection?.addRange(spot)
     }
     if (!files.length) return
-    for (const file of files) insertAtCaret(fileChip(file.name, file.id))
+    insertAtCaret(pickChip(files))
     changed()
   }
 
@@ -459,6 +475,7 @@ export function attachify({
       if (node.t === 'text') editable.appendChild(document.createTextNode(node.v))
       else if (node.t === 'file') editable.appendChild(fileChip(node.name, node.id))
       else if (node.t === 'skill') editable.appendChild(skillChip(node.name))
+      else if (node.t === 'pick') editable.appendChild(pickChip(node.files))
       else {
         const ref = node.anchor
           ? {
@@ -497,7 +514,10 @@ export function attachify({
 
   const isChipNode = (node: Node | null): boolean =>
     node instanceof HTMLElement &&
-    (node.hasAttribute(CHIP_ATTR) || node.hasAttribute(REF_ATTR) || node.hasAttribute(SKILL_ATTR))
+    (node.hasAttribute(CHIP_ATTR) ||
+      node.hasAttribute(REF_ATTR) ||
+      node.hasAttribute(SKILL_ATTR) ||
+      node.hasAttribute(PICK_ATTR))
 
   /** Backspacing away the spacer a chip brought with it is handled here rather
    *  than left to the browser. Deleting the only character between two
@@ -612,7 +632,7 @@ export function attachify({
     },
     discard() {
       slash.close()
-      for (const id of chips().map((c) => c.getAttribute(CHIP_ATTR))) if (id) del(id)
+      for (const id of draftFileIds(snapshot())) del(id)
       uploading.clear()
       editable.textContent = ''
       changed()
@@ -646,6 +666,10 @@ function collectNodes(node: Node, out: DraftNode[]): void {
     }
     if (child.hasAttribute(CHIP_ATTR)) {
       out.push({ t: 'file', id: child.getAttribute(CHIP_ATTR) ?? '', name })
+      continue
+    }
+    if (child.hasAttribute(PICK_ATTR)) {
+      out.push({ t: 'pick', files: parsePick(child.getAttribute(PICK_ATTR)) })
       continue
     }
     if (child.hasAttribute(SKILL_ATTR)) {
@@ -684,5 +708,13 @@ function parseRef(raw: string | null): NumberedRef | null {
     return JSON.parse(raw) as NumberedRef
   } catch {
     return null
+  }
+}
+
+function parsePick(raw: string | null): { id: string; name: string }[] {
+  try {
+    return JSON.parse(raw ?? '[]') as { id: string; name: string }[]
+  } catch {
+    return []
   }
 }

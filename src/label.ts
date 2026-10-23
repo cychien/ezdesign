@@ -4,6 +4,7 @@ import type {
   AgentItem,
   Annotation,
   Attachment,
+  AttachmentEcho,
   ConversationItem,
   FrameRef,
   Reference,
@@ -144,8 +145,12 @@ export function viewportTag(anchor: Anchor): string {
   return `${vp.width}px`
 }
 
+export function attachmentEcho(a: Attachment): AttachmentEcho {
+  return a.origin ? { name: a.name, pick: a.origin.pick } : a.name
+}
+
 export function toConversationItem(a: Annotation): ConversationItem {
-  const attachments = a.attachments?.map((x) => x.name)
+  const attachments = a.attachments?.map(attachmentEcho)
   const references = a.references?.map((r) => ({ n: r.n, label: r.label }))
   return {
     comment: a.comment,

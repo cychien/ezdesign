@@ -4972,25 +4972,22 @@ body.ez-arranging .ez-frame {
   width: 20px;
   height: 20px;
   border-radius: 50%;
-  background: oklch(100% 0 0 / 0.9);
-  box-shadow: inset 0 0 0 1.5px var(--ink-ghost);
-  color: transparent;
+  background: var(--primary);
+  color: var(--primary-foreground);
   opacity: 0;
+  transform: scale(0.8);
   transition:
     opacity var(--t-pop) var(--ease-out),
-    background-color var(--t-pop) var(--ease-out);
-}
-
-.ez-library-card:hover .ez-library-card-check,
-.ez-library-card:focus-visible .ez-library-card-check {
-  opacity: 1;
+    transform var(--t-pop) var(--ease-out);
 }
 
 .ez-library-card[aria-pressed='true'] .ez-library-card-check {
-  background: var(--primary);
-  box-shadow: none;
-  color: var(--primary-foreground);
   opacity: 1;
+  transform: none;
+}
+
+.ez-library-card-check path {
+  stroke-width: 2.5;
 }
 
 .ez-library-card[aria-pressed='true'] .ez-library-card-media {

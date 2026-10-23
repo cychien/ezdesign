@@ -47,6 +47,7 @@ export function pickFromLibrary(api: LibraryApi): Promise<string[]> {
 
   const browser = libraryBrowser(api, {
     scroll,
+    captions: false,
     decorate: (button, item) => {
       const check = h('span', 'ez-library-card-check')
       check.append(icon(Tick02Icon as IconNode, 12))
@@ -72,7 +73,7 @@ export function pickFromLibrary(api: LibraryApi): Promise<string[]> {
   count.setAttribute('role', 'status')
   const cancel = h('button', 'ez-dialog-cancel', '取消')
   cancel.type = 'button'
-  const confirm = h('button', 'ez-dialog-go')
+  const confirm = h('button', 'ez-dialog-go', '選擇')
   confirm.type = 'button'
   confirm.dataset.testid = IDS.pickerConfirm
   const foot = h('div', 'ez-library-picker-foot')
@@ -82,8 +83,7 @@ export function pickFromLibrary(api: LibraryApi): Promise<string[]> {
   document.body.append(dialog)
 
   function paintCount(): void {
-    count.textContent = chosen.length ? `已選 ${chosen.length} 個` : '點選素材加入，可多選'
-    confirm.textContent = chosen.length ? `加入 ${chosen.length} 個` : '加入'
+    count.textContent = chosen.length ? `已選 ${chosen.length} 個` : '點選素材，可多選'
     confirm.disabled = chosen.length === 0
   }
 

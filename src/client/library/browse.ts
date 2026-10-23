@@ -20,6 +20,8 @@ export interface BrowserOptions {
   decorate(button: HTMLButtonElement, item: LibraryItemWire, index: number): void
   /** What an empty, unfiltered library says. */
   blank(): Node[]
+  /** The page a card came from, under it. On unless turned off. */
+  captions?: boolean
 }
 
 export interface LibraryBrowser {
@@ -49,7 +51,10 @@ function h<K extends keyof HTMLElementTagNameMap>(tag: K, className?: string, te
   return el
 }
 
-export function libraryBrowser(api: LibraryApi, { scroll, decorate, blank }: BrowserOptions): LibraryBrowser {
+export function libraryBrowser(
+  api: LibraryApi,
+  { scroll, decorate, blank, captions = true }: BrowserOptions,
+): LibraryBrowser {
   const searchBox = h('label', 'ez-library-search')
   const search = h('input')
   search.type = 'search'
@@ -145,8 +150,8 @@ export function libraryBrowser(api: LibraryApi, { scroll, decorate, blank }: Bro
       badge.append(h('span', undefined, item.link ? '連結' : '影片'))
       media.append(badge)
     }
-    const caption = h('span', 'ez-library-card-caption', sourceName(item.source))
-    button.append(media, caption)
+    button.append(media)
+    if (captions) button.append(h('span', 'ez-library-card-caption', sourceName(item.source)))
     decorate(button, item, index)
     li.append(button)
     return li
