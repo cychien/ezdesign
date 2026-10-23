@@ -16,6 +16,7 @@ export const extensionFiles = [
   { name: 'dialog.html', copy: `${SRC}/pages/dialog.html` },
   { name: 'media.html', copy: `${SRC}/pages/media.html` },
   { name: 'setup.html', copy: `${SRC}/pages/setup.html` },
+  ...[16, 32, 48, 128].map((size) => ({ name: `icon-${size}.png`, copy: `${SRC}/icons/icon-${size}.png` })),
 ]
 
 /** Chrome's `version` is one to four dot-separated integers; the full string,
@@ -25,8 +26,14 @@ export function chromeVersion(version) {
 }
 
 export function manifestReferences(manifest) {
-  return [manifest.background.service_worker, ...(manifest.web_accessible_resources ?? []).flatMap((w) => w.resources)]
+  return [
+    manifest.background.service_worker,
+    ...(manifest.web_accessible_resources ?? []).flatMap((w) => w.resources),
+    ...new Set([...Object.values(manifest.icons ?? {}), ...Object.values(manifest.action?.default_icon ?? {})]),
+  ]
 }
+
+const mapValues = (record, fn) => Object.fromEntries(Object.entries(record).map(([k, v]) => [k, fn(v)]))
 
 export function withGeneration(manifest, generation, version) {
   const at = (name) => `g/${generation}/${name}`
@@ -37,6 +44,10 @@ export function withGeneration(manifest, generation, version) {
     background: { ...manifest.background, service_worker: at(manifest.background.service_worker) },
     ...(manifest.web_accessible_resources && {
       web_accessible_resources: manifest.web_accessible_resources.map((w) => ({ ...w, resources: w.resources.map(at) })),
+    }),
+    ...(manifest.icons && { icons: mapValues(manifest.icons, at) }),
+    ...(manifest.action?.default_icon && {
+      action: { ...manifest.action, default_icon: mapValues(manifest.action.default_icon, at) },
     }),
   }
 }

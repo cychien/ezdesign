@@ -8,6 +8,7 @@ import type { Socket } from 'node:net'
 import type { SessionConfigOption } from '@agentclientprotocol/sdk'
 import express, { type ErrorRequestHandler, type Response, Router } from 'express'
 import { AppProxy } from './app-proxy.js'
+import { brandMarkSvg } from './brand.js'
 import { FRAME_HOST } from './canvas/frame-document.js'
 import { CANVAS_MCP_ROUTE, CanvasMcp, isCanvasTool } from './canvas/mcp.js'
 import { canvasBrief } from './canvas/prompt.js'
@@ -162,9 +163,7 @@ function decodeAttachmentName(raw: string | undefined): string {
   }
 }
 
-const SHELL_ICON = `data:image/svg+xml,${encodeURIComponent(
-  `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="7" fill="#171717"/><text x="16" y="22" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="17" font-weight="600" letter-spacing="-0.5" fill="#fff">ez</text></svg>`,
-)}`
+const SHELL_ICON = `data:image/svg+xml,${encodeURIComponent(brandMarkSvg())}`
 
 const shellHtml = (version: string) => `<!doctype html>
 <html lang="en">

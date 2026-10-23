@@ -87,6 +87,7 @@ import type { NavEffect, NavEvent, NavState } from './nav.js'
 import { modLabel, reducePick } from './pick.js'
 import type { PickEffect, PickEvent, PickState } from './pick.js'
 import { type IconNode, icon } from './icon.js'
+import { brandLockupSvg } from '../brand.js'
 import {
   SIDEBAR_DEFAULT,
   clampSidebarWidth,
@@ -379,7 +380,10 @@ function h<K extends keyof HTMLElementTagNameMap>(
 
 // ---------------------------------------------------------------- static layout
 
-const brand = h('div', 'ez-brand', 'ezdesign')
+const brand = h('div', 'ez-logo')
+brand.setAttribute('role', 'img')
+brand.setAttribute('aria-label', 'ezdesign')
+brand.innerHTML = brandLockupSvg()
 const version = h('span', 'ez-version')
 /** The way back to an update the user put off: the card is gone, this is not.
  *  Opens a one-item menu rather than bringing the card back - by this point the
