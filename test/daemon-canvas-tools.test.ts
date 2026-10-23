@@ -168,6 +168,25 @@ test('CV-external-edit and CV-p5-brief: a file edited outside reaches the shell,
   assert.equal((await api(port, '/send', { note: 'x', view: { tab: 'nowhere' } })).status, 400)
 })
 
+test("CV-auto-place: each of the agent's turns adds its frames as a row of its own, left to right", async () => {
+  const { w, control } = await world()
+  const dir = project(w)
+  const port = await ready(w, control, dir)
+  for (const frames of [3, 6]) {
+    await api(port, '/send', { note: '建立 design system', view: { tab: 'app', page: '/' } })
+    await waitFor(async () => {
+      const s = (await w.state(port)) as unknown as State
+      return s.canvas?.canvases.find((c) => c.frames === frames) && s.acp?.state === 'idle'
+    }, `${frames} frames`, 15_000)
+  }
+  const canvas = ((await w.state(port)) as unknown as State).canvas!.canvases.find((c) => c.name === 'Design system')!
+  const manifest = JSON.parse(readFileSync(join(dir, '.ezdesign', 'canvases', canvas.id, 'canvas.json'), 'utf8'))
+  const layout = JSON.parse(readFileSync(join(dir, '.ezdesign', 'canvases', canvas.id, 'layout.json'), 'utf8'))
+  const placed = manifest.frames.map((f: { id: string }) => [layout.rects[f.id].x, layout.rects[f.id].y])
+  const row = (y: number) => [[0, y], [470, y], [940, y]]
+  assert.deepEqual(placed, [...row(0), ...row(844 + 240)])
+})
+
 test('CV-p6-agent-geometry: the agent cannot move a frame the user placed', async () => {
   const { w, control } = await world()
   const dir = project(w)

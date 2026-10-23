@@ -465,6 +465,7 @@ const app = agent({ name: 'fake-acp-agent' })
     // A turn that builds a canvas through the canvas tools it was handed, the way
     // a real agent does: permission for each tool, then the call, a pause between
     // frames so a watcher sees them arrive one by one. Replies with every result.
+    // Asked again, it adds to the canvas it already made.
     if (text.includes('建立 design system')) {
       prompts.push({ sessionId, text })
       const server = (mcpBySession.get(sessionId)?.servers ?? []).find((s) => s.name === 'ezdesign-canvas')
@@ -491,11 +492,12 @@ const app = agent({ name: 'fake-acp-agent' })
         `<!doctype html><html><head><meta charset="utf-8"><title>${title}</title>` +
         `<style>body{margin:0;font-family:sans-serif;background:${color}}h1{margin:32px}</style></head>` +
         `<body><h1>${title}</h1></body></html>`
-      await call('list_canvases', {})
-      const made = await call('create_canvas', { name: 'Design system' })
+      const listed = await call('list_canvases', {})
+      const open = listed.canvases.find((c) => c.name === 'Design system' && !c.archived)
+      const canvasId = open?.canvasId ?? (await call('create_canvas', { name: 'Design system' })).canvasId
       for (const [title, color] of [['Colors', '#fef3c7'], ['Type', '#e0f2fe'], ['Buttons', '#dcfce7']]) {
         await new Promise((r) => setTimeout(r, 500))
-        await call('add_frame', { canvasId: made.canvasId, title, html: page(title, color), width: 390 })
+        await call('add_frame', { canvasId, title, html: page(title, color), width: 390 })
       }
       await say(JSON.stringify(results))
       return { stopReason: 'end_turn' }

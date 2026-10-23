@@ -1,37 +1,69 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { GAP, ROW_LIMIT, autoPlace, defaultHeightFor, normalizeRect, overlaps } from '../src/canvas/place.js'
+import { GAP, ROW_GAP, ROW_LIMIT, autoPlace, defaultHeightFor, normalizeRect, overlaps, placeBeside } from '../src/canvas/place.js'
 
 const phone = { width: 390, height: 844 }
-const placedClear = (existing: { x: number; y: number; width: number; height: number }[]) => {
-  const at = autoPlace(existing, phone)
-  const rect = { ...at, ...phone }
-  assert.ok(!existing.some((r) => overlaps(rect, r)), `${JSON.stringify(rect)} overlaps`)
-  return at
+const desktop = { width: 1280, height: 820 }
+type R = { x: number; y: number; width: number; height: number }
+
+/** Adds `turns` the way an agent does, one frame at a time, and checks none
+ *  ever overlaps. */
+function addTurns(turns: { width: number; height: number }[][], existing: R[] = []): R[][] {
+  return turns.map((sizes) => {
+    const turn: R[] = []
+    for (const size of sizes) {
+      const rect = { ...autoPlace(existing, turn, size), ...size }
+      assert.ok(!existing.some((r) => overlaps(rect, r)), `${JSON.stringify(rect)} overlaps`)
+      existing.push(rect)
+      turn.push(rect)
+    }
+    return turn
+  })
 }
 
-test('CV-auto-place: an empty board starts at the origin, a second frame goes beside the first', () => {
-  assert.deepEqual(placedClear([]), { x: 0, y: 0 })
-  assert.deepEqual(placedClear([{ x: 0, y: 0, width: 1280, height: 800 }]), { x: 1280 + GAP, y: 0 })
+test('CV-auto-place: an empty board starts at the origin, the rest of the turn goes beside it', () => {
+  const [turn] = addTurns([[phone, phone, phone]])
+  assert.deepEqual(turn!.map((r) => [r.x, r.y]), [[0, 0], [390 + GAP, 0], [2 * (390 + GAP), 0]])
 })
 
-test('CV-auto-place: an irregular cluster with negative coordinates is cleared, not overlapped', () => {
+test('CV-auto-place: each turn is a row of its own, left to right, even past a full row', () => {
+  const turns = addTurns([Array(5).fill(desktop), Array(4).fill(desktop), Array(4).fill(desktop)])
+  const step = 1280 + GAP
+  for (const [i, turn] of turns.entries()) {
+    assert.deepEqual(turn.map((r) => r.y), turn.map(() => i * (820 + ROW_GAP)), `turn ${i} shares one row`)
+    assert.deepEqual(turn.map((r) => r.x), turn.map((_, j) => j * step), `turn ${i} reads left to right`)
+  }
+})
+
+test('CV-auto-place: a turn wider than a row wraps under everything and keeps going', () => {
+  const [turn] = addTurns([Array(8).fill(desktop)])
+  const perRow = Math.floor((ROW_LIMIT + GAP) / (1280 + GAP))
+  assert.ok(perRow < 8)
+  assert.deepEqual(turn!.slice(perRow).map((r) => [r.x, r.y]).slice(0, 2), [[0, 820 + ROW_GAP], [1280 + GAP, 820 + ROW_GAP]])
+})
+
+test('CV-auto-place: a frame in the way is stepped over, not wrapped under', () => {
+  const blocker = { x: 1280 + GAP, y: 400, width: 500, height: 300 }
+  const first = { x: 0, y: 0, width: 1280, height: 800 }
+  const at = autoPlace([first, blocker], [first], phone)
+  assert.deepEqual(at, { x: blocker.x + blocker.width + GAP, y: 0 })
+})
+
+test('CV-auto-place: a new turn on an irregular cluster with negative coordinates starts under it', () => {
   const cluster = [
     { x: -600, y: -200, width: 500, height: 400 },
     { x: 0, y: 0, width: 1280, height: 800 },
     { x: 1400, y: -100, width: 390, height: 844 },
     { x: 200, y: 900, width: 800, height: 600 },
-    { x: 1900, y: 300, width: 390, height: 844 },
-    { x: -500, y: 1000, width: 300, height: 300 },
-    { x: 1500, y: 800, width: 300, height: 200 },
   ]
-  assert.deepEqual(placedClear(cluster), { x: 2370, y: -200 })
+  assert.deepEqual(addTurns([[phone, phone]], cluster)[0]!.map((r) => [r.x, r.y]), [[-600, 1500 + ROW_GAP], [-600 + 390 + GAP, 1500 + ROW_GAP]])
 })
 
-test('CV-auto-place: a full row wraps under everything', () => {
-  const row = Array.from({ length: 6 }, (_, i) => ({ x: i * 1360, y: 0, width: 1280, height: 800 }))
-  assert.ok(row[5]!.x + 1280 + GAP + 390 > ROW_LIMIT)
-  assert.deepEqual(placedClear(row), { x: 0, y: 800 + GAP })
+test('a duplicate goes on its source row, past anything beside it', () => {
+  const source = { x: 0, y: 0, width: 1280, height: 800 }
+  assert.deepEqual(placeBeside(source, [source]), { x: 1280 + GAP, y: 0 })
+  const neighbour = { x: 1280 + GAP, y: 0, width: 390, height: 844 }
+  assert.deepEqual(placeBeside(source, [source, neighbour]), { x: neighbour.x + 390 + GAP, y: 0 })
 })
 
 test('a rect from the wire is whole and inside the size limits', () => {

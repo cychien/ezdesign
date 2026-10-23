@@ -4,20 +4,24 @@
 
 import { MAX_FRAME_SIZE, MIN_FRAME_SIZE, type Point, type Rect, type Size } from './types.js'
 
-/** Clear space kept between frames placed for the user, so a frame's title is
- *  always there to read and grab. */
+/** Clear space kept beside frames placed for the user. */
 export const GAP = 80
+/** Clear space kept above and below them: a frame's title sits in it at a
+ *  constant screen size, so it takes more of the gap the further out the board
+ *  is zoomed. This clears the title down to about 10%. */
+export const ROW_GAP = 240
 /** A row of auto-placed frames wraps past this width, so forty frames read as a
  *  grid rather than a ribbon nobody can fit on screen. */
 export const ROW_LIMIT = 8000
 
-/** Overlap with `gap` folded in: frames closer than `gap` count as overlapping. */
-export function overlaps(a: Rect, b: Rect, gap = GAP): boolean {
+/** Overlap with the gaps folded in: frames closer than `GAP` side by side or
+ *  `ROW_GAP` one above the other count as overlapping. */
+export function overlaps(a: Rect, b: Rect): boolean {
   return !(
-    a.x + a.width + gap <= b.x ||
-    b.x + b.width + gap <= a.x ||
-    a.y + a.height + gap <= b.y ||
-    b.y + b.height + gap <= a.y
+    a.x + a.width + GAP <= b.x ||
+    b.x + b.width + GAP <= a.x ||
+    a.y + a.height + ROW_GAP <= b.y ||
+    b.y + b.height + ROW_GAP <= a.y
   )
 }
 
@@ -51,28 +55,32 @@ export function normalizeRect(raw: Rect): Rect {
   }
 }
 
-/** Where a frame added without a position goes: never overlapping a live frame.
- *  `existing` is bottom-to-top, so its last entry is the most recent: an agent
- *  adding a series is laying out a row, which the first choice continues. Total
- *  and deterministic; O(n) per candidate, three candidates. */
-export function autoPlace(existing: readonly Rect[], size: Size): Point {
-  const bounds = boundsOf(existing)
-  const last = existing[existing.length - 1]
-  if (!bounds || !last) return { x: 0, y: 0 }
-  const fits = (at: Point) => {
-    const rect = { ...at, ...size }
-    return at.x + size.width <= bounds.x + ROW_LIMIT && !existing.some((r) => overlaps(rect, r))
+/** The first spot at or right of `from`, on its row, that overlaps nothing:
+ *  past every frame in the way, never past `limit`. Null when the row is full. */
+function freeAlongRow(from: Point, size: Size, existing: readonly Rect[], limit: number): Point | null {
+  let x = from.x
+  for (;;) {
+    if (x + size.width > limit) return null
+    const rect = { x, y: from.y, width: size.width, height: size.height }
+    const hits = existing.filter((r) => overlaps(rect, r))
+    if (!hits.length) return { x, y: from.y }
+    x = Math.max(...hits.map((r) => r.x + r.width + GAP))
   }
-  const beside = { x: last.x + last.width + GAP, y: last.y }
-  if (fits(beside)) return beside
-  const right = { x: bounds.x + bounds.width + GAP, y: bounds.y }
-  if (right.x + size.width <= bounds.x + ROW_LIMIT) return right
-  return { x: bounds.x, y: bounds.y + bounds.height + GAP }
 }
 
-/** The user's duplicate: right beside its source when free, else `autoPlace`. */
+/** Where a frame added without a position goes: never overlapping a live frame.
+ *  `turn` is what the agent's current turn has already added here, in order: a
+ *  turn's frames read left to right, and each turn starts a row of its own
+ *  under everything before it. Total and deterministic. */
+export function autoPlace(existing: readonly Rect[], turn: readonly Rect[], size: Size): Point {
+  const bounds = boundsOf(existing)
+  if (!bounds) return { x: 0, y: 0 }
+  const last = turn[turn.length - 1]
+  const next = last && freeAlongRow({ x: last.x + last.width + GAP, y: last.y }, size, existing, bounds.x + ROW_LIMIT)
+  return next ?? { x: bounds.x, y: bounds.y + bounds.height + ROW_GAP }
+}
+
+/** The user's duplicate: on its source's row, at the first free spot right of it. */
 export function placeBeside(source: Rect, existing: readonly Rect[]): Point {
-  const beside = { x: source.x + source.width + GAP, y: source.y }
-  const rect = { ...beside, width: source.width, height: source.height }
-  return existing.some((r) => overlaps(rect, r)) ? autoPlace(existing, source) : beside
+  return freeAlongRow({ x: source.x + source.width + GAP, y: source.y }, source, existing, Infinity)!
 }

@@ -158,7 +158,7 @@ export const CANVAS_TOOLS = {
       'Add one frame to an open canvas: a complete, self-contained HTML document (<!doctype html>, its own <head> and styles) rendered in its own iframe at a real viewport width.',
       'Scripts and CDN assets are allowed. No CSS is shared between frames.',
       'width is the viewport width the page is designed for (390 phone, 768 tablet, 1280 desktop; default 1280); height defaults to a common screen for that width.',
-      'Leave position out unless the user asked for a particular arrangement: the frame is then placed where it overlaps nothing. After creation a frame\'s position is the user\'s, and its size never changes: pick width and height here.',
+      'Leave position out unless the user asked for a particular arrangement: the frame is then placed where it overlaps nothing, the frames of one turn side by side in the order you add them, in a row under the earlier ones. After creation a frame\'s position is the user\'s, and its size never changes: pick width and height here.',
       'Call once per frame, as soon as it is ready: the user watches frames appear.',
     ].join('\n'),
     input: {

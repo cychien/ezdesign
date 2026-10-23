@@ -224,6 +224,24 @@ test('a frame is served stamped with its file and line, and an outside edit move
   })
 })
 
+test("CV-auto-place: each of the agent's turns adds its frames as one row, left to right", () => {
+  const { workspace } = setup()
+  const canvasId = unwrap(workspace.agent.create('brand')).id
+  const turns = [[700, 820, 820, 820, 820], [980, 820, 820, 820], [1080, 620, 620, 620]]
+  const rows = turns.map((heights) => {
+    workspace.beginTurn()
+    return heights.map((height) => {
+      const frame = unwrap(workspace.agent.addFrame({ canvasId, title: 'f', html: DOC, size: { width: 1280, height } }))
+      return [frame.rect.x, frame.rect.y]
+    })
+  })
+  assert.deepEqual(rows, [
+    [[0, 0], [1360, 0], [2720, 0], [4080, 0], [5440, 0]],
+    [[0, 1060], [1360, 1060], [2720, 1060], [4080, 1060]],
+    [[0, 2280], [1360, 2280], [2720, 2280], [4080, 2280]],
+  ])
+})
+
 test('a manifest from a newer version is left alone, and unnamed old files are swept', () => {
   const { workspace, root } = setup()
   mkdirSync(join(root, 'dddddddddddd'), { recursive: true })

@@ -189,6 +189,9 @@ export interface CanvasWorkspace {
    *  left with nothing gets an empty canvas. The workspace is the one writer of
    *  the active tab. */
   appChanged(opts: { show: boolean; create: boolean }): void
+  /** The agent was handed a new turn: the frames it adds from here start a row
+   *  of their own. */
+  beginTurn(): void
   close(): void
 }
 
@@ -201,6 +204,7 @@ export function openCanvasWorkspace(options: CanvasWorkspaceOptions): CanvasWork
     start: () => workspace.start(),
     shellConnected: () => workspace.ensureTab(true),
     appChanged: (opts) => workspace.appChanged(opts),
+    beginTurn: () => workspace.beginTurn(),
     close: () => workspace.close(),
   }
 }
@@ -277,6 +281,8 @@ class Workspace {
   private readonly served = new Map<string, { hash: string; html: string }>()
   private readonly root: string
   private readonly watcher: FrameFileWatcher
+  /** Frames the agent's current turn added, oldest first. */
+  private turnFrames: FrameId[] = []
 
   constructor(private readonly opts: CanvasWorkspaceOptions) {
     this.root = join(opts.project, CANVASES_DIR)
@@ -391,6 +397,10 @@ class Workspace {
       this.opts.onChange({ kind: 'view' })
     }
     this.ensureTab(opts.create)
+  }
+
+  beginTurn(): void {
+    this.turnFrames = []
   }
 
   /** The tab strip is never empty and never names a tab that is gone. */
@@ -835,7 +845,9 @@ class Workspace {
     }
     const width = input.size?.width ?? DEFAULT_FRAME_WIDTH
     const size = { width, height: input.size?.height ?? defaultHeightFor(width) }
-    const at = input.position ?? autoPlace(live.map((f) => held.layout.rects[f.id] ?? NO_RECT), normalizeRect({ x: 0, y: 0, ...size }))
+    const rectOf = (frameId: FrameId) => held.layout.rects[frameId] ?? NO_RECT
+    const turn = this.turnFrames.filter((frameId) => live.some((f) => f.id === frameId)).map(rectOf)
+    const at = input.position ?? autoPlace(live.map((f) => rectOf(f.id)), turn, normalizeRect({ x: 0, y: 0, ...size }))
     const rect = normalizeRect({ ...at, ...size })
     let id: FrameId
     do id = randomBytes(6).toString('hex') as FrameId
@@ -847,6 +859,7 @@ class Workspace {
     held.layout.rects[id] = rect
     this.writeLayout(held)
     held.manifest.frames.push(frame)
+    this.turnFrames.push(id)
     this.writeManifest(held)
     this.opts.onChange({ kind: 'updated', canvasId: held.manifest.id })
     return ok(this.frameOf(held, frame))
