@@ -33,9 +33,10 @@
     "dev:agent": "node scripts/dev-agent.mjs",
     "dev:cli": "node scripts/dev-cli.mjs",
     "brand": "node scripts/brand-wordmark.mjs && node --import tsx scripts/brand-assets.mjs",
-    "check": "npm run build && npm run typecheck && npm test",
-    "typecheck": "tsc --noEmit && tsc -p src/extension --noEmit && tsc -p fixtures/playground --noEmit",
+    "check": "npm run build && npm run typecheck && npm test && npm run test:account",
+    "typecheck": "tsc --noEmit && tsc -p src/extension --noEmit && tsc -p fixtures/playground --noEmit && tsc -p services/account --noEmit",
     "test": "node scripts/test.mjs",
+    "test:account": "pnpm --filter ezdesign-account test",
     "version": "node scripts/sync-skill-version.mjs && git add skills/ezdesign/SKILL.md",
     "prepublishOnly": "npm run check"
   },

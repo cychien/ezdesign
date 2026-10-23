@@ -4,8 +4,14 @@ import { chmodSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:
 import { dirname, join } from 'node:path'
 import { DATA_DIR } from './constants.js'
 
+export interface AccountCredential {
+  token: string
+  user: { id: string; email: string }
+}
+
 export interface Credentials {
   inspire?: { token: string }
+  account?: AccountCredential
 }
 
 export const CREDENTIALS_MODE = 0o600
@@ -41,9 +47,31 @@ export function writeInspireToken(token: string, file: string = credentialsFile(
 }
 
 export function clearInspireToken(file: string = credentialsFile()): boolean {
+  return forget('inspire', file)
+}
+
+export function readAccount(file: string = credentialsFile()): AccountCredential | null {
+  const account = readCredentials(file).account
+  const ok =
+    typeof account?.token === 'string' &&
+    account.token !== '' &&
+    typeof account.user?.id === 'string' &&
+    typeof account.user.email === 'string'
+  return ok ? { token: account.token, user: { id: account.user.id, email: account.user.email } } : null
+}
+
+export function writeAccount(account: AccountCredential, file: string = credentialsFile()): void {
+  writeCredentials({ ...readCredentials(file), account }, file)
+}
+
+export function clearAccount(file: string = credentialsFile()): boolean {
+  return forget('account', file)
+}
+
+function forget(key: keyof Credentials, file: string): boolean {
   const creds = readCredentials(file)
-  const had = creds.inspire !== undefined
-  delete creds.inspire
+  const had = creds[key] !== undefined
+  delete creds[key]
   if (Object.keys(creds).length === 0) rmSync(file, { force: true })
   else writeCredentials(creds, file)
   return had

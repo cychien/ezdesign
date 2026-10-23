@@ -115,6 +115,8 @@ import { refreshCaptureInstall } from './capture-install/index.js'
 import { type Library, LibraryError, openLibrary } from './library/index.js'
 import { lazyLibrary, libraryApiRouter, libraryAttachables } from './library-routes.js'
 import { extensionApiRouter } from './extension-routes.js'
+import { ACCOUNT_CALLBACK_PATH, Account, type AccountWire, accountBaseUrl } from './account.js'
+import { accountApiRouter, crossSiteAccountCallback } from './account-routes.js'
 import { installVersion, pruneInstalledVersions } from './installer.js'
 import { latestVersion, updateChecksDisabled } from './update-check.js'
 import { Updater, type UpdateWire } from './updater.js'
@@ -247,6 +249,7 @@ interface SnapshotWire {
   /** A newer version or a stale skill to offer, and the update's progress once
    *  taken up. Daemon-wide: every session's shell shows the same one. */
   update?: UpdateWire
+  account?: AccountWire
   /** The explore rounds still on the page, oldest first. Not filtered by which
    *  conversation is showing: a round's variant stands in the page whichever
    *  thread the user is reading, and the strip is about the page. */
@@ -754,6 +757,7 @@ class SessionRuntime implements ProjectRuntime {
     private readonly version: string,
     private readonly updater: Updater,
     private readonly library: () => Promise<Library>,
+    private readonly account: Account,
   ) {
     this.store = new SessionStore(project)
     // Starts detached: which origin this runtime shows is the directory's call,
@@ -907,6 +911,7 @@ class SessionRuntime implements ProjectRuntime {
   snapshot(): SnapshotWire {
     const s = this.store.session
     const update = this.updater.snapshot()
+    const account = this.account.snapshot()
     // A dismissed round is history: the thread still names it, but nothing of it
     // is on the page and nothing about it is on offer.
     const live = this.store.explores.filter((e) => e.status !== 'dismissed')
@@ -940,6 +945,7 @@ class SessionRuntime implements ProjectRuntime {
           }
         : {}),
       ...(update ? { update } : {}),
+      ...(account ? { account } : {}),
       ...(live.length ? { explores: live } : {}),
       ...(this.canExplore ? { canExplore: true as const } : {}),
     }
@@ -1761,6 +1767,9 @@ class SessionRuntime implements ProjectRuntime {
     // The capture library is global, so every session shows the same one.
     api.use(libraryApiRouter({ library: this.library }))
     api.use(extensionApiRouter({ distDir, version: this.version, dataDir: libraryHome() }))
+    api.use(
+      accountApiRouter({ account: this.account, callbackUrl: () => `${this.shellOrigin}${ACCOUNT_CALLBACK_PATH}` }),
+    )
 
     api.get('/state', (_req, res) => res.json(this.snapshot()))
 
@@ -2370,6 +2379,7 @@ class SessionRuntime implements ProjectRuntime {
           .send(asset(file)),
       )
     }
+    rk.get(ACCOUNT_CALLBACK_PATH.slice(URL_PREFIX.length), crossSiteAccountCallback(this.account))
     rk.use('/api', this.apiRouter())
     // Ours, whether or not anything answers it: never handed to the user's app.
     rk.use((_req, res) => res.sendStatus(404))
@@ -2527,9 +2537,10 @@ export async function daemonMain(version: string, opts: DaemonOptions = {}): Pro
   })
 
   const library = lazyLibrary(() => openLibrary({ dir: libraryDir(libraryHome()) }))
+  const account = new Account({ baseUrl: accountBaseUrl(), onChange: broadcastAll })
 
   sessions = new SessionDirectory(
-    (project) => new SessionRuntime(project, version, updater, library),
+    (project) => new SessionRuntime(project, version, updater, library, account),
     {
       restorable: listRestorableSessions,
       get: persistedSession,
