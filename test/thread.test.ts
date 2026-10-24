@@ -46,9 +46,9 @@ test('entries belonging to no batch stay where the log put them', () => {
     system('新對話'),
     user('q2', 'b'),
     agent('r2', 'b'),
-    system('Session ended by user'),
+    system('Review 已結束'),
   ]
-  assert.deepEqual(texts(log), ['q1', '新對話', 'q2', 'r2', 'Session ended by user'])
+  assert.deepEqual(texts(log), ['q1', '新對話', 'q2', 'r2', 'Review 已結束'])
 })
 
 // Nothing says it answers q1, so it is not pulled up with the answer that does.

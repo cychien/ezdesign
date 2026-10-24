@@ -2274,7 +2274,7 @@ class SessionRuntime implements ProjectRuntime {
       this.store.end(by)
       this.store.appendConversation({
         role: 'system',
-        text: by === 'user' ? 'Session ended by user' : 'Session ended by agent',
+        text: by === 'user' ? 'Review 已結束' : 'Agent 已結束這次 review',
         ts: Date.now(),
       })
       this.wakePollers()
