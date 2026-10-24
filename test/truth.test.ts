@@ -73,8 +73,6 @@ test('an ordinary change edits code only; the two files change on a request or a
   const principles = readFileSync(skillReference(SKILL, 'principles'), 'utf8').replace(/\s+/g, ' ')
   assert.ok(principles.includes('A value that keeps coming up becomes a token in the system'))
   assert.ok(!principles.includes('extend the document'))
-  const skill = readFileSync(join(SKILL, 'SKILL.md'), 'utf8').replace(/\s+/g, ' ')
-  assert.ok(skill.includes('An ordinary change edits code only'))
 })
 
 test('every harness reference says it applies only when a prompt turns it on', () => {
@@ -96,16 +94,12 @@ test('every harness reference says it applies only when a prompt turns it on', (
     )
     assert.ok(doc.includes('as if you had never read this file'), name)
   }
+})
+
+test('the installed skill opens reviews and never offers the harness', () => {
   const skill = readFileSync(join(SKILL, 'SKILL.md'), 'utf8').replace(/\s+/g, ' ')
-  assert.ok(
-    skill.includes('only when the user explicitly asks for 增強設計'),
-    'the description never auto-triggers it',
-  )
-  assert.ok(skill.includes('never for an ordinary UI request'))
-  assert.ok(
-    skill.includes('handled as if this skill had never been read, even later in a conversation'),
-  )
-  assert.ok(skill.includes(HARNESS_ON))
+  assert.ok(skill.includes('A bare `/ezdesign`, with nothing after it, is that request: open a review'))
+  for (const word of ['增強設計', 'harness', 'PRODUCT.md', 'DESIGN.md']) assert.ok(!skill.includes(word), word)
 })
 
 test('the state reads both files, and carries the switch as given', () => {
@@ -223,8 +217,6 @@ test('a harness-on turn names the CLI to run and the words to use; any other tur
   assert.ok(
     make.includes('in the language they write in, and in their words: 增強設計, 設計規範, 靈感'),
   )
-  const skill = readFileSync(join(SKILL, 'SKILL.md'), 'utf8').replace(/\s+/g, ' ')
-  assert.ok(skill.includes('talk to the user in the language they write in and in their words'))
 })
 
 test('the skill directory resolves from the source tree, and every reference is there', () => {
