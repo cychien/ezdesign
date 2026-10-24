@@ -309,6 +309,6 @@ test('suggestions come from the library the host writes', async (t) => {
   h.send({ t: 'commit', id: 3, capture, tags: ['Card', 'cta'], note: '' })
   await h.next(reply(3))
   h.send({ t: 'suggest', id: 4, prefix: 'C', exclude: ['cta'], limit: 8 })
-  assert.deepEqual((await h.next(reply(4))).value, { tags: [{ name: 'Card', uses: 1 }] })
+  assert.deepEqual((await h.next(reply(4))).value, { tags: [{ name: 'card', uses: 1 }] })
   assert.equal(await closed(h), 0)
 })

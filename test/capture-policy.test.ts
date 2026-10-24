@@ -10,7 +10,10 @@ import { normalizeTag, tagKey, thumbnailSize } from '../src/library/policy.js'
 import { checkCaller } from '../src/native-host/caller.js'
 
 test('tags are trimmed and compared case-insensitively', () => {
-  assert.equal(normalizeTag('  Hero   Section '), 'Hero Section')
+  assert.equal(normalizeTag('  Hero   Section '), 'hero Section')
+  assert.equal(normalizeTag('UI kit'), 'UI kit', 'an acronym keeps its initial')
+  assert.equal(normalizeTag('Écran'), 'écran')
+  assert.equal(normalizeTag('3D'), '3D')
   assert.equal(normalizeTag('   '), null)
   assert.equal(normalizeTag('a,b'), null)
   assert.equal(normalizeTag('a，b'), null)

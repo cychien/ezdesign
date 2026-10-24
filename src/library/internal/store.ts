@@ -1,8 +1,9 @@
 import type { DatabaseSync, SQLInputValue, StatementSync } from 'node:sqlite'
+import { normalizeTag } from '../policy.js'
 import { LibraryError, asLibraryError, isBusy } from './errors.js'
 import { ulid } from './ulid.js'
 
-export const SCHEMA = { epoch: 1, version: 1 } as const
+export const SCHEMA = { epoch: 1, version: 2 } as const
 
 export const NODE_FLOOR = '22.13.0'
 
@@ -10,7 +11,7 @@ export const NODE_FLOOR = '22.13.0'
  *  rowid that VACUUM cannot renumber. */
 const TRIGRAM_MIN_CHARS = 3
 
-const MIGRATIONS: readonly string[] = [
+const MIGRATIONS: readonly (string | ((db: DatabaseSync) => void))[] = [
   `
   CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL) STRICT;
 
@@ -84,7 +85,17 @@ const MIGRATIONS: readonly string[] = [
     INSERT INTO items_text (rowid, page_title, note) VALUES (new.seq, new.page_title, new.note);
   END;
   `,
+  renormalizeTagNames,
 ]
+
+function renormalizeTagNames(db: DatabaseSync): void {
+  const rename = db.prepare('UPDATE tags SET name = ?, updated_at = ?, rev = rev + 1 WHERE id = ?')
+  const now = Date.now()
+  for (const { id, name } of db.prepare('SELECT id, name FROM tags').all() as { id: string; name: string }[]) {
+    const normalized = normalizeTag(name)
+    if (normalized !== null && normalized !== name) rename.run(normalized, now, id)
+  }
+}
 
 export type ItemKind = 'image' | 'screenshot' | 'video'
 export type LinkReason = 'stream' | 'too-large'
@@ -217,7 +228,11 @@ function migrate(db: DatabaseSync): void {
         )
       }
     }
-    for (let v = version; v < MIGRATIONS.length; v++) db.exec(MIGRATIONS[v]!)
+    for (let v = version; v < MIGRATIONS.length; v++) {
+      const migration = MIGRATIONS[v]!
+      if (typeof migration === 'string') db.exec(migration)
+      else migration(db)
+    }
     if (version < MIGRATIONS.length) {
       db.exec(`PRAGMA user_version = ${MIGRATIONS.length}`)
       db.prepare("INSERT OR REPLACE INTO meta (key, value) VALUES ('schema_epoch', ?)").run(String(SCHEMA.epoch))

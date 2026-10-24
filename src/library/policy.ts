@@ -8,7 +8,8 @@ export const THUMBNAIL_LONG_SIDE = 400
 export const TAG_MAX_LENGTH = 64
 
 declare const tagBrand: unique symbol
-/** A tag as the user spelled it, trimmed and with inner whitespace collapsed. */
+/** A tag as the user spelled it, trimmed, inner whitespace collapsed and the
+ *  initial lowercased unless it opens an acronym (`UI`, `CTA`). */
 export type TagName = string & { readonly [tagBrand]: 'TagName' }
 
 /** Null for input that is not a tag: empty after trimming, too long, or
@@ -16,7 +17,13 @@ export type TagName = string & { readonly [tagBrand]: 'TagName' }
 export function normalizeTag(raw: string): TagName | null {
   const name = raw.normalize('NFC').trim().replace(/\s+/g, ' ')
   if (name === '' || name.length > TAG_MAX_LENGTH || /[,，]/.test(name)) return null
-  return name as TagName
+  return lowercaseInitial(name) as TagName
+}
+
+function lowercaseInitial(name: string): string {
+  const [first = '', second = ''] = name
+  if (second !== second.toLowerCase()) return name
+  return first.toLowerCase() + name.slice(first.length)
 }
 
 /** What makes two tags the same tag: `Hero` and `hero ` are one. Compatibility
