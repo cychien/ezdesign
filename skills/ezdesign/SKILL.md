@@ -2,7 +2,7 @@
 name: ezdesign
 description: Open an ezdesign review session on a running web page. The user annotates the page in the browser, and each batch reaches the coding agent with exact source locations. Use when the user invokes /ezdesign, or asks to review, annotate or give visual feedback on a running page, or to explore designs on a canvas.
 metadata:
-  version: 0.9.0
+  version: 0.9.1
 ---
 
 # ezdesign
