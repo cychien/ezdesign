@@ -4429,6 +4429,9 @@ function render(): void {
     // true, and this line is the only thing that says why.
     agentStatus.className = 'ez-badge ez-working'
     agentStatus.textContent = 'Agent 準備中'
+  } else if (s.acp?.state === 'exited') {
+    agentStatus.className = 'ez-badge ez-offline'
+    agentStatus.textContent = 'Agent 已離線'
   } else if (s.agentOnline) {
     agentStatus.className = 'ez-badge ez-online'
     agentStatus.textContent = 'Agent 已連線'
@@ -4436,6 +4439,7 @@ function render(): void {
     agentStatus.className = 'ez-badge'
     agentStatus.textContent = 'Agent 未連線'
   }
+  agentStatus.title = (s.acp?.state === 'exited' && s.acp.error) || ''
   reviewPanelBtn.toggleAttribute('data-working', agentStatus.classList.contains('ez-working'))
 
   paintQueue(s.annotations)

@@ -809,6 +809,10 @@ body.ez-arranging .ez-frame {
   background: oklch(62% 0.15 150);
 }
 
+.ez-badge.ez-offline::before {
+  background: var(--danger);
+}
+
 .ez-badge.ez-working::before {
   background: oklch(70% 0.16 70);
   animation: ez-pulse 1.2s ease-in-out infinite;

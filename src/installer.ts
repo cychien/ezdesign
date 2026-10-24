@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process'
 import { existsSync, mkdirSync, readdirSync, realpathSync, rmSync } from 'node:fs'
 import { dirname, join, resolve, sep } from 'node:path'
 import { APP_NAME, NPM_PACKAGE, VERSIONS_DIR } from './constants.js'
+import { shellQuote } from './shell-quote.js'
 
 /** npm's entry point, run with this very node rather than whatever `npm` on
  *  PATH would pick: the daemon has no shell of the user's to inherit one from.
@@ -52,15 +53,6 @@ function run(
       reject(new Error(`${label} failed${why ? `: ${why}` : ` (exit ${code})`}`))
     })
   })
-}
-
-/** `shell: true` hands the argv to a shell as one string with no quoting of its
- *  own, so anything a shell would split has to be quoted here. Only reached on
- *  the fallback path, where a home directory with a space in it is otherwise
- *  read as two arguments. */
-export function shellQuote(arg: string): string {
-  if (process.platform === 'win32') return /[\s"]/.test(arg) ? `"${arg.replace(/"/g, '""')}"` : arg
-  return /^[A-Za-z0-9_@%+=:,./-]+$/.test(arg) ? arg : `'${arg.replace(/'/g, `'\\''`)}'`
 }
 
 async function npm(label: string, args: string[]): Promise<void> {

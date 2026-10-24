@@ -130,8 +130,10 @@ export interface AcpSnapshot {
 }
 
 export interface AcpAgentOptions {
-  /** Shell command that starts an ACP agent on stdio. */
+  /** Shell command that starts an ACP agent on stdio, and the agent's identity. */
   command: string
+  /** What is actually run, when it differs from `command`. */
+  launch?: string
   cwd: string
   /** Added to the agent's environment, and so to every command it runs. */
   env?: Record<string, string>
@@ -259,7 +261,7 @@ export class AcpAgent {
     // a profile is a command line; the group is because that shell is not the
     // agent - `npx` and the runtime it fetches sit below it, and signalling the
     // shell alone leaves them running. A group can be killed whole.
-    this.child = spawn(opts.command, {
+    this.child = spawn(opts.launch ?? opts.command, {
       shell: true,
       detached: true,
       cwd: opts.cwd,

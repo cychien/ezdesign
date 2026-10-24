@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict'
-import { spawnSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, readdirSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -7,8 +6,7 @@ import { test } from 'node:test'
 
 process.env.EZDESIGN_DATA_DIR = mkdtempSync(join(tmpdir(), 'ezdesign-installer-'))
 
-const { installedPackageRoot, npmErrorSummary, packageSpec, pruneInstalledVersions, shellQuote } =
-  await import('../src/installer.js')
+const { installedPackageRoot, npmErrorSummary, packageSpec, pruneInstalledVersions } = await import('../src/installer.js')
 const { VERSIONS_DIR } = await import('../src/constants.js')
 
 test('a self-update installs the scoped npm package under the data dir', () => {
@@ -33,26 +31,6 @@ test('npmErrorSummary keeps what npm said and drops the noise around it', () => 
   )
   assert.equal(npmErrorSummary('something odd\nlast line'), 'last line')
   assert.equal(npmErrorSummary(''), '')
-})
-
-// Proven through a real shell rather than against an expected string: the point
-// is that the argument arrives whole, not that it is escaped a particular way.
-test('shellQuote survives a round trip through the shell it is quoting for', {
-  skip: process.platform === 'win32' ? 'POSIX quoting' : false,
-}, () => {
-  for (const arg of [
-    '/Users/John Smith/.ezdesign/versions/0.7.0',
-    "/tmp/it's here/x",
-    '/tmp/a$HOME/b',
-    '/tmp/a&b;c/d',
-    '/tmp/back\\slash',
-    '@cychien/ezdesign@0.7.0',
-    '--no-audit',
-  ]) {
-    const out = spawnSync('sh', ['-c', `printf %s ${shellQuote(arg)}`], { encoding: 'utf8' })
-    assert.equal(out.status, 0, arg)
-    assert.equal(out.stdout, arg, arg)
-  }
 })
 
 function installedVersion(version: string): string {

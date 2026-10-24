@@ -1,6 +1,6 @@
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto'
 import { EventEmitter } from 'node:events'
-import { accessSync, constants, readFileSync, statSync } from 'node:fs'
+import { accessSync, constants, mkdirSync, readFileSync, statSync } from 'node:fs'
 import { type Server, createServer } from 'node:http'
 import { delimiter, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -27,6 +27,7 @@ import {
   MAX_ATTACHMENT_BYTES,
   APP_NAME,
   POLL_TIMEOUT_MS,
+  ACP_NPM_PREFIX,
   SHELL_RETRY_MS,
   SHELL_RETURN_MS,
   UPDATE_CHECK_TTL_MS,
@@ -42,7 +43,7 @@ import { chatTitles, worthListing } from './chat-titles.js'
 import { readLimit, rememberedLimit, rememberLimit } from './usage-limit.js'
 import type { AcpSnapshot } from './acp-agent.js'
 import { type AcpConfigValue, configLabel, configValueName } from './acp-config.js'
-import { AGENT_PROFILES, type AgentProfile, agentBrandFor, agentProfileFor } from './agents.js'
+import { AGENT_PROFILES, type AgentProfile, agentBrandFor, agentProfileFor, launchCommand } from './agents.js'
 import { clearAgentRecord, reapOrphanedAgents } from './agent-children.js'
 import {
   attachmentIds,
@@ -1082,8 +1083,10 @@ class SessionRuntime implements ProjectRuntime {
       return this.acp.snapshot().agent === command
     }
     this.store.setAgent(command)
+    mkdirSync(ACP_NPM_PREFIX, { recursive: true })
     this.acp = new AcpAgent({
       command,
+      launch: launchCommand(command, ACP_NPM_PREFIX),
       cwd: this.project,
       // The figure outlives the process that was told it: it only ever arrives
       // pushed, so a daemon that forgot it would show nothing until the review's
@@ -1166,7 +1169,8 @@ class SessionRuntime implements ProjectRuntime {
         this.deliverToAcp()
         this.broadcast()
       },
-      onExit: () => {
+      onExit: (error) => {
+        console.error(`agent for ${this.project} stopped: ${error}`)
         this.agentBusy = false
         this.activeBatch = null
         this.activeSkills = []

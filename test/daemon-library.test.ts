@@ -69,14 +69,14 @@ test('the shell lists the library newest first, with every tag, and filters by t
   assert.deepEqual(page.body.items.map((i) => i.id), [saved[1]!.item.id, saved[0]!.item.id])
   assert.equal(page.body.next, null)
   const first = page.body.items[1]!
-  assert.deepEqual(first.tags, ['dark', 'Hero'])
+  assert.deepEqual(first.tags, ['dark', 'hero'])
   assert.equal(first.source.pageTitle, 'Linear')
   assert.deepEqual(first.dimensions, { width: 20, height: 10 })
 
   const tags = await json<{ tags: LibraryTagWire[] }>('/library/tags')
   assert.deepEqual(tags.body.tags, [
     { name: 'dark', uses: 2 },
-    { name: 'Hero', uses: 1 },
+    { name: 'hero', uses: 1 },
   ])
 
   const ids = async (query: string) => (await json<LibraryPageWire>(`/library/items?${query}`)).body.items.map((i) => i.id)
@@ -115,7 +115,7 @@ test('library items chosen in a composer become attachments that reach the agent
     pageTitle: 'Linear',
     mediaUrl: null,
     note: '漸層很細緻',
-    tags: ['dark', 'Hero'],
+    tags: ['dark', 'hero'],
   })
 
   const ids = attached.body.map((a) => a.id)
@@ -173,7 +173,7 @@ test('editing tags and the note writes through, and a deleted item is gone from 
     })
   const edited = await patch({ tags: ['dark', 'Minimal'], note: '留白' })
   assert.equal(edited.status, 200)
-  assert.deepEqual(edited.body.tags, ['dark', 'Minimal'])
+  assert.deepEqual(edited.body.tags, ['dark', 'minimal'])
   assert.equal(edited.body.note, '留白')
   assert.equal((await patch({ tags: 'dark' })).status, 400)
   assert.equal((await patch({})).status, 400)
@@ -184,7 +184,7 @@ test('editing tags and the note writes through, and a deleted item is gone from 
   const page = await json<LibraryPageWire>('/library/items')
   assert.deepEqual(page.body.items.map((i) => i.id), [saved[0]!.item.id])
   const tags = await json<{ tags: LibraryTagWire[] }>('/library/tags')
-  assert.deepEqual(tags.body.tags.map((t) => t.name), ['dark', 'Hero'])
+  assert.deepEqual(tags.body.tags.map((t) => t.name), ['dark', 'hero'])
 })
 
 test('another site cannot read or change the library', async () => {

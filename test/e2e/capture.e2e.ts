@@ -8,7 +8,7 @@ import { DatabaseSync } from 'node:sqlite'
 import { readExtensionSeen } from '../../src/capture-seen.js'
 import { EXTENSION_ID, HOST_NAME } from '../../src/capture-wire.js'
 import type { CaptureId, HostState } from '../../src/extension/shared/messages.js'
-import { openLibrary, tagKey } from '../../src/library/index.js'
+import { normalizeTag, openLibrary, tagKey } from '../../src/library/index.js'
 import { CLIP, makeClip, makeJpeg } from './fixtures.js'
 import {
   type CaptureOutcome,
@@ -267,7 +267,7 @@ const checks: Check[] = [
         `source ${JSON.stringify(item!.source)}`,
       )
       check(JSON.stringify(item!.dimensions) === '{"width":3000,"height":2000}', `dimensions ${JSON.stringify(item!.dimensions)}`)
-      check(JSON.stringify(item!.tags) === '["hero","Landing Page"]', `tags ${JSON.stringify(item!.tags)}`)
+      check(JSON.stringify(item!.tags) === '["hero","landing Page"]', `tags ${JSON.stringify(item!.tags)}`)
       check(item!.note === '字距好', `note ${item!.note}`)
       const thumb = item!.thumbnail && webpSize(readFileSync(item!.thumbnail.path))
       check(JSON.stringify(thumb) === '{"width":400,"height":267}', `thumbnail ${JSON.stringify(thumb)}`)
@@ -377,7 +377,7 @@ const checks: Check[] = [
           if (entry.deleted) continue
           for (const tag of entry.tags) {
             const key = tagKey(tag)
-            const found = uses.get(key) ?? { name: tag, uses: 0 }
+            const found = uses.get(key) ?? { name: normalizeTag(tag)!, uses: 0 }
             found.uses++
             uses.set(key, found)
           }
@@ -749,7 +749,7 @@ const checks: Check[] = [
       await first.dialog.type('第一行\n第二行\n第三行')
       await h.screenshot(page.session, 'CX-dialog-4-filled.png')
       const chips = await first.dialog.evaluate<string[]>(`[...document.querySelectorAll('.chip')].map((c) => c.firstChild.textContent)`)
-      check(JSON.stringify(chips) === '["hero","spacing","Carousel"]', `chips ${JSON.stringify(chips)}`)
+      check(JSON.stringify(chips) === '["hero","spacing","carousel"]', `chips ${JSON.stringify(chips)}`)
       await waitFor(() => first.dialog.evaluate<boolean>(`!document.querySelector('[data-testid=ez-capture-save]').disabled`), 'save to be enabled')
       const saveExit = await exitTime(() => first.dialog.press('Enter', process.platform === 'darwin' ? 4 : 2))
       check((await settled(h, first.id)).type === 'saved', 'Cmd+Enter saves')
@@ -770,7 +770,7 @@ const checks: Check[] = [
       const status = await waitFor(() => narrow.dialog.evaluate<string>(`document.querySelector('[data-testid=ez-capture-status]').textContent`), 'the duplicate status')
       check(status === '已收藏過', `status ${status}`)
       const prefilled = await narrow.dialog.evaluate<[string[], string]>(`[[...document.querySelectorAll('.chip.locked')].map((c) => c.textContent), document.querySelector('[data-testid=ez-capture-note]').value]`)
-      check(JSON.stringify(prefilled) === JSON.stringify([['Carousel', 'hero', 'spacing'], '第一行\n第二行\n第三行']), `prefilled ${JSON.stringify(prefilled)}`)
+      check(JSON.stringify(prefilled) === JSON.stringify([['carousel', 'hero', 'spacing'], '第一行\n第二行\n第三行']), `prefilled ${JSON.stringify(prefilled)}`)
       const overflow = await narrow.dialog.evaluate<boolean>(`document.querySelector('.card').scrollWidth > document.querySelector('.card').clientWidth`)
       check(!overflow, 'nothing overflows the card at 400 px')
       await animationsSettled(narrow.dialog)

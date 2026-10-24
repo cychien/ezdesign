@@ -12,6 +12,8 @@ export const SESSIONS_DIR = join(DATA_DIR, 'sessions')
 export const LEGACY_SESSIONS_DIR = join(DATA_DIR, 'sessions-legacy')
 export const REGISTRY_FILE = join(DATA_DIR, 'daemon.json')
 export const DAEMON_LOG = join(DATA_DIR, 'daemon.log')
+/** The npm prefix ACP adapters are fetched under, apart from any project's. */
+export const ACP_NPM_PREFIX = join(DATA_DIR, 'acp')
 /** Where a self-updating daemon installs the version it hands over to. */
 export const VERSIONS_DIR = join(DATA_DIR, 'versions')
 export const UPDATE_CHECK_FILE = join(DATA_DIR, 'update-check.json')
