@@ -115,6 +115,7 @@ import { refreshCaptureInstall } from './capture-install/index.js'
 import { type Library, LibraryError, openLibrary } from './library/index.js'
 import { lazyLibrary, libraryApiRouter, libraryAttachables } from './library-routes.js'
 import { extensionApiRouter } from './extension-routes.js'
+import { announcementApiRouter } from './announcement-routes.js'
 import { ACCOUNT_CALLBACK_PATH, Account, type AccountWire, apiBaseUrl, signInOffered } from './account.js'
 import { accountApiRouter, crossSiteAccountCallback } from './account-routes.js'
 import { installVersion, pruneInstalledVersions } from './installer.js'
@@ -1768,6 +1769,7 @@ class SessionRuntime implements ProjectRuntime {
     // The capture library is global, so every session shows the same one.
     api.use(libraryApiRouter({ library: this.library }))
     api.use(extensionApiRouter({ distDir, version: this.version, dataDir: libraryHome() }))
+    api.use(announcementApiRouter())
     if (this.signInOffered) {
       api.use(
         accountApiRouter({ account: this.account, callbackUrl: () => `${this.shellOrigin}${ACCOUNT_CALLBACK_PATH}` }),
@@ -2382,6 +2384,11 @@ class SessionRuntime implements ProjectRuntime {
           .send(asset(file)),
       )
     }
+    // Content-hashed by the build, so a url never changes what it serves.
+    rk.use(
+      '/announcements',
+      express.static(join(distDir, 'announcements'), { immutable: true, maxAge: '1y', fallthrough: false }),
+    )
     if (this.signInOffered) {
       rk.get(ACCOUNT_CALLBACK_PATH.slice(URL_PREFIX.length), crossSiteAccountCallback(this.account))
     }

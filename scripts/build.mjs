@@ -53,7 +53,14 @@ export const targets = [
   },
   {
     group: 'client',
-    config: { ...browser, entryPoints: ['src/client/shell.ts'], outfile: 'dist/shell.js' },
+    config: {
+      ...browser,
+      entryPoints: ['src/client/shell.ts'],
+      outfile: 'dist/shell.js',
+      loader: { '.png': 'file', '.jpg': 'file', '.webp': 'file', '.svg': 'file', '.mp4': 'file', '.webm': 'file' },
+      assetNames: 'announcements/[name]-[hash]',
+      publicPath: '/__ezdesign',
+    },
   },
   {
     group: 'client',
