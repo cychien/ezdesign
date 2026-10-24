@@ -439,7 +439,7 @@ other's - so there is no way to hand a conversation over. Nothing ezdesign owns 
 conversation stays in the thread's own picker with the agent that had it, and switching back finds it
 again, resumable by the agent that remembers it.
 
-The agent can design the way a designer works, through a five-step harness in the bundled skill:
+The agent can design the way a designer works, through a five-step harness shipped with the daemon:
 product, stack, design, components, make. It is off by default: set `EZDESIGN_DESIGN_HARNESS=1` in the
 environment the daemon starts from to enable it, and until then the shell has no switch, no agent is asked
 to use it, and the remembered choice for each project is kept untouched for when it is on. With
@@ -461,8 +461,8 @@ agent may go past it. An ordinary change edits code only. The two files change
 when you ask for it, when a correction has come twice, or when you state a rule - only on what you
 actually said, never on what the agent reads into a send-back; a change that only leaves a line stale is mentioned in the reply, not edited. Between them,
 `.ezdesign/config.json` records the stack and the browser tool the agent looks at the page with. The
-skill needs no ezdesign session to run: installed in Claude Code or Codex and invoked on its own, it
-walks the same steps against the project and the dev server.
+installed skill does not carry the harness: it opens reviews, and the harness is reached only
+through the daemon with the flag on.
 
 Turning the switch on in a project that lacks either file asks first, in the card above the
 composer: 啟用增強設計 - 增強設計會建立 PRODUCT.md 與 DESIGN.md，是否繼續？ 取消 leaves the switch off,

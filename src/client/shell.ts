@@ -829,11 +829,10 @@ function paintAnnotateMode(): void {
 const sideHead = h('div', 'ez-side-head')
 sideHead.append(headRow, target, deviceRow, annotateGroup)
 
-const banner = h('div', 'ez-banner')
-// `hidden`, not `style.display`: the notice stack tells an empty stack from a
-// full one with `:has(> *:not([hidden]))`, so a card that hides itself another
-// way is still counted and the stack casts a shadow over nothing.
-banner.hidden = true
+/** Session-wide state, over every view: the sidebar may be folded away or under the library. */
+const statusPill = h('div', 'ez-status')
+statusPill.setAttribute('role', 'status')
+statusPill.hidden = true
 
 // ---------------------------------------------------------------- update card
 
@@ -2098,7 +2097,7 @@ resumeClose.onclick = () => closeResume()
  *  cursor. Covering the last message or two is the price, and it is the right
  *  way round: the notice is what wants reading now. */
 const notices = h('div', 'ez-notices')
-notices.append(banner, updateCard, resumeCard, confirmCard)
+notices.append(updateCard, resumeCard, confirmCard)
 
 interface ConfirmOffer {
   /** What is being asked, not what it says: the answer is remembered under this,
@@ -2759,7 +2758,7 @@ function showLibrary(shown: boolean, { animate = false } = {}): void {
 
 // The resizer sits beside the sidebar rather than in it: it is one of the ways a
 // folded-away sidebar comes back, so it cannot go inert with the rest.
-root.append(stageWrap, resizer, sidebarSlot, activityBar)
+root.append(stageWrap, resizer, sidebarSlot, activityBar, statusPill)
 
 // ---------------------------------------------------------------- panning
 
@@ -3256,7 +3255,7 @@ function applyPickEffect(effect: PickEffect): void {
       return
     case 'banner':
       pickNotice = effect.text
-      paintBanner()
+      paintStatus()
       return
   }
 }
@@ -4338,12 +4337,12 @@ function watchFades(wrapper: HTMLElement, scroller: HTMLElement): () => void {
 const paintQueueFades = watchFades(queueScroll, queueList)
 const paintConvFades = watchFades(convScroll, convList)
 
-/** The one owner of the banner. `render()` runs on every snapshot, so anything
+/** The one owner of the status pill. `render()` runs on every snapshot, so anything
  *  that writes here from outside it would be wiped by the next one. A pick's
  *  notice has to survive that, and the session notice outranks it. */
 let pickNotice: string | null = null
 
-function bannerText(): string | null {
+function statusText(): string | null {
   if (snapshot?.state === 'ended') {
     return snapshot.endedBy === 'agent'
       ? 'Agent 已結束這次 review。要繼續的話，請 agent 重新開啟 session'
@@ -4357,17 +4356,18 @@ function bannerText(): string | null {
   return pickNotice
 }
 
-function paintBanner(): void {
+function paintStatus(): void {
+  statusPill.toggleAttribute('data-alert', daemonGone)
   if (daemonGone) {
-    const how = h('div')
-    how.append('在專案目錄執行 ', h('code', 'ez-banner-code', 'npx ezdesign'), ' 重新啟動')
-    banner.replaceChildren(h('div', 'ez-banner-title', 'ezdesign 已停止運作'), how)
-    banner.hidden = false
+    const how = h('span')
+    how.append('在專案目錄執行 ', h('code', 'ez-status-code', 'npx -y @cychien/ezdesign@latest'), ' 重新啟動')
+    statusPill.replaceChildren(h('span', 'ez-status-title', 'ezdesign 已停止運作'), how)
+    statusPill.hidden = false
     return
   }
-  const text = bannerText()
-  banner.hidden = !text
-  if (text) banner.textContent = text
+  const text = statusText()
+  statusPill.hidden = !text
+  if (text) statusPill.textContent = text
 }
 
 function paintAnnotateAvailability(): void {
@@ -4388,7 +4388,7 @@ function render(): void {
   // Explicitly, rather than leaving it to the overlay: a pick from the note box
   // runs with no mode armed, so the overlay's `setMode('off')` cancels nothing.
   if (ended) abortPick('ended')
-  paintBanner()
+  paintStatus()
   paintUpdate(s)
   account.render(s.account)
   paintAnnotateAvailability()
@@ -5031,7 +5031,7 @@ function setDaemonGone(gone: boolean): void {
   if (daemonGone === gone) return
   daemonGone = gone
   if (gone) sendMode('off')
-  paintBanner()
+  paintStatus()
   paintSendState()
   paintAnnotateAvailability()
 }
