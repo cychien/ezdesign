@@ -190,7 +190,7 @@ interface SnapshotWire {
   /** The conversations this review has had, newest first. ACP mode only. */
   chats?: ChatWire[]
   update?: UpdateWire
-  account?: AccountWire
+  account: AccountWire
   explores?: ExploreWire[]
   canExplore?: true
   designHarness?: boolean

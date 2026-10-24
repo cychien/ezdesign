@@ -116,7 +116,7 @@ import { type Library, LibraryError, openLibrary } from './library/index.js'
 import { lazyLibrary, libraryApiRouter, libraryAttachables } from './library-routes.js'
 import { extensionApiRouter } from './extension-routes.js'
 import { announcementApiRouter } from './announcement-routes.js'
-import { ACCOUNT_CALLBACK_PATH, Account, type AccountWire, apiBaseUrl, signInOffered } from './account.js'
+import { ACCOUNT_CALLBACK_PATH, Account, type AccountWire, apiBaseUrl } from './account.js'
 import { accountApiRouter, crossSiteAccountCallback } from './account-routes.js'
 import { installVersion, pruneInstalledVersions } from './installer.js'
 import { latestVersion, updateChecksDisabled } from './update-check.js'
@@ -250,7 +250,7 @@ interface SnapshotWire {
   /** A newer version or a stale skill to offer, and the update's progress once
    *  taken up. Daemon-wide: every session's shell shows the same one. */
   update?: UpdateWire
-  account?: AccountWire
+  account: AccountWire
   /** The explore rounds still on the page, oldest first. Not filtered by which
    *  conversation is showing: a round's variant stands in the page whichever
    *  thread the user is reading, and the strip is about the page. */
@@ -711,7 +711,6 @@ class SessionRuntime implements ProjectRuntime {
   private pendingExplore: string | null = null
   private designEffort: DesignEffort = 'medium'
   private readonly designHarnessAllowed = designHarnessEnabled()
-  private readonly signInOffered = signInOffered()
   /** What the user's browser signs the page in with, for the agent's own to open it the same way.
    *  Held in memory only, and handed out only for the token in the agent's environment. */
   private pageCookies: string | null = null
@@ -913,7 +912,6 @@ class SessionRuntime implements ProjectRuntime {
   snapshot(): SnapshotWire {
     const s = this.store.session
     const update = this.updater.snapshot()
-    const account = this.signInOffered ? this.account.snapshot() : undefined
     // A dismissed round is history: the thread still names it, but nothing of it
     // is on the page and nothing about it is on offer.
     const live = this.store.explores.filter((e) => e.status !== 'dismissed')
@@ -947,7 +945,7 @@ class SessionRuntime implements ProjectRuntime {
           }
         : {}),
       ...(update ? { update } : {}),
-      ...(account ? { account } : {}),
+      account: this.account.snapshot(),
       ...(live.length ? { explores: live } : {}),
       ...(this.canExplore ? { canExplore: true as const } : {}),
     }
@@ -1770,11 +1768,9 @@ class SessionRuntime implements ProjectRuntime {
     api.use(libraryApiRouter({ library: this.library }))
     api.use(extensionApiRouter({ distDir, version: this.version, dataDir: libraryHome() }))
     api.use(announcementApiRouter())
-    if (this.signInOffered) {
-      api.use(
-        accountApiRouter({ account: this.account, callbackUrl: () => `${this.shellOrigin}${ACCOUNT_CALLBACK_PATH}` }),
-      )
-    }
+    api.use(
+      accountApiRouter({ account: this.account, callbackUrl: () => `${this.shellOrigin}${ACCOUNT_CALLBACK_PATH}` }),
+    )
 
     api.get('/state', (_req, res) => res.json(this.snapshot()))
 
@@ -2389,9 +2385,7 @@ class SessionRuntime implements ProjectRuntime {
       '/announcements',
       express.static(join(distDir, 'announcements'), { immutable: true, maxAge: '1y', fallthrough: false }),
     )
-    if (this.signInOffered) {
-      rk.get(ACCOUNT_CALLBACK_PATH.slice(URL_PREFIX.length), crossSiteAccountCallback(this.account))
-    }
+    rk.get(ACCOUNT_CALLBACK_PATH.slice(URL_PREFIX.length), crossSiteAccountCallback(this.account))
     rk.use('/api', this.apiRouter())
     // Ours, whether or not anything answers it: never handed to the user's app.
     rk.use((_req, res) => res.sendStatus(404))

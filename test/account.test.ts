@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, before, beforeEach, test } from 'node:test'
 import type { Request, Response } from 'express'
-import { Account, AccountError, apiBaseUrl, requireAccount, signInOffered } from '../src/account.js'
+import { Account, AccountError, apiBaseUrl, requireAccount } from '../src/account.js'
 import { credentialsFile, readAccount, readInspireToken, writeInspireToken } from '../src/credentials.js'
 import { ADA, type FakeAccountService, fakeAccountService } from './helpers/account.js'
 
@@ -36,12 +36,6 @@ function stateOf(authorizeUrl: string) {
 test('the backend defaults to api.ezdesign.dev and can be pointed elsewhere', () => {
   assert.equal(apiBaseUrl({}), 'https://api.ezdesign.dev')
   assert.equal(apiBaseUrl({ EZDESIGN_API_URL: 'http://127.0.0.1:8787/' }), 'http://127.0.0.1:8787')
-})
-
-test('sign-in is offered only when EZDESIGN_ACCOUNT is on', () => {
-  assert.equal(signInOffered({}), false)
-  assert.equal(signInOffered({ EZDESIGN_ACCOUNT: '0' }), false)
-  assert.equal(signInOffered({ EZDESIGN_ACCOUNT: '1' }), true)
 })
 
 test('asks the service for a code-with-PKCE login that comes back to the loopback', () => {
