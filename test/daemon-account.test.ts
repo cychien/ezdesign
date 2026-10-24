@@ -13,7 +13,6 @@ let otherOrigin = ''
 before(async () => {
   service = await fakeAccountService()
   world.env.EZDESIGN_API_URL = service.url
-  world.env.EZDESIGN_ACCOUNT = '1'
   world.spawnDaemon()
   const { port } = await world.liveDaemon()
   const open = async () => {

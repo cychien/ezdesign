@@ -38,6 +38,8 @@ import { type GuestKind, parseGuestMessage } from './guest-messages.js'
 import { type CanvasUi, installCanvas } from './canvas/index.js'
 import { type LibraryView, installLibrary } from './library/index.js'
 import { type AccountWire, installAccount } from './account.js'
+import { installAnnouncement } from './announcement.js'
+import { ANNOUNCEMENTS } from './announcements/index.js'
 import { LIBRARY_TEST_IDS } from './library/names.js'
 import { chooseLibraryAttachments } from './library/picker.js'
 import {
@@ -188,7 +190,7 @@ interface SnapshotWire {
   /** The conversations this review has had, newest first. ACP mode only. */
   chats?: ChatWire[]
   update?: UpdateWire
-  account?: AccountWire
+  account: AccountWire
   explores?: ExploreWire[]
   canExplore?: true
   designHarness?: boolean
@@ -1459,7 +1461,7 @@ pickPill.append(icon(AlignSelectionIcon as IconNode, 14), pickPillText, pickPill
  *  while a variant strip is up does not land on top of it. */
 const stageDock = h('div', 'ez-stage-dock')
 stageDock.append(strip, pickPill)
-stageWrap.append(stage, shownWrap, stageDock)
+stageWrap.append(stage, shownWrap, stageDock, installAnnouncement(API, ANNOUNCEMENTS))
 
 let shownMenuOpen = false
 

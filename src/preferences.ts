@@ -9,6 +9,7 @@ export const PREFERENCES_FILE = join(DATA_DIR, 'preferences.json')
 interface Preferences {
   designHarness?: Record<string, boolean>
   designEffort?: Record<string, DesignEffort>
+  announcementsSeen?: string[]
 }
 
 function read(file: string): Preferences {
@@ -45,6 +46,19 @@ export function rememberDesignEffort(
 ): void {
   const prefs = read(file)
   write(file, { ...prefs, designEffort: { ...prefs.designEffort, [project]: effort } })
+}
+
+export function seenAnnouncements(file = PREFERENCES_FILE): string[] {
+  return read(file).announcementsSeen ?? []
+}
+
+export function rememberAnnouncementSeen(id: string, file = PREFERENCES_FILE): string[] {
+  const prefs = read(file)
+  const seen = prefs.announcementsSeen ?? []
+  if (seen.includes(id)) return seen
+  const next = [...seen, id]
+  write(file, { ...prefs, announcementsSeen: next })
+  return next
 }
 
 function write(file: string, prefs: Preferences): void {

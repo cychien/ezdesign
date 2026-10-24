@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto'
 import type { RequestHandler } from 'express'
-import { ACCOUNT_ENV, API_URL_ENV, APP_NAME, URL_PREFIX, envFlagOn } from './constants.js'
+import { API_URL_ENV, APP_NAME, URL_PREFIX } from './constants.js'
 import { type AccountCredential, clearAccount, credentialsFile, readAccount, writeAccount } from './credentials.js'
 
 export const DEFAULT_API_URL = 'https://api.ezdesign.dev'
@@ -29,10 +29,6 @@ export class AccountError extends Error {
 export function apiBaseUrl(env: NodeJS.ProcessEnv = process.env): string {
   const raw = env[API_URL_ENV]?.trim()
   return (raw || DEFAULT_API_URL).replace(/\/+$/, '')
-}
-
-export function signInOffered(env: NodeJS.ProcessEnv = process.env): boolean {
-  return envFlagOn(env[ACCOUNT_ENV])
 }
 
 const base64url = (bytes: Buffer) => bytes.toString('base64url')

@@ -508,7 +508,8 @@ body.ez-arranging .ez-frame {
   cursor: pointer;
   transition:
     background 0.12s ease,
-    color 0.12s ease;
+    color 0.12s ease,
+    box-shadow 0.12s ease;
 }
 
 .ez-activity-btn path {
@@ -521,8 +522,12 @@ body.ez-arranging .ez-frame {
 }
 
 .ez-activity-btn[aria-pressed='true'] {
-  background: var(--muted);
+  background: var(--panel);
   color: var(--foreground);
+  box-shadow:
+    inset 0 0 0 1px var(--border),
+    0 0 1px 0 rgb(16 12 12 / 0.06),
+    0 1px 1px 0 rgb(16 12 12 / 0.05);
 }
 
 /* The header's working dot, carried out here while the header is out of view:
@@ -3913,6 +3918,118 @@ body.ez-arranging .ez-frame {
 
 /* ------------------------------------------------------------------ canvas */
 
+/* ------------------------------------------------------------ announcement */
+
+.ez-announce {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  z-index: 4;
+  width: 288px;
+  max-width: calc(100% - 24px);
+  padding: 6px 6px 14px;
+  border-radius: 14px;
+  background: var(--ink);
+  color: #fff;
+  box-shadow:
+    0 0 0 1px oklch(100% 0 0 / 0.08),
+    0 12px 32px oklch(0% 0 0 / 0.24);
+  animation: ez-rise 0.16s ease-out;
+}
+
+/* Clear of the board's zoom tools, which hold the same corner. */
+.ez-stage[hidden] ~ .ez-announce {
+  bottom: 52px;
+}
+
+/* A pick or a variant choice is the task at hand; the news can wait for it. */
+.ez-stage-dock:has(> :not([hidden])) ~ .ez-announce {
+  display: none;
+}
+
+.ez-announce-media {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  object-fit: cover;
+  border-radius: 8px;
+  background: oklch(100% 0 0 / 0.06);
+}
+
+.ez-announce-text {
+  padding: 12px 8px 0;
+}
+
+.ez-announce-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.ez-announce-body {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+  margin: 4px 0 0;
+  color: oklch(100% 0 0 / 0.62);
+  font-size: 12.5px;
+  line-height: 1.55;
+  text-wrap: pretty;
+}
+
+.ez-announce-go {
+  display: inline-flex;
+  margin-top: 12px;
+  padding: 6px 12px;
+  border-radius: 7px;
+  background: #fff;
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 600;
+  text-decoration: none;
+  transition: background 0.12s ease;
+}
+
+.ez-announce-go:hover {
+  background: oklch(100% 0 0 / 0.86);
+}
+
+.ez-announce-x {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: oklch(0% 0 0 / 0.42);
+  color: #fff;
+  backdrop-filter: blur(8px);
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+
+.ez-announce-x:hover {
+  background: oklch(0% 0 0 / 0.62);
+}
+
+.ez-announce-go:focus-visible,
+.ez-announce-x:focus-visible {
+  outline: 2px solid oklch(100% 0 0 / 0.7);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ez-announce {
+    animation: none;
+  }
+}
+
 /* With canvases on, the stage area is a column: the tab strip, then whichever
    of the App stage and the boards is showing. */
 .ez-stage-wrap.ez-tabbed {
@@ -4627,7 +4744,7 @@ body.ez-arranging .ez-frame {
 
 .ez-library-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(184px, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 22px 16px;
   margin: 0;
   padding: 6px 32px 40px;
@@ -5010,8 +5127,8 @@ body.ez-arranging .ez-frame {
 }
 
 .ez-library-picker .ez-library-grid {
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-  gap: 18px 14px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
   padding: 4px 24px 24px;
 }
 
