@@ -1,4 +1,5 @@
 import { deviceCrop } from '../shared/geometry.js'
+import { STREAM_PERMISSIONS } from '../shared/streams.js'
 import {
   type CaptureView,
   DIALOG_PORT_PREFIX,
@@ -22,6 +23,9 @@ const now = () => performance.timeOrigin + performance.now()
 const TAG_PLACEHOLDER = '可留空或多個，以 Enter 或逗號隔開'
 const STREAM_NOTICE = '串流影片只會儲存連結、目前時間和畫面'
 const TOO_LARGE_NOTICE = '影片超過 200 MB，只會儲存連結和畫面'
+const FINDING_NOTICE = '正在找影片的原始檔…'
+const recordNotice = (seconds: number) =>
+  `這支影片無法直接下載，按下儲存後會從頭播放一次並錄下來（約 ${seconds} 秒），錄完前請不要關閉這個分頁`
 
 function el<K extends keyof HTMLElementTagNameMap>(
   tag: K,
@@ -66,6 +70,7 @@ const installCode = el('code')
 const copyButton = el('button', { type: 'button', class: 'quiet' }, '複製')
 const install = el('div', { class: 'install', 'data-testid': 'ez-capture-install', hidden: '' }, installCode, copyButton)
 const grantButton = el('button', { type: 'button', class: 'grant', hidden: '' })
+const streamsButton = el('button', { type: 'button', class: 'grant', 'data-testid': 'ez-capture-streams', hidden: '' }, '允許讀取網頁上的影片來源，之後存影片不用等它播完')
 const cancelButton = el('button', { type: 'button', 'data-testid': 'ez-capture-cancel' }, '取消')
 const saveButton = el('button', { type: 'button', class: 'primary', 'data-testid': 'ez-capture-save' }, '儲存')
 
@@ -77,6 +82,7 @@ card.append(
   status,
   install,
   grantButton,
+  streamsButton,
   el('footer', {}, cancelButton, saveButton),
 )
 overlay.append(card)
@@ -254,6 +260,18 @@ grantButton.addEventListener('click', () => {
   )
 })
 
+streamsButton.addEventListener('click', () => {
+  streamsButton.disabled = true
+  // In this click, as above: the prompt only shows inside a user gesture.
+  void chrome.permissions.request(STREAM_PERMISSIONS).then(
+    (granted) => {
+      if (granted) post({ type: 'streams-granted' })
+      else streamsButton.disabled = false
+    },
+    () => (streamsButton.disabled = false),
+  )
+})
+
 function hostText(v: CaptureView): string | null {
   switch (v.host.type) {
     case 'missing':
@@ -284,6 +302,7 @@ function render(v: CaptureView): void {
   install.hidden = installCommand === null
   installCode.textContent = installCommand ?? ''
 
+  streamsButton.hidden = v.offer !== 'streams'
   const permission = v.staging.type === 'needs-permission' ? v.staging.origin : null
   grantButton.hidden = permission === null
   if (permission) {
@@ -297,7 +316,15 @@ function render(v: CaptureView): void {
     v.error ??
     (v.staging.type === 'failed' ? v.staging.message : null) ??
     (permission ? '這張圖片需要你在這個網站的登入狀態才能讀取。' : null) ??
-    (v.notice === 'stream-link' ? STREAM_NOTICE : v.notice === 'too-large' ? TOO_LARGE_NOTICE : null) ??
+    (v.finding ? FINDING_NOTICE : null) ??
+    (v.staging.type === 'recording' ? `正在錄製影片 ${Math.floor(v.staging.seconds)} / ${Math.round(v.staging.total)} 秒` : null) ??
+    (v.notice === 'record' && v.recordSeconds !== null
+      ? recordNotice(v.recordSeconds)
+      : v.notice === 'stream-link'
+        ? STREAM_NOTICE
+        : v.notice === 'too-large'
+          ? TOO_LARGE_NOTICE
+          : null) ??
     (v.duplicate ? '已收藏過' : '')
   status.textContent = line
   status.dataset.tone = hostProblem || v.error || v.staging.type === 'failed' ? 'error' : 'info'

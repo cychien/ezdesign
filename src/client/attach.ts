@@ -27,9 +27,7 @@ import {
 import type { DraftNode, NumberedRef, RefWire } from './draft.js'
 import { type IconNode, icon } from './icon.js'
 import { type Make, type SlashCommand, attachSlashMenu } from './slash.js'
-
-/** Mirrors MAX_ATTACHMENT_BYTES in src/constants.ts, which is node-only. */
-const MAX_BYTES = 8 * 1024 * 1024
+import { attachmentByteLimit } from '../attachment-policy.js'
 
 /** Where a composer's file chips go. The shell and an App overlay upload to
  *  the api themselves (`directAttachments`); a canvas overlay has no api and
@@ -115,6 +113,7 @@ export interface AttachController {
   pending(): number
   /** Names of the uploads still in flight - what a snapshot cannot carry. */
   pendingNames(): string[]
+  paintNotes(noteFor: (ids: string[]) => string | null): void
   /** Empty the box without deleting anything: after a send the files belong to
    *  the batch. */
   reset(): void
@@ -350,8 +349,9 @@ export function attachify({
   }
 
   function add(file: File): void {
-    if (file.size > MAX_BYTES) {
-      showError(`${file.name || '這個檔案'} 超過單檔 8 MB 上限`)
+    const limit = attachmentByteLimit(file.type)
+    if (file.size > limit) {
+      showError(`${file.name || '這個檔案'} 超過單檔 ${Math.round(limit / 1e6)} MB 上限`)
       return
     }
     const chip = fileChip(file.name || '貼上的圖片')
@@ -615,6 +615,18 @@ export function attachify({
     refs: () => draftRefs(snapshot()),
     pending: () => [...uploading].filter((c) => editable.contains(c)).length,
     pendingNames: () => draftPendingNames(snapshot()),
+    paintNotes(noteFor) {
+      editable.querySelectorAll<HTMLElement>(`[${CHIP_ATTR}], [${PICK_ATTR}]`).forEach((chip) => {
+        const ids = chip.hasAttribute(PICK_ATTR)
+          ? parsePick(chip.getAttribute(PICK_ATTR)).map((f) => f.id)
+          : [chip.getAttribute(CHIP_ATTR) ?? ''].filter(Boolean)
+        const text = ids.length ? noteFor(ids) : null
+        let note = chip.querySelector<HTMLElement>('.ez-chip-note')
+        if (!text) return note?.remove()
+        note ??= chip.querySelector('.ez-chip-name')!.insertAdjacentElement('afterend', mk('span', 'ez-chip-note')) as HTMLElement
+        note.textContent = text
+      })
+    },
     // Either menu, whichever is up - at most one can be, since a trigger only
     // counts at the start of the word being typed.
     closeSlash: () => slash.close() || skillMenu.close(),

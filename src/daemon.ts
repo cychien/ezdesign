@@ -17,6 +17,8 @@ import { type CanvasEventWire, SSE_CANVAS, SSE_CANVAS_REMOVED } from './canvas/w
 import { type CanvasChange, type CanvasWorkspace, openCanvasWorkspace } from './canvas/workspace.js'
 import type { CanvasSnapshotWire } from './canvas/wire.js'
 import { refuseCrossSite } from './origin-gate.js'
+import { attachmentByteLimit } from './attachment-policy.js'
+import { SETTLE_BODY_LIMIT, parseVideoSettle } from './attachment-wire.js'
 import { type ProjectRuntime, SessionDirectory } from './session-directory.js'
 import { migrateLegacySessions } from './session-migrate.js'
 import {
@@ -24,7 +26,6 @@ import {
   IDLE_CHECK_MS,
   IDLE_STOP_MS,
   NO_IDLE_STOP_ENV,
-  MAX_ATTACHMENT_BYTES,
   APP_NAME,
   POLL_TIMEOUT_MS,
   ACP_NPM_PREFIX,
@@ -114,7 +115,7 @@ import {
 } from './registry.js'
 import { refreshCaptureInstall } from './capture-install/index.js'
 import { type Library, LibraryError, openLibrary } from './library/index.js'
-import { lazyLibrary, libraryApiRouter, libraryAttachables } from './library-routes.js'
+import { lazyLibrary, libraryApiRouter, libraryAttachables, storedFileOptions } from './library-routes.js'
 import { extensionApiRouter } from './extension-routes.js'
 import { announcementApiRouter } from './announcement-routes.js'
 import { ACCOUNT_CALLBACK_PATH, Account, type AccountWire, apiBaseUrl } from './account.js'
@@ -225,6 +226,7 @@ interface SnapshotWire {
   /** The tabs and the active one. */
   canvas: CanvasSnapshotWire
   annotations: Annotation[]
+  pendingVideos?: string[]
   conversation: unknown[]
   agentOnline: boolean
   /** Agent took a batch and hasn't come back to poll — it's off editing. */
@@ -372,9 +374,10 @@ function acpPrompt(
       : []),
     'Each item resolves to source: trust `anchor.source` (file:line) when present, else',
     'use `anchor.components` / `anchor.section` / `anchor.selector` / `anchor.text`.',
-    '`[file n]` in a comment is `attachments[n-1]` (read the file at `path`); one with an',
-    '`origin` is a reference from their library: `origin.pageUrl` is where it was captured',
-    'and `origin.note` what they wrote about it;',
+    '`[file n]` in a comment is `attachments[n-1]` (read the file at `path`, or, for a video,',
+    'what its `video.read` says); one with an `origin` is a reference from their library:',
+    '`origin.pageUrl` is where it was captured, `origin.note` what they wrote about it, and',
+    '`origin.videoFrame` that the file is one still of a video the library kept only as a link;',
     '`[ref n]` names the entry in `references` whose `n` matches.',
     'A reference carrying a `variant` is one the user chose in an explore round. Its html is',
     'the look they settled on, not code to paste: it is a stand-in that rendered in a shadow',
@@ -449,7 +452,8 @@ function explorePrompt(
     ...(attachments?.length
       ? [
           '',
-          '`[file n]` in that direction is `attachments[n-1]` here - read the file at `path`:',
+          '`[file n]` in that direction is `attachments[n-1]` here - read the file at `path`, or,',
+          'for a video, what its `video.read` says:',
           '',
           '```json',
           JSON.stringify(attachments, null, 2),
@@ -923,6 +927,10 @@ class SessionRuntime implements ProjectRuntime {
       ...(this.app.kind === 'attached' ? { app: this.app.origin } : {}),
       canvas: this.canvases.read.snapshot(this.agentHasCanvasTools),
       annotations: this.store.annotations,
+      ...(() => {
+        const pending = this.store.pendingVideoIds
+        return pending.length ? { pendingVideos: pending } : {}
+      })(),
       conversation: this.store.visibleConversation,
       agentOnline:
         this.pollWaiters.size > 0 || (!!this.acp && this.acp.snapshot().state !== 'exited'),
@@ -1734,23 +1742,41 @@ class SessionRuntime implements ProjectRuntime {
     // Ahead of the JSON parser on purpose: a pasted .json file arrives as
     // `application/json`, and behind it would be parsed as a request body and
     // held to the JSON limit instead of the attachment one.
-    api.post(
-      '/attachments',
-      express.raw({ type: () => true, limit: MAX_ATTACHMENT_BYTES }),
-      (req, res) => {
-        const bytes = req.body
-        if (!Buffer.isBuffer(bytes) || bytes.byteLength === 0) {
-          return res.status(400).json({ error: 'attachment body is empty' })
-        }
-        const mime = (req.get('content-type') ?? '').split(';')[0]?.trim()
-        const attachment = this.store.addAttachment(
-          decodeAttachmentName(req.get('x-ez-name')),
-          mime || 'application/octet-stream',
-          bytes,
-        )
-        res.json(attachment)
-      },
-    )
+    api.post('/attachments', (req, res, next) => {
+      const mime = (req.get('content-type') ?? '').split(';')[0]?.trim() || 'application/octet-stream'
+      const limit = attachmentByteLimit(mime)
+      if (Number(req.get('content-length')) > limit) return res.status(413).json({ error: 'attachment is too large' })
+      this.store
+        .receiveAttachment(decodeAttachmentName(req.get('x-ez-name')), mime, req, limit)
+        .then((stored) => {
+          if (stored === 'too-large') return res.status(413).json({ error: 'attachment is too large' })
+          if (stored === 'empty') return res.status(400).json({ error: 'attachment body is empty' })
+          if (stored.video) this.broadcast()
+          res.json(stored)
+        }, next)
+    })
+
+    api.get('/attachments/:id/content', (req, res) => {
+      const entry = this.store.attachmentIndex[req.params.id]
+      if (!entry) return res.status(404).json({ error: 'attachment not found' })
+      res.sendFile(
+        this.store.attachmentPath(entry),
+        storedFileOptions(entry.mime),
+        // A Range reader drops requests it no longer needs, so a stream cut short
+        // after the headers went out is the reader's choice, not a failure.
+        (error) => {
+          if (error && !res.headersSent) res.status(404).json({ error: 'attachment not found' })
+        },
+      )
+    })
+
+    api.put('/attachments/:id/video', express.json({ limit: SETTLE_BODY_LIMIT }), (req, res) => {
+      const settle = parseVideoSettle(req.body)
+      if (typeof settle === 'string') return res.status(400).json({ error: settle })
+      const status = this.store.settleVideo(req.params.id, settle)
+      if (status.state !== 'gone') this.broadcast()
+      res.status(status.state === 'gone' ? 404 : 200).json(status)
+    })
 
     // Ahead of the shared parser, with its own: an oversize frame must come back
     // as the tool's refusal, not as the attachment handler's 413. Ahead of
@@ -1873,6 +1899,7 @@ class SessionRuntime implements ProjectRuntime {
         case 'referenced':
           return res.status(409).json({ error: 'attachment belongs to queued or sent feedback' })
         default:
+          this.broadcast()
           return res.json({ ok: true })
       }
     })
@@ -1889,11 +1916,11 @@ class SessionRuntime implements ProjectRuntime {
             return res.status(404).json({ error: `素材 ${found.missing} 已經不在素材庫裡了` })
           }
           const pick = newId()
-          res.json(
-            found.ok.map(({ title, file, origin }) =>
-              this.store.copyAttachment(title, file.mediaType, file.path, { pick, ...origin }),
-            ),
+          const copied = found.ok.map(({ title, file, origin }) =>
+            this.store.copyAttachment(title, file.mediaType, file.path, { pick, ...origin }),
           )
+          if (copied.some((a) => a.video)) this.broadcast()
+          res.json(copied)
         },
         (error: unknown) => (error instanceof LibraryError ? res.status(503).json({ error: error.message }) : next(error)),
       ).catch(next)
@@ -1953,6 +1980,7 @@ class SessionRuntime implements ProjectRuntime {
       if (!ids) return res.status(400).json({ error: 'attachments must be an array of ids' })
       const files = this.store.getAttachments(ids)
       if (!files) return res.status(400).json({ error: 'unknown attachment id' })
+      if (this.store.holdsPendingVideo(files)) return res.status(409).json({ error: '影片還在處理，處理完才能交給 agent' })
       const refs = parseReferences(req.body?.references)
       if (!refs) return res.status(400).json({ error: 'references must be an array of anchors' })
       const skills = Array.isArray(req.body?.skills)
@@ -2147,6 +2175,7 @@ class SessionRuntime implements ProjectRuntime {
       if (!ids) return res.status(400).json({ error: 'attachments must be an array of ids' })
       const files = this.store.getAttachments(ids)
       if (!files) return res.status(400).json({ error: 'unknown attachment id' })
+      if (files.some((f) => f.video?.state === 'pending')) return res.status(409).json({ error: '影片還在處理，處理完才能交給 agent' })
       const refs = parseReferences(req.body?.references)
       if (!refs) return res.status(400).json({ error: 'references must be an array of anchors' })
       const round = await this.startExplore({
@@ -2371,7 +2400,7 @@ class SessionRuntime implements ProjectRuntime {
     // copy would leave the previous version's UI driving the new daemon.
     // A canvas frame asks for the overlay at `?v=<its content key>`: forty frames
     // then fetch it once, and a rebuild or a replaced daemon is a different url.
-    for (const file of ['overlay.js', 'overlay.css', 'shell.js', 'shell.css', 'events-worker.js']) {
+    for (const file of ['overlay.js', 'overlay.css', 'shell.js', 'shell.css', 'events-worker.js', 'video-digest.js']) {
       const type = file.endsWith('.css') ? 'text/css' : 'text/javascript'
       const keyed = file.startsWith('overlay.')
       rk.get(`/${file}`, (req, res) =>

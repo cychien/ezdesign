@@ -95,6 +95,12 @@ declare namespace chrome {
       target: { tabId: number; frameIds?: number[] }
       files: string[]
     }): Promise<{ frameId: number; result?: unknown }[]>
+    function executeScript<A extends unknown[], R>(injection: {
+      target: { tabId: number; frameIds?: number[] }
+      world: 'MAIN' | 'ISOLATED'
+      func: (...args: A) => R
+      args: A
+    }): Promise<{ frameId: number; result?: Awaited<R> }[]>
   }
 
   namespace offscreen {
@@ -102,8 +108,27 @@ declare namespace chrome {
   }
 
   namespace permissions {
-    function request(permissions: { origins: string[] }): Promise<boolean>
-    function contains(permissions: { origins: string[] }): Promise<boolean>
+    interface Permissions {
+      origins?: string[]
+      permissions?: string[]
+    }
+    function request(permissions: Permissions): Promise<boolean>
+    function contains(permissions: Permissions): Promise<boolean>
+    const onAdded: events.Event<(permissions: Permissions) => void>
+  }
+
+  /** Optional: present only once the user grants it. */
+  namespace webRequest {
+    interface RequestDetails {
+      url: string
+      tabId: number
+      type: string
+      timeStamp: number
+    }
+    const onBeforeRequest: {
+      addListener(listener: (details: RequestDetails) => void, filter: { urls: string[]; types?: string[] }): void
+      hasListener(listener: (details: RequestDetails) => void): boolean
+    }
   }
 
   namespace storage {
@@ -112,5 +137,6 @@ declare namespace chrome {
       set(items: Record<string, unknown>): Promise<void>
     }
     const local: Area
+    const session: Area & { remove(keys: string | string[]): Promise<void> }
   }
 }

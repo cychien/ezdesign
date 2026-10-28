@@ -32,6 +32,20 @@ const MAX_NOTE = 10_000
 const ITEM_ID = /^[0-9A-HJKMNP-TV-Z]{26}$/
 const MAX_PASTE_BYTES = 64 * 1024 * 1024
 
+/** How a stored file goes out on the session origin. It lives under
+ *  `~/.ezdesign`, which `send` would refuse as a dotfile path, and a saved SVG
+ *  or HTML file opened on its own must not run there. */
+export function storedFileOptions(mediaType: string): { dotfiles: 'allow'; headers: Record<string, string> } {
+  return {
+    dotfiles: 'allow',
+    headers: {
+      'content-type': mediaType,
+      'x-content-type-options': 'nosniff',
+      'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'; sandbox",
+    },
+  }
+}
+
 const itemUrl = (id: string, file: 'thumbnail' | 'original', sha256: string) =>
   `${URL_PREFIX}/api/library/items/${id}/${file}?v=${sha256.slice(0, 16)}`
 
@@ -59,10 +73,21 @@ export function libraryAttachables(
     const file = item && storedOriginal(item)
     if (!item || !file) return { missing: id }
     const { pageUrl, pageTitle, mediaUrl } = item.source
+    const { content } = item
     ok.push({
       title: pageTitle || hostOf(pageUrl),
       file,
-      origin: { libraryItemId: item.id, pageUrl, pageTitle, mediaUrl, note: item.note, tags: [...item.tags] },
+      origin: {
+        libraryItemId: item.id,
+        pageUrl,
+        pageTitle,
+        mediaUrl,
+        note: item.note,
+        tags: [...item.tags],
+        ...(content.type === 'link'
+          ? { videoFrame: { reason: content.reason, playbackTime: content.playbackTime } }
+          : {}),
+      },
     })
   }
   return { ok }
@@ -241,17 +266,10 @@ export function libraryApiRouter(host: LibraryRouteHost): Router {
         res.sendFile(
           stored.path,
           {
-            // The library lives under `~/.ezdesign`, which `send` would refuse as a dotfile path.
-            dotfiles: 'allow',
+            ...storedFileOptions(stored.mediaType),
             // Content-addressed: a url names its bytes for good.
             maxAge: req.query.v ? '1y' : 0,
             immutable: Boolean(req.query.v),
-            headers: {
-              'content-type': stored.mediaType,
-              'x-content-type-options': 'nosniff',
-              // A saved SVG opened on its own must not run on the session origin.
-              'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'; sandbox",
-            },
           },
           (error) => {
             if (error && !res.headersSent) refuse(res, 404, 'not-found', `the ${file} of ${req.params.id} is missing`)

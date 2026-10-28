@@ -1162,6 +1162,23 @@ body.ez-arranging .ez-frame {
   cursor: default;
 }
 
+.ez-send-waiting {
+  animation: ez-send-wait 1.4s ease-in-out infinite;
+}
+
+@keyframes ez-send-wait {
+  50% {
+    opacity: 0.55;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ez-send-waiting {
+    animation: none;
+    opacity: 0.7;
+  }
+}
+
 /* ---------------------------------------------------------------- banner */
 
 /* Every notice the review raises, in one place: floating at the foot of the
@@ -1906,6 +1923,17 @@ body.ez-arranging .ez-frame {
   margin-top: 4px;
   line-height: 1.55;
   word-break: break-word;
+}
+
+.ez-qi-video {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--ink-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.ez-qi-video-failed {
+  color: var(--code-ink);
 }
 
 /* The row with its comment open as a box. It keeps its own sunken fill and the
@@ -2660,6 +2688,12 @@ body.ez-arranging .ez-frame {
    local daemon, and a spinner that flashes is louder than the wait it reports. */
 .ez-chip-pending {
   opacity: 0.55;
+}
+
+.ez-chip-note {
+  margin-left: 4px;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.8;
 }
 
 /* Read-only echoes in the queue and the thread, where they are the only thing on
@@ -5262,6 +5296,7 @@ body.ez-arranging .ez-frame {
 
 .ez-library-detail-stage {
   position: relative;
+  container-type: size;
   display: flex;
   align-items: center;
   justify-content: center;

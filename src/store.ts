@@ -1,6 +1,21 @@
 import { createHash, randomBytes } from 'node:crypto'
-import { constants as fsConstants, copyFileSync, mkdirSync, readFileSync, readdirSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
+import { once } from 'node:events'
+import {
+  constants as fsConstants,
+  copyFileSync,
+  createWriteStream,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  renameSync,
+  rmSync,
+  statSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs'
 import { join } from 'node:path'
+import type { Readable } from 'node:stream'
+import { isVideoMime } from './attachment-policy.js'
 import { ATTACHMENT_GRACE_MS, SESSIONS_DIR } from './constants.js'
 import type { AcpConfigValue } from './acp-config.js'
 import type { Camera, CanvasId, ShellView, TabId, ViewStore } from './canvas/types.js'
@@ -19,7 +34,10 @@ import type {
   FeedbackBatch,
   Reference,
   SessionEndedBy,
+  VideoDigest,
+  VideoFrames,
 } from './protocol.js'
+import type { VideoSettle, VideoStatusWire } from './attachment-wire.js'
 
 /** Whether two anchors point at the same place on the page, for the one
  *  question that needs to know: can these two explore rounds both have their
@@ -111,6 +129,36 @@ function dedupeName(name: string, taken: Set<string>): string {
     const candidate = `${stem}-${n}${ext}`
     if (!taken.has(candidate)) return candidate
   }
+}
+
+function isPendingVideo(a: Attachment): boolean {
+  return a.video?.state === 'pending'
+}
+
+function sheetFileName(id: string, sheet: number): string {
+  return `${id}.sheet-${sheet}.jpg`
+}
+
+function sheetNumbers(video: VideoFrames): number[] {
+  return [1, ...video.motion.flatMap((m) => (m.sheet === null ? [] : [m.sheet]))]
+}
+
+function attachmentFiles(a: Attachment): string[] {
+  const own = `${a.id}-${a.name}`
+  return a.video?.state === 'ready' ? [own, ...sheetNumbers(a.video).map((n) => sheetFileName(a.id, n))] : [own]
+}
+
+function statusOf(a: Attachment): VideoStatusWire {
+  const video = a.video
+  if (!video || video.state === 'ready') return { state: 'ready' }
+  if (video.state === 'failed') return { state: 'failed', reason: video.reason }
+  return { state: 'pending' }
+}
+
+function digestOf(settle: VideoSettle): VideoDigest {
+  if (settle.state === 'failed') return settle
+  const { sheets: _, ...frames } = settle
+  return frames
 }
 
 /** The dev server on the App tab. Not identity (see `sessionKey`): attached by
@@ -422,6 +470,7 @@ export class SessionStore implements ViewStore {
   startExplore(
     round: Omit<ExploreState, 'status' | 'variants' | 'selected' | 'startedAt'>,
   ): ExploreState {
+    if (round.attachments?.some(isPendingVideo)) throw new Error('a video still being digested cannot start an explore')
     const fresh: ExploreState = {
       ...round,
       status: 'generating',
@@ -564,6 +613,7 @@ export class SessionStore implements ViewStore {
     skills: string[] = [],
     view?: BatchView,
   ): FeedbackBatch | null {
+    if (this.holdsPendingVideo(attachments)) throw new Error('a video still being digested cannot be sent')
     const items = this.annotations
     // A skill on its own is a batch: "run this over what you can see" is a
     // request, even with nothing annotated and nothing typed.
@@ -654,18 +704,54 @@ export class SessionStore implements ViewStore {
     return this.readJson<Record<string, Attachment>>('attachments.json') ?? {}
   }
 
-  attachmentPath(a: Attachment): string {
+  attachmentPath(a: Pick<Attachment, 'id' | 'name'>): string {
     return join(this.attachmentsDir, `${a.id}-${a.name}`)
   }
 
+  sheetPath(a: Pick<Attachment, 'id'>, sheet: number): string {
+    return join(this.attachmentsDir, sheetFileName(a.id, sheet))
+  }
+
   addAttachment(rawName: string, mime: string, bytes: Buffer): Attachment {
-    return this.storeAttachment(rawName, mime, bytes.byteLength, (path) => writeFileSync(path, bytes))
+    return this.storeAttachment(newId(), rawName, mime, bytes.byteLength, (path) => writeFileSync(path, bytes))
+  }
+
+  async receiveAttachment(
+    rawName: string,
+    mime: string,
+    body: Readable,
+    limit: number,
+  ): Promise<Attachment | 'too-large' | 'empty'> {
+    const id = newId()
+    mkdirSync(this.attachmentsDir, { recursive: true })
+    const part = join(this.attachmentsDir, `${id}.part`)
+    const out = createWriteStream(part)
+    let size = 0
+    try {
+      for await (const chunk of body as AsyncIterable<Buffer>) {
+        size += chunk.byteLength
+        if (size > limit) break
+        if (!out.write(chunk)) await once(out, 'drain')
+      }
+      out.end()
+      await once(out, 'close')
+    } catch (error) {
+      out.destroy()
+      rmSync(part, { force: true })
+      throw error
+    }
+    if (size > limit || size === 0) {
+      rmSync(part, { force: true })
+      return size === 0 ? 'empty' : 'too-large'
+    }
+    return this.storeAttachment(id, rawName, mime, size, (path) => renameSync(part, path))
   }
 
   /** A copy, not a link to the library's file: a session owns its attachments
    *  outright, and the sweep deletes them. A clone where the filesystem has one. */
   copyAttachment(title: string, mime: string, from: string, origin: AttachmentOrigin): Attachment {
     return this.storeAttachment(
+      newId(),
       libraryAttachmentName(title, mime),
       mime,
       statSync(from).size,
@@ -675,6 +761,7 @@ export class SessionStore implements ViewStore {
   }
 
   private storeAttachment(
+    id: string,
     rawName: string,
     mime: string,
     size: number,
@@ -684,12 +771,13 @@ export class SessionStore implements ViewStore {
     const index = this.attachmentIndex
     const taken = new Set(Object.values(index).map((a) => a.name))
     const attachment: Attachment = {
-      id: newId(),
+      id,
       name: dedupeName(sanitizeAttachmentName(rawName, mime), taken),
       mime,
       size,
       createdAt: Date.now(),
       ...(origin ? { origin } : {}),
+      ...(isVideoMime(mime) ? { video: { state: 'pending' as const } } : {}),
     }
     mkdirSync(this.attachmentsDir, { recursive: true })
     // Bytes before index: an index entry pointing at no file would break every
@@ -712,6 +800,34 @@ export class SessionStore implements ViewStore {
     return found
   }
 
+  get pendingVideoIds(): string[] {
+    return Object.values(this.attachmentIndex).flatMap((a) => (isPendingVideo(a) ? [a.id] : []))
+  }
+
+  holdsPendingVideo(extra: readonly Attachment[] = []): boolean {
+    return [...extra, ...this.annotations.flatMap((a) => a.attachments ?? [])].some(isPendingVideo)
+  }
+
+  settleVideo(id: string, settle: VideoSettle): VideoStatusWire {
+    const index = this.attachmentIndex
+    const entry = index[id]
+    if (!entry) return { state: 'gone' }
+    if (!isPendingVideo(entry)) return statusOf(entry)
+    if (settle.state === 'ready') {
+      settle.sheets.forEach((bytes, i) => writeFileSync(this.sheetPath(entry, i + 1), bytes))
+    }
+    const settled: Attachment = { ...entry, video: digestOf(settle) }
+    this.writeJson('attachments.json', { ...index, [id]: settled })
+    const queue = this.annotations
+    if (queue.some((a) => a.attachments?.some((x) => x.id === id))) {
+      this.writeJson(
+        'queue.json',
+        queue.map((a) => (a.attachments ? { ...a, attachments: a.attachments.map((x) => (x.id === id ? settled : x)) } : a)),
+      )
+    }
+    return statusOf(settled)
+  }
+
   removeAttachment(id: string): 'ok' | 'referenced' | 'unknown' {
     const index = this.attachmentIndex
     const target = index[id]
@@ -727,10 +843,12 @@ export class SessionStore implements ViewStore {
     if (!list?.length) return
     const index = this.attachmentIndex
     for (const a of list) {
-      try {
-        unlinkSync(this.attachmentPath(a))
-      } catch {
-        /* already gone - the index entry is still worth dropping */
+      for (const name of attachmentFiles(a)) {
+        try {
+          unlinkSync(join(this.attachmentsDir, name))
+        } catch {
+          /* already gone - the index entry is still worth dropping */
+        }
       }
       delete index[a.id]
     }
@@ -764,7 +882,7 @@ export class SessionStore implements ViewStore {
 
     // Files written before the crash that stopped their index entry. Nothing
     // will ever name them, so age is the only thing that can decide.
-    const kept = new Set(Object.values(this.attachmentIndex).map((a) => `${a.id}-${a.name}`))
+    const kept = new Set(Object.values(this.attachmentIndex).flatMap(attachmentFiles))
     let entries: string[]
     try {
       entries = readdirSync(this.attachmentsDir)

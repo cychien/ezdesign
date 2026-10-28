@@ -11,6 +11,7 @@ import type {
   WorkerToDialog,
 } from '../shared/messages.js'
 import type { TabRef } from '../shared/plan.js'
+import type { StreamSource } from '../shared/streams.js'
 
 type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never
 export type Ask<K extends AnsweredType> = DistributiveOmit<Extract<AnsweredRequest, { t: K }>, 'id'>
@@ -36,7 +37,7 @@ export interface HostLink {
   state(options?: { recheck?: boolean }): Promise<HostState>
   request<A extends Ask<AnsweredType>>(ask: A, options?: RequestOptions): Promise<ReplyOf<A['t']>>
   upload(
-    input: { capture: string; kind: 'image' | 'screenshot' | 'frame'; context: CaptureContext },
+    input: { capture: string; kind: 'image' | 'screenshot' | 'frame' | 'video'; context: CaptureContext },
     bytes: Uint8Array,
     options?: RequestOptions,
   ): Promise<Staged>
@@ -46,7 +47,7 @@ export interface HostLink {
 
 export interface MediaClient {
   warm(): Promise<void>
-  thumbnail(pieces: AsyncIterable<string>, at?: number): Promise<EncodedThumb | null>
+  thumbnail(pieces: AsyncIterable<string>, at?: number | 'opening'): Promise<EncodedThumb | null>
   crop(screenshot: string, rect: ViewportRect | null, viewport: Size, original: boolean): Promise<MediaReplies['crop']>
 }
 
@@ -55,6 +56,12 @@ export const THUMBNAIL_SOURCE_MAX_BYTES = 256 * 1024 * 1024
 export interface PageAgent {
   ensure(tab: TabRef, frameId: number): Promise<boolean>
   send<C extends PageCommand>(tab: TabRef, frameId: number, command: C): Promise<PageReplies[C['type']]>
+  originalOf(tab: TabRef, frameId: number): Promise<string | null>
+}
+
+export interface StreamObserver {
+  granted(): Promise<boolean>
+  sourcesFor(tabId: number): Promise<StreamSource[]>
 }
 
 export interface BrowserOps {
@@ -63,6 +70,8 @@ export interface BrowserOps {
   openDialogWindow(captureId: string): Promise<number>
   closeWindow(windowId: number): Promise<void>
   fetchWithCookies(url: string, signal: AbortSignal): Promise<Uint8Array>
+  /** Without credentials: a CDN that allows the extension by CORS refuses a request that carries cookies. */
+  fetchPublic(url: string, signal: AbortSignal): Promise<Uint8Array>
   readonly userAgent: string
   now(): number
 }

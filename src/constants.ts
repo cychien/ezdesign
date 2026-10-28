@@ -81,10 +81,6 @@ export function assertControlPortEnv(): void {
   controlPortRange()
 }
 
-/** Per-file cap on a pasted attachment. A retina screenshot runs 2-5 MB, so this
- *  clears the case the feature exists for while keeping a stray video out.
- *  Mirrored in `src/client/attach.ts`, which cannot import from this module. */
-export const MAX_ATTACHMENT_BYTES = 8 * 1024 * 1024
 /** How long an attachment nothing references survives the sweep. Long enough
  *  that a composer left open across a daemon restart still resolves its ids. */
 export const ATTACHMENT_GRACE_MS = 24 * 60 * 60_000

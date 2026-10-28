@@ -105,12 +105,12 @@ test('CV-p3-protocol-table: a relayed annotation is attributed and a bad relay o
     reqId: 'r2',
     op: { op: 'annotate', body: { comment: 'x', anchor: { ...anchor, frame: { canvasId: 'c1', frameId: 'f1' } } } },
   })
-  const bytes = new ArrayBuffer(3)
+  const file = new Blob([new Uint8Array(3)])
   assert.deepEqual(
-    parseGuestMessage({ type: 'ez:relay', reqId: 'r3', op: { op: 'upload', name: 'a.png', mime: 'image/png', bytes } }, CANVAS),
-    { type: 'ez:relay', reqId: 'r3', op: { op: 'upload', name: 'a.png', mime: 'image/png', bytes } },
+    parseGuestMessage({ type: 'ez:relay', reqId: 'r3', op: { op: 'upload', name: 'a.png', mime: 'image/png', file } }, CANVAS),
+    { type: 'ez:relay', reqId: 'r3', op: { op: 'upload', name: 'a.png', mime: 'image/png', file } },
   )
-  assert.equal(parseGuestMessage({ type: 'ez:relay', reqId: 'r4', op: { op: 'upload', name: 'a', mime: 'b', bytes: 'nope' } }, CANVAS), null)
+  assert.equal(parseGuestMessage({ type: 'ez:relay', reqId: 'r4', op: { op: 'upload', name: 'a', mime: 'b', file: 'nope' } }, CANVAS), null)
   assert.equal(parseGuestMessage({ type: 'ez:relay', reqId: 'r5', op: { op: 'send' } }, CANVAS), null)
 })
 

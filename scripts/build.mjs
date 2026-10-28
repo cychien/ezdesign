@@ -68,6 +68,10 @@ export const targets = [
   },
   {
     group: 'client',
+    config: { ...browser, entryPoints: ['src/client/video-digest/worker.ts'], outfile: 'dist/video-digest.js' },
+  },
+  {
+    group: 'client',
     config: { ...browser, entryPoints: ['src/client/overlay.css'], outfile: 'dist/overlay.css' },
   },
   {

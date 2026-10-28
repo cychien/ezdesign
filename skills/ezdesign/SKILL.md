@@ -15,7 +15,8 @@ it, is that request: open a review on the project's running dev server.
 The daemon has done the routing: its prompt says whether the turn is a feedback batch or an
 explore round, and what to do with it. Do not route again. A batch carries the page's `url`, the
 annotated `items` with their `anchor` (source `file:line`, selector, viewport), `references`, and
-`attachments`. An explore adds one element's capture - its markup, computed styles, slot and the
+`attachments`. A video attachment carries `video`: never open its `path`; read what `video.read`
+says, which points you at contact sheets of its frames, each labelled with its time. An explore adds one element's capture - its markup, computed styles, slot and the
 page's tokens - and takes each variant back through a tool, editing no file.
 
 ## Canvases

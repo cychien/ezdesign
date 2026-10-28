@@ -1,4 +1,5 @@
 import type { CaptureKind, FrameGrab } from './messages.js'
+import type { SourceKind } from './streams.js'
 
 export interface MenuClick {
   mediaType?: string
@@ -19,10 +20,11 @@ export type Trigger =
   | { type: 'region'; tab: TabRef }
 
 export type BytePath =
-  | { via: 'host-download'; url: string }
+  | { via: 'host-download'; url: string; as?: SourceKind }
   | { via: 'worker-fetch'; url: string }
   | { via: 'page-read'; url: string }
   | { via: 'screenshot' }
+  | { via: 'record' }
   | { via: 'none' }
 
 export type ThumbPath =
@@ -87,7 +89,11 @@ export function planCapture(trigger: Trigger): CapturePlan | null {
   if (isHttp(srcUrl)) {
     return { kind: 'video', bytes: { via: 'host-download', url: srcUrl }, thumb, preview, dialog, region: null }
   }
-  return { kind: 'video', bytes: { via: 'none' }, thumb, preview, dialog, region: null }
+  return { kind: 'video', bytes: restricted ? { via: 'none' } : { via: 'record' }, thumb, preview, dialog, region: null }
+}
+
+export function planWithoutRecording(plan: CapturePlan): CapturePlan {
+  return plan.bytes.via === 'record' ? { ...plan, bytes: { via: 'none' } } : plan
 }
 
 export function planAfterRefusal(plan: CapturePlan): CapturePlan {

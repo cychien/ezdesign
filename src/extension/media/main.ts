@@ -1,6 +1,7 @@
 import { fromBase64, toBase64 } from '../shared/bytes.js'
 import { deviceCrop } from '../shared/geometry.js'
 import type { EncodedThumb, MediaReplies, MediaRequest } from '../shared/messages.js'
+import { BLANK_SAMPLE, isBlank, openingTimes } from '../shared/opening.js'
 import { encodeThumbnail } from '../shared/thumbnail.js'
 
 const fed = new Map<string, Uint8Array[]>()
@@ -35,7 +36,7 @@ async function thumbnailOf(pieces: Uint8Array[]): Promise<EncodedThumb | null> {
   }
 }
 
-async function videoFrameOf(pieces: Uint8Array[], at: number): Promise<EncodedThumb | null> {
+async function videoFrameOf(pieces: Uint8Array[], at: number | 'opening'): Promise<EncodedThumb | null> {
   const url = URL.createObjectURL(new Blob(pieces as BlobPart[]))
   const video = document.createElement('video')
   video.muted = true
@@ -48,8 +49,20 @@ async function videoFrameOf(pieces: Uint8Array[], at: number): Promise<EncodedTh
       })
     video.src = url
     await ready('loadeddata')
-    video.currentTime = Math.min(at, Math.max(0, video.duration - 0.001))
-    await ready('seeked')
+    const seek = async (t: number) => {
+      video.currentTime = Math.min(t, Math.max(0, video.duration - 0.001))
+      await ready('seeked')
+    }
+    if (at === 'opening') {
+      const sample = new OffscreenCanvas(BLANK_SAMPLE, BLANK_SAMPLE).getContext('2d', { willReadFrequently: true })!
+      const times = openingTimes(video.duration)
+      for (const t of times) {
+        await seek(t)
+        sample.drawImage(video, 0, 0, BLANK_SAMPLE, BLANK_SAMPLE)
+        if (!isBlank(sample.getImageData(0, 0, BLANK_SAMPLE, BLANK_SAMPLE).data)) break
+        if (t === times.at(-1)) await seek(0)
+      }
+    } else await seek(at)
     if (!video.videoWidth) return null
     return await encodeThumbnail(video, { width: video.videoWidth, height: video.videoHeight })
   } catch {

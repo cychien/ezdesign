@@ -113,6 +113,7 @@ export function directLink(api: string): OverlayLink {
 /** A request the shell never answers - it reloaded - fails after this, which a
  *  composer shows as a failed save, the same as a network error. */
 const RELAY_TIMEOUT_MS = 10_000
+const UPLOAD_BYTES_PER_MS = 20_000
 
 /** Requests carry a `reqId`; `ez:relay-done {reqId, ok, body}` settles them.
  *  Snapshots arrive as `ez:snapshot`, holding only this frame's annotations. */
@@ -141,14 +142,14 @@ export function relayLink(config: { shellOrigin: string }): OverlayLink {
     }
   })
 
-  const request = (op: Record<string, unknown>, transfer?: Transferable[]) =>
+  const request = (op: Record<string, unknown>, timeoutMs = RELAY_TIMEOUT_MS) =>
     new Promise<unknown>((resolve, reject) => {
       const reqId = `r${++seq}-${Date.now().toString(36)}`
       pending.set(reqId, { resolve, reject })
       window.setTimeout(() => {
         if (pending.delete(reqId)) reject(new Error('the review did not answer'))
-      }, RELAY_TIMEOUT_MS)
-      window.parent?.postMessage({ type: 'ez:relay', reqId, op }, shellOrigin, transfer)
+      }, timeoutMs)
+      window.parent?.postMessage({ type: 'ez:relay', reqId, op }, shellOrigin)
     })
 
   return {
@@ -158,13 +159,12 @@ export function relayLink(config: { shellOrigin: string }): OverlayLink {
       await request({ op: 'annotate', body })
     },
     attachments: {
+      // The file, not `arrayBuffer()`: a Blob is structured-cloned without reading
+      // it, so this frame never holds a 200 MB recording's bytes on its heap.
       upload: async (file) => {
-        const bytes = await file.arrayBuffer()
         const name = file.name || 'image.png'
-        return (await request(
-          { op: 'upload', name, mime: file.type || 'application/octet-stream', bytes },
-          [bytes],
-        )) as { id: string; name: string }
+        const op = { op: 'upload', name, mime: file.type || 'application/octet-stream', file }
+        return (await request(op, RELAY_TIMEOUT_MS + file.size / UPLOAD_BYTES_PER_MS)) as { id: string; name: string }
       },
       discard: (id) => {
         request({ op: 'discard-upload', id }).catch(() => {})

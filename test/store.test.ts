@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
-import { existsSync, mkdtempSync, readFileSync, utimesSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, readdirSync, utimesSync, writeFileSync } from 'node:fs'
+import { Readable } from 'node:stream'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { test } from 'node:test'
@@ -654,4 +655,103 @@ test('a round still generating when the store is reopened is over, because no tu
   // Idempotent: nothing left to settle, nothing rewritten.
   reopened.settleExplores()
   assert.equal(reopened.explores.find((e) => e.id === 'partial')!.variants.length, 1)
+})
+
+const JPEG = (n: number) => new Uint8Array([0xff, 0xd8, 0xff, n])
+const settled = (sheets: number) =>
+  ({
+    state: 'ready',
+    durationMs: 3000,
+    width: 1920,
+    height: 1080,
+    fps: 60,
+    audio: false,
+    motion: Array.from({ length: sheets - 1 }, (_, i) => ({
+      fromMs: i * 100,
+      toMs: i * 100 + 50,
+      region: { x: 0, y: 0, width: 10, height: 10 },
+      frames: 3,
+      shown: 3,
+      sheet: i + 2,
+    })),
+    sheets: Array.from({ length: sheets }, (_, i) => JPEG(i)),
+  }) as const
+
+test('a video is stored pending, may be queued, and holds a send back until it settles', () => {
+  const store = new SessionStore('/tmp/project-video-1')
+  const rec = store.addAttachment('rec.mov', 'video/quicktime', bytes('mov'))
+  assert.deepEqual(rec.video, { state: 'pending' })
+  assert.deepEqual(store.pendingVideoIds, [rec.id])
+  store.addAnnotation({ id: 'v1', kind: 'element', comment: 'see [file 1]', anchor, createdAt: 1, attachments: [rec] })
+  assert.equal(store.holdsPendingVideo(), true)
+  assert.throws(() => store.sendBatch('go'), /still being digested/)
+
+  assert.deepEqual(store.settleVideo(rec.id, settled(2)), { state: 'ready' })
+  assert.deepEqual(store.pendingVideoIds, [])
+  assert.equal(store.annotations[0]!.attachments![0]!.video!.state, 'ready', 'the queued copy moved with the index')
+  assert.equal(store.holdsPendingVideo(), false)
+  const batch = store.sendBatch('go')!
+  assert.equal(batch.items[0]!.attachments![0]!.video!.state, 'ready')
+})
+
+test('settleVideo is first-writer-wins: a second settle answers with the first digest', () => {
+  const store = new SessionStore('/tmp/project-video-2')
+  const rec = store.addAttachment('rec.mp4', 'video/mp4', bytes('mp4'))
+  assert.deepEqual(store.settleVideo(rec.id, { state: 'failed', reason: 'unsupported-codec', detail: 'hvc1' }), {
+    state: 'failed',
+    reason: 'unsupported-codec',
+  })
+  assert.deepEqual(store.settleVideo(rec.id, settled(2)), { state: 'failed', reason: 'unsupported-codec' })
+  assert.equal(existsSync(store.sheetPath(rec, 1)), false, 'the loser wrote no sheet')
+})
+
+test('settling a deleted video writes no sheet', () => {
+  const store = new SessionStore('/tmp/project-video-3')
+  const rec = store.addAttachment('rec.webm', 'video/webm', bytes('webm'))
+  assert.equal(store.removeAttachment(rec.id), 'ok')
+  assert.deepEqual(store.settleVideo(rec.id, settled(2)), { state: 'gone' })
+  assert.equal(existsSync(store.sheetPath(rec, 1)), false)
+})
+
+test("dropping a video deletes its sheets; the sweep keeps a kept video's sheets and collects orphan ones and .part files", () => {
+  const store = new SessionStore('/tmp/project-video-4')
+  const kept = store.addAttachment('kept.mov', 'video/quicktime', bytes('a'))
+  const dropped = store.addAttachment('dropped.mov', 'video/quicktime', bytes('b'))
+  store.settleVideo(kept.id, settled(3))
+  store.settleVideo(dropped.id, settled(2))
+  assert.deepEqual([...readFileSync(store.sheetPath(kept, 3))], [0xff, 0xd8, 0xff, 2])
+
+  assert.equal(store.removeAttachment(dropped.id), 'ok')
+  assert.equal(existsSync(store.attachmentPath(dropped)), false)
+  assert.equal(existsSync(store.sheetPath(dropped, 1)), false)
+  assert.equal(existsSync(store.sheetPath(dropped, 2)), false)
+
+  const orphanSheet = join(store.attachmentsDir, 'ffffffffffff.sheet-1.jpg')
+  const part = join(store.attachmentsDir, 'eeeeeeeeeeee.part')
+  for (const path of [orphanSheet, part]) {
+    writeFileSync(path, 'x')
+    const old = new Date(Date.now() - ATTACHMENT_GRACE_MS - 1000)
+    utimesSync(path, old, old)
+  }
+  for (const n of [1, 2, 3]) {
+    const old = new Date(Date.now() - ATTACHMENT_GRACE_MS - 1000)
+    utimesSync(store.sheetPath(kept, n), old, old)
+  }
+  store.addAnnotation({ id: 'k', kind: 'element', comment: 'c', anchor, createdAt: 1, attachments: [store.attachmentIndex[kept.id]!] })
+  store.sweepAttachments()
+  assert.equal(existsSync(orphanSheet), false)
+  assert.equal(existsSync(part), false)
+  for (const n of [1, 2, 3]) assert.equal(existsSync(store.sheetPath(kept, n)), true)
+})
+
+test('a streamed upload over its limit, or empty, is refused and leaves no file', async () => {
+  const store = new SessionStore('/tmp/project-video-5')
+  assert.equal(await store.receiveAttachment('big.png', 'image/png', Readable.from([Buffer.alloc(6), Buffer.alloc(6)]), 10), 'too-large')
+  assert.equal(await store.receiveAttachment('none.png', 'image/png', Readable.from([]), 10), 'empty')
+  const ok = await store.receiveAttachment('ok.mov', 'video/quicktime', Readable.from([Buffer.from('ab'), Buffer.from('cd')]), 10)
+  assert.ok(typeof ok === 'object')
+  assert.equal(readFileSync(store.attachmentPath(ok), 'utf8'), 'abcd')
+  assert.deepEqual(ok.video, { state: 'pending' })
+  const leftovers = readdirSync(store.attachmentsDir).filter((f) => f.endsWith('.part'))
+  assert.deepEqual(leftovers, [])
 })

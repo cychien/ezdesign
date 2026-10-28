@@ -49,7 +49,50 @@ export interface Attachment {
   createdAt: number
   /** Set when the file was taken from the capture library rather than pasted. */
   origin?: AttachmentOrigin
+  video?: VideoState
 }
+
+export type VideoState = { state: 'pending' } | VideoDigest
+
+export type VideoDigest = VideoFrames | VideoUnreadable
+
+export interface VideoFrames {
+  state: 'ready'
+  durationMs: number
+  width: number
+  height: number
+  fps: number
+  audio: boolean
+  motion: MotionStretch[]
+}
+
+export interface MotionStretch {
+  fromMs: number
+  toMs: number
+  region: VideoRect
+  frames: number
+  shown: number
+  sheet: number | null
+}
+
+export interface VideoRect {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+export interface VideoUnreadable {
+  state: 'failed'
+  reason: DigestFailure
+  detail: string
+}
+
+export type DigestFailure =
+  | 'unsupported-browser'
+  | 'unsupported-codec'
+  | 'unreadable'
+  | 'crashed'
 
 /** Where a library item was captured, and what the user wrote about it. Copied
  *  onto the attachment at the moment it is chosen: the library is free to change
@@ -63,6 +106,7 @@ export interface AttachmentOrigin {
   mediaUrl: string | null
   note: string
   tags: string[]
+  videoFrame?: { reason: 'stream' | 'too-large'; playbackTime: number | null }
 }
 
 /** An attachment as the log keeps it: its name, and the pick it was chosen in
@@ -78,7 +122,28 @@ export interface AgentAttachment {
   size: number
   path: string
   origin?: AttachmentOrigin
+  video?: AgentVideo
 }
+
+export type AgentVideo =
+  | {
+      read: string
+      duration: number
+      width: number
+      height: number
+      fps: number
+      audio: boolean
+      overview: string
+      motion: {
+        from: number
+        to: number
+        region: VideoRect
+        frames: number
+        shown: number
+        sheet?: string
+      }[]
+    }
+  | { read: string; unreadable: DigestFailure }
 
 /** An element the user pointed the agent *at* from inside a comment - "make this
  *  match that one" - as opposed to the element the comment is *about*. Same

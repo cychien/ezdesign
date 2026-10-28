@@ -172,6 +172,13 @@ export function openDetail(options: DetailOptions): void {
       video.playsInline = true
       video.preload = 'metadata'
       if (item.thumbnail) video.poster = item.thumbnail.url
+      // Sized from the item, not the element: until it plays, a video is as big
+      // as its poster, and the poster is the 400 px thumbnail.
+      if (item.dimensions) {
+        const { width, height } = item.dimensions
+        video.style.aspectRatio = `${width} / ${height}`
+        video.style.width = `min(100cqw, ${width}px, calc(100cqh * ${width / height}))`
+      }
       media = video
     } else if (original || item.thumbnail) {
       const img = h('img', 'ez-library-detail-media')

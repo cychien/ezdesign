@@ -42,6 +42,8 @@ import { installAnnouncement } from './announcement.js'
 import { ANNOUNCEMENTS } from './announcements/index.js'
 import { LIBRARY_TEST_IDS } from './library/names.js'
 import { chooseLibraryAttachments } from './library/picker.js'
+import { videoDigests } from './video-digest/runner.js'
+import type { DigestFailure } from '../protocol.js'
 import {
   type CanvasEventWire,
   type CanvasSnapshotWire,
@@ -122,7 +124,12 @@ interface AnnotationWire {
   }
   /** Full records, not echoes: the queue holds the annotation itself, and the
    *  editor has to be able to hand every field back unchanged. */
-  attachments?: { id: string; name: string; origin?: { pick: string } }[]
+  attachments?: {
+    id: string
+    name: string
+    origin?: { pick: string }
+    video?: { state: 'pending' | 'ready' } | { state: 'failed'; reason: DigestFailure }
+  }[]
   references?: NumberedRef[]
 }
 
@@ -179,6 +186,7 @@ interface SnapshotWire {
   /** The tab strip is drawn from it. */
   canvas: CanvasSnapshotWire
   annotations: AnnotationWire[]
+  pendingVideos?: string[]
   conversation: ConversationWire[]
   agentOnline: boolean
   agentBusy: boolean
@@ -262,6 +270,7 @@ const API = `${PREFIX}/api`
  *  rather than one still running the old build's code. */
 const BUILD = (document.currentScript as HTMLScriptElement | null)?.dataset.version ?? ''
 const shellAttachments = directAttachments(API)
+const digests = videoDigests(API, `${PREFIX}/video-digest.js?v=${BUILD}`, () => paintVideos())
 /** Hoisted: the shortcut table is built while this module is still initialising,
  *  so it cannot live down with the rest of the pick code. */
 const MOD_LABEL = modLabel(navigator.userAgent)
@@ -3375,6 +3384,54 @@ function paintSendState(): void {
   sendBtn.disabled = !canSend()
 }
 
+let sendWhenReady = false
+
+function setSendWhenReady(on: boolean): void {
+  sendWhenReady = on
+  sendBtn.classList.toggle('ez-send-waiting', on)
+  sendBtn.setAttribute('aria-busy', String(on))
+  sendBtn.title = on ? '影片處理完就會送出（再按一次取消）' : '送出給 agent（⌘/Ctrl + Enter）'
+}
+
+function videosHoldSend(): boolean {
+  const pending = new Set(snapshot?.pendingVideos ?? [])
+  if (!pending.size) return false
+  const queued = snapshot?.annotations.flatMap((a) => a.attachments?.map((f) => f.id) ?? []) ?? []
+  return [...noteAttach.ids(), ...editAttach.ids(), ...queued].some((id) => pending.has(id))
+}
+
+const VIDEO_UNREADABLE: Record<DigestFailure, string> = {
+  'unsupported-browser': '這個瀏覽器無法解碼影片',
+  'unsupported-codec': '瀏覽器不支援這段影片的編碼',
+  unreadable: '讀不出影片內容',
+  crashed: '擷取畫面時中斷',
+}
+
+const videoLines = new Map<HTMLElement, NonNullable<AnnotationWire['attachments']>>()
+
+const progressOf = (ids: string[]): string =>
+  `${Math.round((ids.reduce((sum, id) => sum + digests.progress(id), 0) / ids.length) * 100)}%`
+
+function paintVideos(): void {
+  const pending = new Set(snapshot?.pendingVideos ?? [])
+  const noteFor = (ids: string[]) => {
+    const waiting = ids.filter((id) => pending.has(id))
+    return waiting.length ? `處理中 ${progressOf(waiting)}` : null
+  }
+  noteAttach.paintNotes(noteFor)
+  editAttach.paintNotes(noteFor)
+  for (const [line, videos] of videoLines) {
+    const failed = videos.find((f) => f.video?.state === 'failed')
+    const waiting = videos.filter((f) => pending.has(f.id)).map((f) => f.id)
+    line.classList.toggle('ez-qi-video-failed', !waiting.length && !!failed)
+    if (waiting.length) line.textContent = `影片處理中 ${progressOf(waiting)}`
+    else if (failed?.video?.state === 'failed') {
+      line.textContent = `${failed.name}：${VIDEO_UNREADABLE[failed.video.reason]}，agent 看不到畫面`
+    } else line.textContent = ''
+  }
+  if (sendWhenReady && !videosHoldSend()) void sendBatch()
+}
+
 /** Keep the usage figure honest.
  *
  *  It goes stale for a reason the review cannot see: the allowance is the
@@ -3403,6 +3460,11 @@ setInterval(refreshLimit, LIMIT_BEAT_MS)
 
 async function sendBatch(): Promise<void> {
   if (!canSend()) return
+  if (videosHoldSend()) {
+    setSendWhenReady(!sendWhenReady)
+    return
+  }
+  setSendWhenReady(false)
   const count = snapshot?.annotations.length ?? 0
   const attachments = noteAttach.ids()
   const references = noteAttach.refs()
@@ -4040,6 +4102,7 @@ function paintQueue(annotations: AnnotationWire[]): void {
   queueDrawn = signature
 
   queueList.textContent = ''
+  videoLines.clear()
   annotations.forEach((a, i) => {
     const li = h('li', 'ez-queue-item')
     const head = h('div', 'ez-qi-head')
@@ -4090,6 +4153,12 @@ function paintQueue(annotations: AnnotationWire[]): void {
     if (a.comment || a.references?.length || a.attachments?.length) li.append(row.box)
     const files = fileChips(row.unplacedFiles)
     if (files) li.append(files)
+    const videos = a.attachments?.filter((f) => f.video && f.video.state !== 'ready') ?? []
+    if (videos.length) {
+      const line = h('div', 'ez-qi-video')
+      videoLines.set(line, videos)
+      li.append(line)
+    }
     queueList.appendChild(li)
   })
   capQueue()
@@ -4443,6 +4512,8 @@ function render(): void {
   reviewPanelBtn.toggleAttribute('data-working', agentStatus.classList.contains('ez-working'))
 
   paintQueue(s.annotations)
+  digests.observe(s.pendingVideos ?? [])
+  paintVideos()
 
   convList.textContent = ''
   let prevRole: string | null = null

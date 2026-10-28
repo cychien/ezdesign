@@ -4,10 +4,12 @@ import { existsSync, mkdtempSync, readFileSync, readdirSync, statSync } from 'no
 import { type IncomingMessage, type Server, type ServerResponse, createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { DatabaseSync } from 'node:sqlite'
 import { type TestContext, test } from 'node:test'
 import { EXTENSION_CHUNK_BYTES, HOST_MESSAGE_MAX_BYTES, PROTOCOL, negotiateProtocol } from '../src/capture-wire.js'
+import { ALL_FORMATS, BufferSource, Input } from 'mediabunny'
 import { type HostProcess, spawnHost } from './helpers/native-host.js'
 
 const hello = { t: 'hello', id: 0, protocol: PROTOCOL, extension: { version: 'test' } }
@@ -77,7 +79,7 @@ test('CX-host-origin: a caller that is not the pinned extension is refused and n
   allowed.send(hello)
   const welcome = (await allowed.next(reply(0))) as { t: string; value: { protocol: number; library: { dir: string } } }
   assert.equal(welcome.t, 'result')
-  assert.equal(welcome.value.protocol, 1)
+  assert.equal(welcome.value.protocol, PROTOCOL.max)
   assert.equal(await closed(allowed), 0)
 })
 
@@ -96,7 +98,7 @@ test('CX-p2-handshake: version skew is named, and nothing runs before hello', as
   const skewed = host(t, dir)
   skewed.send({ ...hello, protocol: { min: 5, max: 6 } })
   const { error } = (await skewed.next(reply(0))) as { error?: { code: string; host: unknown } }
-  assert.deepEqual([error?.code, error?.host], ['incompatible', { min: 1, max: 1 }])
+  assert.deepEqual([error?.code, error?.host], ['incompatible', PROTOCOL])
   assert.equal(await skewed.exited, 0)
   assert.deepEqual(readdirSync(dir), [], 'an incompatible extension never opens the library')
 
@@ -143,6 +145,19 @@ test('CX-chunked: a 20 MB capture sent in chunks arrives byte-identical, in fram
   const blobs = filesUnder(join(dir, 'library', 'blobs'))
   assert.equal(blobs.length, 1)
   assert.equal(sha256(readFileSync(blobs[0]!)), sha256(bytes))
+})
+
+test('a recorded stream uploads as a video and commits as a WebM item', async (t) => {
+  const dir = dataDir()
+  const h = await greeted(t, dir)
+  const webm = Buffer.concat([Buffer.from([0x1a, 0x45, 0xdf, 0xa3]), Buffer.from('\x42\x82\x84webm'), Buffer.alloc(2048, 5)])
+  const staged = (await upload(h, webm, 'video')) as { value: { outcome: string; mediaType: string } }
+  assert.deepEqual([staged.value.outcome, staged.value.mediaType], ['file', 'video/webm'])
+  h.send({ t: 'commit', id: 3, capture, tags: [], note: '' })
+  assert.equal((await h.next(reply(3))).t, 'result')
+  assert.equal(await closed(h), 0)
+  const blobs = filesUnder(join(dir, 'library', 'blobs'))
+  assert.deepEqual(blobs.map((b) => b.endsWith('.webm')), [true])
 })
 
 test('CX-chunked: a wrong sha256 or a gap answers integrity and leaves the stage empty', async (t) => {
@@ -217,6 +232,66 @@ const download = (id: number, url: string, kind = 'image', cap = `cap_dl_${id}_0
   referer: 'https://site.test/',
   userAgent: 'ezdesign-test',
   context: { ...context, mediaUrl: url },
+})
+
+const HLS = join(dirname(fileURLToPath(import.meta.url)), 'fixtures', 'hls')
+
+const hlsFile = (path: string) => (res: ServerResponse, req: IncomingMessage) => {
+  const body = readFileSync(join(HLS, path))
+  const type = path.endsWith('.m3u8') ? 'application/vnd.apple.mpegurl' : path.endsWith('.mpeg') ? 'video/mp2t' : 'video/mp4'
+  const range = /bytes=(\d+)-(\d*)/.exec(req.headers.range ?? '')
+  if (!range) return void res.writeHead(200, { 'content-type': type, 'content-length': body.length }).end(body)
+  const start = Number(range[1])
+  const end = range[2] ? Math.min(Number(range[2]), body.length - 1) : body.length - 1
+  res
+    .writeHead(206, { 'content-type': type, 'content-range': `bytes ${start}-${end}/${body.length}`, 'content-length': end - start + 1 })
+    .end(body.subarray(start, end + 1))
+}
+
+test('a stream is measured, then joined from its segments into one MP4, from fMP4 and from MPEG-TS alike', async (t) => {
+  const files = ['fmp4/master.m3u8', 'fmp4/media.m3u8', 'fmp4/init.mp4', ...[0, 1, 2, 3].map((n) => `fmp4/seg${n}.m4s`)]
+  files.push('ts/media.m3u8', ...[0, 1, 2, 3].map((n) => `ts/seg${n}.mpeg`))
+  const base = await fixtures(t, Object.fromEntries(files.map((f) => [`/${f}`, hlsFile(f)])))
+  const dir = dataDir()
+  const h = await greeted(t, dir)
+
+  h.send({
+    t: 'probe',
+    id: 1,
+    sources: [
+      { url: `${base}/fmp4/master.m3u8`, as: 'hls' },
+      { url: `${base}/ts/media.m3u8`, as: 'hls' },
+      { url: `${base}/fmp4/init.mp4`, as: 'file' },
+      { url: `${base}/nothing.m3u8`, as: 'hls' },
+    ],
+    referer: 'https://site.test/',
+    userAgent: 'ezdesign-test',
+  })
+  const probed = (await h.next(reply(1))) as { value: { durations: (number | null)[]; masters: boolean[] } }
+  assert.deepEqual(probed.value.masters, [true, false, false, false])
+  const [fmp4, ts, bare, missing] = probed.value.durations
+  assert.ok(Math.abs(fmp4! - 4) < 0.1 && Math.abs(ts! - 4) < 0.1, `durations ${probed.value.durations}`)
+  assert.ok(bare === null || bare === 0, `an init segment alone is not a video: ${bare}`)
+  assert.equal(missing, null)
+
+  for (const [id, url] of [[2, `${base}/fmp4/master.m3u8`], [4, `${base}/ts/media.m3u8`]] as const) {
+    const cap = `cap_hls_${id}_000000`
+    h.send({ ...download(id, url, 'video', cap), as: 'hls' })
+    const staged = (await h.next(reply(id))) as { value: { outcome: string; mediaType: string } }
+    assert.deepEqual([staged.value.outcome, staged.value.mediaType], ['file', 'video/mp4'], url)
+    h.send({ t: 'commit', id: id + 1, capture: cap, tags: [], note: '' })
+    assert.equal((await h.next(reply(id + 1))).t, 'result')
+  }
+  assert.equal(await closed(h), 0)
+  const blobs = filesUnder(join(dir, 'library', 'blobs'))
+  assert.equal(blobs.length, 2)
+  for (const blob of blobs) {
+    const input = new Input({ formats: ALL_FORMATS, source: new BufferSource(readFileSync(blob)) })
+    const track = await input.getPrimaryVideoTrack()
+    assert.deepEqual([track?.codec, track?.displayWidth, track?.displayHeight], ['avc', 320, 180])
+    assert.ok(Math.abs((await input.computeDuration()) - 4) < 0.1)
+    input.dispose()
+  }
 })
 
 test('the host downloads a capture itself, and says why when it cannot', async (t) => {

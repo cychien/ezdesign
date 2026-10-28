@@ -2,18 +2,22 @@ import type {
   Anchor,
   AgentAttachment,
   AgentItem,
+  AgentVideo,
   Annotation,
   Attachment,
   AttachmentEcho,
   ConversationItem,
+  DigestFailure,
   FrameRef,
   Reference,
+  VideoDigest,
 } from './protocol.js'
 
 /** Just enough of the session store to locate a file. Taking this rather than a
  *  directory keeps the `<id>-<name>` convention in the one place that writes it. */
 export interface AttachmentLocator {
   attachmentPath(a: Attachment): string
+  sheetPath(a: Attachment, sheet: number): string
 }
 
 /** A canvas frame's and its canvas's names, for a label. Names change, so they
@@ -29,6 +33,53 @@ export function toAgentAttachment(a: Attachment, files: AttachmentLocator): Agen
     size: a.size,
     path: files.attachmentPath(a),
     ...(a.origin ? { origin: a.origin } : {}),
+    ...(a.video && a.video.state !== 'pending' ? { video: toAgentVideo(a, a.video, files) } : {}),
+  }
+}
+
+const READ_FRAMES =
+  'A recording you cannot open: do not read `path`. Read `overview` first, then the `sheet` of each ' +
+  'stretch of `motion` you need. A sheet is a grid of frames in time order, left to right, each ' +
+  'labelled with its time in seconds; a motion sheet is cropped to `region` (pixels of the video) and ' +
+  'starts with the frame before the motion, so consecutive labels give you its timing and easing. ' +
+  '`shown` < `frames` means only that many of its changed frames are on the sheet, evenly spaced.'
+
+const READ_AUDIO = ' It has sound you cannot hear: if it may matter, ask the user what is said.'
+
+const UNREADABLE: Record<DigestFailure, (detail: string) => string> = {
+  'unsupported-browser': () => 'the browser the review ran in cannot decode video',
+  'unsupported-codec': (detail) => `that browser cannot decode its codec (${detail})`,
+  unreadable: (detail) => `its file could not be read as a video (${detail})`,
+  crashed: () => 'the browser stopped while taking them',
+}
+
+const seconds = (ms: number): number => Math.round(ms) / 1000
+
+function toAgentVideo(a: Attachment, video: VideoDigest, files: AttachmentLocator): AgentVideo {
+  if (video.state === 'failed') {
+    return {
+      read:
+        `No frames could be taken from this video: ${UNREADABLE[video.reason](video.detail)}. ` +
+        'Do not try to read `path`. Tell the user, and ask them what it shows.',
+      unreadable: video.reason,
+    }
+  }
+  return {
+    read: READ_FRAMES + (video.audio ? READ_AUDIO : ''),
+    duration: seconds(video.durationMs),
+    width: video.width,
+    height: video.height,
+    fps: video.fps,
+    audio: video.audio,
+    overview: files.sheetPath(a, 1),
+    motion: video.motion.map((m) => ({
+      from: seconds(m.fromMs),
+      to: seconds(m.toMs),
+      region: m.region,
+      frames: m.frames,
+      shown: m.shown,
+      ...(m.sheet === null ? {} : { sheet: files.sheetPath(a, m.sheet) }),
+    })),
   }
 }
 
@@ -106,7 +157,7 @@ export function toAgentItem(a: Annotation, files: AttachmentLocator, frames?: Fr
   // Numbered, not a bare list: the comment carries `[file n]` where the user put
   // it, and n is this array's position - so a comment about two files says which
   // is which instead of leaving the agent to guess from a comma-separated set.
-  a.attachments?.forEach((x, i) => parts.push(`[file ${i + 1}: ${x.name}]`))
+  a.attachments?.forEach((x, i) => parts.push(`[file ${i + 1}: ${x.name}${x.video ? ', video' : ''}]`))
   const attachments = toAgentAttachments(a.attachments, files)
   return {
     id: a.id,
