@@ -135,6 +135,7 @@ export interface Tab {
   overlayShown(): Promise<void>
   drag(from: { x: number; y: number }, to: { x: number; y: number }): Promise<void>
   click(at: { x: number; y: number }): Promise<void>
+  hover(at: { x: number; y: number }): Promise<void>
   press(key: 'Escape'): Promise<void>
   saveFromMenu(srcUrl: string, mediaType: 'image' | 'video'): Promise<CaptureId>
   dialog(id: CaptureId): Promise<Dialog>
@@ -163,6 +164,9 @@ export interface LaunchOptions {
   withoutHost?: boolean
   /** A real display scale: `captureVisibleTab` ignores CDP's emulated one. */
   deviceScaleFactor?: number
+  /** As if the user had allowed the extension to see every page's streams.
+   *  Chrome's prompt is browser UI; the grant it makes is what is installed. */
+  streamsAllowed?: boolean
 }
 
 export async function launch(chrome: string, options: LaunchOptions): Promise<Harness> {
@@ -181,6 +185,13 @@ export async function launch(chrome: string, options: LaunchOptions): Promise<Ha
   writeFileSync(join(evidence, 'install.txt'), `${install.stdout}${install.stderr}exit ${install.status}\n`)
   if (install.status !== 0) throw new Error(`extension install failed:\n${install.stderr}`)
   if (options.withoutHost) rmSync(join(profile, 'NativeMessagingHosts'), { recursive: true, force: true })
+  if (options.streamsAllowed) {
+    const path = join(dataDir, 'extension', 'manifest.json')
+    const manifest = JSON.parse(readFileSync(path, 'utf8')) as { permissions: string[]; host_permissions?: string[] }
+    manifest.permissions.push('webRequest')
+    manifest.host_permissions = ['<all_urls>']
+    writeFileSync(path, JSON.stringify(manifest, null, 2))
+  }
   await options.seed?.(dataDir)
 
   const routes = new Map<string, Fixture>()
@@ -308,6 +319,9 @@ export async function launch(chrome: string, options: LaunchOptions): Promise<Ha
     async click(at) {
       await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', ...at, button: 'left', buttons: 1, clickCount: 1 }, session)
       await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', ...at, button: 'left', buttons: 0, clickCount: 1 }, session)
+    },
+    async hover(at) {
+      await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', ...at, button: 'none', buttons: 0 }, session)
     },
     press: (name) => key(session, name),
     async saveFromMenu(srcUrl, mediaType) {

@@ -8,6 +8,8 @@ import { type CaptureSeam, SEAM_GLOBAL, type SeamClickData, type SeamTab } from 
 import { createCaptures } from './capture.js'
 import { createHostLink, extensionVersion } from './host-link.js'
 import { MEDIA_DOCUMENT, createMediaClient } from './media.js'
+import { TARGET_ATTR, originalOfTarget } from '../page/originals.js'
+import { createStreamObserver } from './streams.js'
 import type { BrowserOps, DialogPort, PageAgent } from './ports.js'
 
 export const MENU_ID = 'ez-save'
@@ -39,7 +41,15 @@ const page: PageAgent = {
     }
     return reply as PageReplies[C['type']]
   },
+  async originalOf(tab, frameId) {
+    const [run] = await chrome.scripting
+      .executeScript({ target: { tabId: tab.id, frameIds: [frameId] }, world: 'MAIN', func: originalOfTarget, args: [TARGET_ATTR] })
+      .catch(() => [])
+    return typeof run?.result === 'string' ? run.result : null
+  },
 }
+
+const streams = createStreamObserver()
 
 const DIALOG_WINDOW = { width: 480, height: 640 }
 
@@ -56,6 +66,11 @@ const browser: BrowserOps = {
     if (!response.ok) throw new Error(`the source answered ${response.status}`)
     return new Uint8Array(await response.arrayBuffer())
   },
+  async fetchPublic(url, signal) {
+    const response = await fetch(url, { credentials: 'omit', signal })
+    if (!response.ok) throw new Error(`the source answered ${response.status}`)
+    return new Uint8Array(await response.arrayBuffer())
+  },
   userAgent: navigator.userAgent,
   now: () => performance.timeOrigin + performance.now(),
 }
@@ -67,6 +82,7 @@ const captures = createCaptures({
   media,
   page,
   browser,
+  streams,
   newId: () => crypto.randomUUID().replace(/-/g, '') as CaptureId,
   onIdle: () => void host.state().then(reloadWhenStale),
 })
@@ -132,6 +148,10 @@ chrome.tabs.onRemoved.addListener((tabId) => captures.tabClosed(tabId))
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   const request = message as WorkerRequest
   if (request?.to !== 'worker' || sender.id !== chrome.runtime.id) return undefined
+  if (request.type === 'record-progress') {
+    captures.recordProgress(request.captureId, request.seconds)
+    return undefined
+  }
   void hostState({ recheck: request.recheck }).then(sendResponse)
   return true
 })

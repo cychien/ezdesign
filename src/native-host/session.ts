@@ -23,12 +23,15 @@ import {
   type ReceivingStage,
 } from '../library/index.js'
 import type { downloadInto } from './download.js'
+import type { downloadStream, probeSources } from './stream.js'
 
 export interface HostSessionDeps {
   openLibrary(): Promise<Library>
   send(message: HostMessage): void
   drained(): Promise<void>
   download: typeof downloadInto
+  downloadStream: typeof downloadStream
+  probe: typeof probeSources
   hostVersion: string
   /** Best effort: a failure here must not refuse the extension. */
   greeted(extension: { version: string }): void
@@ -177,7 +180,7 @@ export function createHostSession(deps: HostSessionDeps): HostSession {
       captures.set(request.capture, { state: 'downloading', abort })
       inflight.set(request.id, abort)
       try {
-        const outcome = await deps.download(
+        const outcome = await (request.as === 'hls' ? deps.downloadStream : deps.download)(
           {
             url: request.url,
             referer: request.referer,
@@ -349,6 +352,11 @@ export function createHostSession(deps: HostSessionDeps): HostSession {
 
     async suggest(request) {
       return { tags: open().suggestTags(request.prefix, { exclude: request.exclude, limit: request.limit }) }
+    },
+
+    async probe(request) {
+      open()
+      return deps.probe(request.sources, request)
     },
 
     cancel(request) {

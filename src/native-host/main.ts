@@ -7,6 +7,7 @@ import { checkCaller } from './caller.js'
 import { downloadInto } from './download.js'
 import { frameWriter, readFrames, takeStdout } from './framing.js'
 import { createHostSession } from './session.js'
+import { downloadStream, probeSources } from './stream.js'
 
 declare const __EZDESIGN_VERSION__: string | undefined
 const HOST_VERSION = typeof __EZDESIGN_VERSION__ === 'string' ? __EZDESIGN_VERSION__ : 'dev'
@@ -24,6 +25,8 @@ async function run(stdout: Writable): Promise<number> {
       if (stdout.writableNeedDrain) await once(stdout, 'drain')
     },
     download: downloadInto,
+    downloadStream,
+    probe: probeSources,
     hostVersion: HOST_VERSION,
     greeted: (extension) => recordExtensionSeen(DATA_DIR, extension.version),
   })

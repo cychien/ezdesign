@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { deviceCrop } from '../src/extension/shared/geometry.js'
-import { isRestrictedPage, planAfterRefusal, planCapture, posterSource } from '../src/extension/shared/plan.js'
+import { isRestrictedPage, planAfterRefusal, planCapture, planWithoutRecording, posterSource } from '../src/extension/shared/plan.js'
 
 const tab = { id: 1, windowId: 1, url: 'https://site.test/board' }
 const menu = (mediaType: string, srcUrl: string, pageUrl = tab.url) =>
@@ -42,11 +42,15 @@ test('CX-p3-plan: every capture kind takes the row of the capture plan', () => {
   })
   assert.deepEqual(menu('video', 'blob:https://site.test/6f1c'), {
     kind: 'video',
-    bytes: { via: 'none' },
+    bytes: { via: 'record' },
     thumb: { from: 'page-frame' },
     preview: 'element-bitmap',
     dialog: 'page',
     region: null,
+  })
+  assert.deepEqual(planWithoutRecording(menu('video', 'blob:https://site.test/6f1c')!).bytes, { via: 'none' })
+  assert.deepEqual(menu('video', 'blob:https://chromewebstore.google.com/6f1c', 'https://chromewebstore.google.com/detail/x')!.bytes, {
+    via: 'none',
   })
   assert.deepEqual(menu('image', 'https://cdn.other.test/a.jpg', 'https://chromewebstore.google.com/detail/x'), {
     kind: 'image',

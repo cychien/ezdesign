@@ -14,7 +14,9 @@ export interface ProtocolRange {
 /** The versions this build speaks. Raise `max` for any change a peer must
  *  understand; raise `min` only once a release has shipped speaking the new
  *  `max`, so an extension one update behind its host still connects. */
-export const PROTOCOL: ProtocolRange = { min: 1, max: 1 }
+export const PROTOCOL: ProtocolRange = { min: 1, max: 2 }
+
+export const STREAM_PROTOCOL = 2
 
 /** Chrome's per-message caps. */
 export const HOST_MESSAGE_MAX_BYTES = 1024 * 1024
@@ -66,6 +68,7 @@ export const Request = z.discriminatedUnion('t', [
     capture: CaptureId,
     kind: z.enum(['image', 'video']),
     url: HttpUrl,
+    as: z.enum(['file', 'hls']).optional(),
     referer: z.string().max(16_384).nullable(),
     userAgent: z.string().max(1024),
     context: CaptureContext,
@@ -77,7 +80,7 @@ export const Request = z.discriminatedUnion('t', [
     t: z.literal('upload'),
     id: RequestId,
     capture: CaptureId,
-    kind: z.enum(['image', 'screenshot', 'frame']),
+    kind: z.enum(['image', 'screenshot', 'frame', 'video']),
     size: z.number().int().nonnegative(),
     context: CaptureContext,
   }),
@@ -122,6 +125,13 @@ export const Request = z.discriminatedUnion('t', [
     prefix: z.string().max(256),
     exclude: z.array(z.string().max(256)).max(200),
     limit: z.number().int().min(1).max(50),
+  }),
+  z.object({
+    t: z.literal('probe'),
+    id: RequestId,
+    sources: z.array(z.object({ url: HttpUrl, as: z.enum(['file', 'hls']) })).min(1).max(20),
+    referer: z.string().max(16_384).nullable(),
+    userAgent: z.string().max(1024),
   }),
   /** Aborts the request `ref` (a `download` or `read`), which then fails `cancelled`. */
   z.object({ t: z.literal('cancel'), ref: RequestId }),
@@ -172,6 +182,10 @@ export const ReplyValue = {
   commit: z.object({ item: WireItem, merged: z.boolean() }),
   discard: Done,
   suggest: z.object({ tags: z.array(z.object({ name: z.string(), uses: z.number().int() })).max(50) }),
+  probe: z.object({
+    durations: z.array(z.number().nonnegative().nullable()),
+    masters: z.array(z.boolean()),
+  }),
 } satisfies { [K in AnsweredType]: z.ZodType }
 export type ReplyOf<K extends AnsweredType> = z.infer<(typeof ReplyValue)[K]>
 

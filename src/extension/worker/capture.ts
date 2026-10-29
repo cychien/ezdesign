@@ -1,4 +1,4 @@
-import type { CaptureContext, Staged } from '../../capture-wire.js'
+import { EXTENSION_CHUNK_BYTES, STREAM_PROTOCOL, type CaptureContext, type Staged } from '../../capture-wire.js'
 import { fromBase64, toBase64 } from '../shared/bytes.js'
 import {
   type CaptureId,
@@ -13,15 +13,33 @@ import {
   type Size,
   type StagingView,
 } from '../shared/messages.js'
-import { type CapturePlan, type TabRef, type Trigger, planAfterRefusal, planCapture, posterSource } from '../shared/plan.js'
+import {
+  type CapturePlan,
+  type TabRef,
+  type Trigger,
+  planAfterRefusal,
+  planCapture,
+  planWithoutRecording,
+  posterSource,
+} from '../shared/plan.js'
 import type { CaptureOutcome, CaptureTimeline } from '../shared/seam.js'
-import { HostFailure, type BrowserOps, type DialogPort, type HostLink, type MediaClient, type PageAgent } from './ports.js'
+import { pickSource } from '../shared/streams.js'
+import {
+  HostFailure,
+  type BrowserOps,
+  type DialogPort,
+  type HostLink,
+  type MediaClient,
+  type PageAgent,
+  type StreamObserver,
+} from './ports.js'
 
 export interface CaptureDeps {
   host: HostLink & { hold(): () => void }
   media: MediaClient
   page: PageAgent
   browser: BrowserOps
+  streams: StreamObserver
   newId(): CaptureId
   onIdle(): void
   forgetAfterMs?: number
@@ -30,6 +48,7 @@ export interface CaptureDeps {
 
 export interface Captures {
   start(trigger: Trigger): Promise<CaptureId | null>
+  recordProgress(id: CaptureId, seconds: number): void
   attachDialog(port: DialogPort): void
   tabClosed(tabId: number): void
   settled(id: CaptureId): Promise<CaptureOutcome>
@@ -41,6 +60,7 @@ export interface Captures {
 type Staging =
   | { type: 'pending' }
   | { type: 'progress'; received: number; total: number | null }
+  | { type: 'recording'; seconds: number; total: number }
   | { type: 'staged'; staged: Staged }
   | { type: 'refused'; origin: string }
   | { type: 'failed'; message: string }
@@ -58,6 +78,7 @@ interface Session {
   held: Uint8Array | null
   framePng: string | null
   readyThumb: EncodedThumb | null
+  posterThumb: Promise<EncodedThumb | null> | null
   screenCrop: { thumb: EncodedThumb | null; png: string | null } | null
   staging: Staging
   thumbSettled: boolean
@@ -65,6 +86,10 @@ interface Session {
   dialog: { port: DialogPort | null; where: 'page' | 'window'; windowId: number | null; nonce: string; dismissed: boolean }
   intent: { tags: string[]; note: string } | null
   committing: boolean
+  finding: boolean
+  offer: 'streams' | null
+  background: boolean
+  pill: string | null
   restaged: boolean
   cropping: Promise<void> | null
   error: string | null
@@ -75,6 +100,8 @@ interface Session {
   release(): void
 }
 
+export const RECORD_MAX_SECONDS = 60
+const PROBED_SOURCES = 12
 const FORGET_AFTER_MS = 60_000
 const DISMISS_AFTER_MS = 1_500
 const SUGGEST_LIMIT = 8
@@ -90,7 +117,21 @@ export function createCaptures(deps: CaptureDeps): Captures {
     s.dialog.port?.postMessage({ type: 'preview', preview })
   }
 
-  const render = (s: Session) => s.dialog.port?.postMessage({ type: 'view', view: viewOf(s) })
+  const render = (s: Session) => {
+    s.dialog.port?.postMessage({ type: 'view', view: viewOf(s) })
+    if (!s.background) return
+    const pill = pillOf(s)
+    if (!pill || pill.text === s.pill) return
+    s.pill = pill.text
+    void deps.page.send(s.tab, 0, { to: 'page', type: 'pill', captureId: s.id, ...pill }).catch(() => {})
+  }
+
+  const toBackground = (s: Session) => {
+    if (s.background || s.dialog.where !== 'page') return
+    s.background = true
+    dismiss(s)
+    render(s)
+  }
 
   const requestOnTimeline: HostLink['request'] = (request, options) => {
     const s = 'capture' in request ? sessions.get(request.capture as CaptureId) : undefined
@@ -123,11 +164,15 @@ export function createCaptures(deps: CaptureDeps): Captures {
   const fail = (s: Session, message: string) => {
     s.staging = { type: 'failed', message }
     s.error = message
+    if (s.background) return end(s, { type: 'failed', message })
     render(s)
   }
 
   const cancel = (s: Session) => {
     if (s.ended) return
+    if (s.plan.bytes.via === 'record') {
+      void deps.page.send(s.tab, s.frameId, { to: 'page', type: 'recording-drop', captureId: s.id }).catch(() => {})
+    }
     if (s.staging.type !== 'refused' && s.host.type === 'ready') {
       void deps.host.request({ t: 'discard', capture: s.id }).catch(() => {})
     }
@@ -151,13 +196,15 @@ export function createCaptures(deps: CaptureDeps): Captures {
   }
 
   const thumbnail = async (s: Session, staged: Staged): Promise<EncodedThumb | null> => {
-    if (s.readyThumb) return s.readyThumb
     const staging = () => deps.host.read(s.id, { signal: s.abort.signal })
     if (s.plan.kind === 'video') {
-      const at = s.inspection?.video?.currentTime
-      const decoded = staged.outcome === 'file' && at !== undefined ? await deps.media.thumbnail(staging(), at) : null
-      return decoded ?? s.screenCrop?.thumb ?? null
+      const poster = await s.posterThumb
+      if (poster) return poster
+      const decodable = staged.outcome === 'file' && s.plan.bytes.via !== 'none'
+      const opening = decodable ? await deps.media.thumbnail(staging(), 'opening').catch(() => null) : null
+      return opening ?? s.readyThumb ?? s.screenCrop?.thumb ?? null
     }
+    if (s.readyThumb) return s.readyThumb
     if (s.plan.thumb.from === 'staged-bytes' && staged.outcome === 'file') return deps.media.thumbnail(staging())
     if (s.plan.thumb.from === 'held-bytes' && s.held) return deps.media.thumbnail(heldPieces(s.held))
     return null
@@ -179,6 +226,17 @@ export function createCaptures(deps: CaptureDeps): Captures {
     return frame?.type === 'encoded' ? frame.png : null
   }
 
+  const posterThumbnail = async (s: Session, url: string): Promise<EncodedThumb | null> => {
+    try {
+      const bytes = await deps.browser.fetchPublic(url, s.abort.signal)
+      const thumb = await deps.media.thumbnail(heldPieces(bytes))
+      const natural = s.inspection?.natural
+      return thumb && natural ? { ...thumb, source: natural } : thumb
+    } catch {
+      return null
+    }
+  }
+
   /** A host that lost the capture gets it once more, from what the session still holds. */
   const restageOnce = async (s: Session): Promise<boolean> => {
     if (s.restaged) return false
@@ -186,6 +244,35 @@ export function createCaptures(deps: CaptureDeps): Captures {
     await deps.host.state({ recheck: true })
     await stage(s)
     return true
+  }
+
+  const recordStream = async (s: Session): Promise<Uint8Array | null> => {
+    if (s.held) return s.held
+    if (!s.srcUrl) return null
+    s.staging = { type: 'recording', seconds: 0, total: recordLength(s) }
+    render(s)
+    const done = await deps.page.send(s.tab, s.frameId, {
+      to: 'page',
+      type: 'record',
+      captureId: s.id,
+      srcUrl: s.srcUrl,
+      maxSeconds: RECORD_MAX_SECONDS,
+    })
+    if (!done.ok || s.ended) return null
+    const bytes = new Uint8Array(done.bytes)
+    for (let offset = 0; offset < done.bytes; offset += EXTENSION_CHUNK_BYTES) {
+      const { data } = await deps.page.send(s.tab, s.frameId, {
+        to: 'page',
+        type: 'recording-read',
+        captureId: s.id,
+        offset,
+        length: EXTENSION_CHUNK_BYTES,
+      })
+      bytes.set(fromBase64(data), offset)
+    }
+    void deps.page.send(s.tab, s.frameId, { to: 'page', type: 'recording-drop', captureId: s.id }).catch(() => {})
+    s.held = bytes
+    return bytes
   }
 
   const stage = async (s: Session): Promise<void> => {
@@ -203,6 +290,7 @@ export function createCaptures(deps: CaptureDeps): Captures {
             capture: s.id,
             kind: s.plan.kind === 'video' ? 'video' : 'image',
             url: bytes.url,
+            ...(bytes.as === 'hls' ? { as: 'hls' as const } : {}),
             referer: s.tab.url ?? null,
             userAgent: deps.browser.userAgent,
             context: s.context,
@@ -215,6 +303,14 @@ export function createCaptures(deps: CaptureDeps): Captures {
             },
           },
         )
+      } else if (bytes.via === 'record') {
+        const recorded = await recordStream(s).catch(() => null)
+        if (s.ended) return
+        if (!recorded) {
+          s.plan = planWithoutRecording(s.plan)
+          return stage(s)
+        }
+        staged = await deps.host.upload({ capture: s.id, kind: 'video', context: s.context }, recorded, { signal: s.abort.signal })
       } else if (bytes.via === 'none') {
         const playbackTime = s.inspection?.video?.currentTime ?? null
         staged = await requestOnTimeline({ t: 'link', capture: s.id, playbackTime, context: s.context })
@@ -270,6 +366,7 @@ export function createCaptures(deps: CaptureDeps): Captures {
       if ((fault?.code === 'unknown-capture' || fault?.code === 'host-lost') && (await restageOnce(s))) return
       s.intent = null
       s.error = error instanceof Error ? error.message : String(error)
+      if (s.background) return end(s, { type: 'failed', message: s.error })
       render(s)
     }
   }
@@ -297,7 +394,9 @@ export function createCaptures(deps: CaptureDeps): Captures {
         s.intent = { tags: message.tags, note: message.note }
         s.timeline.confirmed = deps.browser.now()
         render(s)
-        void maybeCommit(s)
+        if (s.plan.kind === 'video' && !(s.staging.type === 'staged' && s.thumbSettled)) toBackground(s)
+        if (s.plan.bytes.via === 'record' && s.staging.type === 'pending' && !s.finding) void stage(s)
+        else void maybeCommit(s)
         return
       case 'cancel':
         return cancel(s)
@@ -315,6 +414,10 @@ export function createCaptures(deps: CaptureDeps): Captures {
       case 'granted':
         void grant(s, message.origin)
         return
+      case 'streams-granted':
+        s.offer = null
+        render(s)
+        return
       case 'denied':
         if (s.staging.type === 'refused') fail(s, `沒有取得讀取 ${message.origin} 的權限，無法儲存這張圖片`)
         return
@@ -327,7 +430,8 @@ export function createCaptures(deps: CaptureDeps): Captures {
   }
 
   async function run(s: Session, hostReady: Promise<HostState>): Promise<void> {
-    const { plan, tab } = s
+    const { tab } = s
+    let plan = s.plan
     const inPage =
       plan.dialog === 'page' &&
       (await deps.page.ensure(tab, s.frameId)) &&
@@ -341,13 +445,26 @@ export function createCaptures(deps: CaptureDeps): Captures {
           : { type: 'viewport', viewport: { width: 0, height: 0 }, pickedAt: deps.browser.now() }
       if (choice.type === 'cancelled') return end(s, { type: 'cancelled' })
       s.timeline.regionPicked = choice.pickedAt
-      const shot = await deps.browser.captureVisibleTab(tab.windowId, 'png')
-      const rect = choice.type === 'rect' ? choice.rect : null
-      setPreview(s, { type: 'screenshot', dataUrl: shot, rect, viewport: choice.viewport })
-      s.cropping = deps.media.crop(shot, rect, choice.viewport, true).then((crop) => {
-        s.held = crop.original && fromBase64(crop.original.png)
-        s.readyThumb = crop.thumb
-      })
+      if (choice.type === 'media') {
+        const picked = planCapture({
+          type: 'menu',
+          click: { mediaType: choice.mediaType, srcUrl: choice.srcUrl, pageUrl: tab.url, frameId: 0 },
+          tab,
+        })
+        if (!picked) return end(s, { type: 'cancelled' })
+        s.plan = plan = picked
+        s.finding = picked.bytes.via === 'record'
+        s.srcUrl = choice.srcUrl
+        s.context.mediaUrl = /^https?:/i.test(choice.srcUrl) ? choice.srcUrl : null
+      } else {
+        const shot = await deps.browser.captureVisibleTab(tab.windowId, 'png')
+        const rect = choice.type === 'rect' ? choice.rect : null
+        setPreview(s, { type: 'screenshot', dataUrl: shot, rect, viewport: choice.viewport })
+        s.cropping = deps.media.crop(shot, rect, choice.viewport, true).then((crop) => {
+          s.held = crop.original && fromBase64(crop.original.png)
+          s.readyThumb = crop.thumb
+        })
+      }
     }
 
     if (inPage && plan.kind !== 'screenshot' && s.srcUrl !== null) {
@@ -356,8 +473,10 @@ export function createCaptures(deps: CaptureDeps): Captures {
         type: 'inspect',
         srcUrl: s.srcUrl,
         mediaType: plan.kind === 'video' ? 'video' : 'image',
-        fullFrame: plan.bytes.via === 'none',
+        fullFrame: plan.bytes.via === 'none' || plan.bytes.via === 'record',
       })
+      const poster = s.inspection.video?.poster
+      if (poster) s.posterThumb = posterThumbnail(s, poster)
       const grab = s.inspection.video?.frame
       if (grab?.type === 'encoded') {
         s.readyThumb = grab.thumb
@@ -400,8 +519,52 @@ export function createCaptures(deps: CaptureDeps): Captures {
     s.timeline.dialogShown = deps.browser.now()
 
     const host = await hostReady
-    if (s.ended || host.type !== 'ready') return
+    if (s.ended || host.type !== 'ready') {
+      s.finding = false
+      return render(s)
+    }
+    if (s.plan.bytes.via === 'record') {
+      if (host.protocol < STREAM_PROTOCOL) {
+        s.finding = false
+        s.plan = planWithoutRecording(s.plan)
+      } else await findOriginal(s)
+      if (s.ended) return
+      if (s.plan.bytes.via === 'record') {
+        render(s)
+        if (s.intent) await stage(s)
+        return
+      }
+    }
     await stage(s)
+  }
+
+  async function findOriginal(s: Session): Promise<void> {
+    try {
+      const original = await deps.page.originalOf(s.tab, s.frameId).catch(() => null)
+      if (original) return downloadFrom(s, original, 'file')
+      if (!(await deps.streams.granted())) {
+        s.offer = 'streams'
+        return
+      }
+      const sources = (await deps.streams.sourcesFor(s.tab.id)).slice(0, PROBED_SOURCES)
+      if (!sources.length) return
+      const probed = await requestOnTimeline({
+        t: 'probe',
+        sources: sources.map(({ url, as }) => ({ url, as })),
+        referer: s.tab.url ?? null,
+        userAgent: deps.browser.userAgent,
+      }).catch(() => ({ durations: [], masters: [] }))
+      const picked = pickSource(sources, probed, s.inspection?.video?.duration ?? null)
+      if (picked) downloadFrom(s, picked.url, picked.as)
+    } finally {
+      s.finding = false
+      render(s)
+    }
+  }
+
+  function downloadFrom(s: Session, url: string, as: 'file' | 'hls'): void {
+    s.plan = { ...s.plan, bytes: { via: 'host-download', url, as } }
+    s.context.mediaUrl = url
   }
 
   async function start(trigger: Trigger): Promise<CaptureId | null> {
@@ -429,6 +592,7 @@ export function createCaptures(deps: CaptureDeps): Captures {
       held: null,
       framePng: null,
       readyThumb: null,
+      posterThumb: null,
       screenCrop: null,
       staging: { type: 'pending' },
       thumbSettled: false,
@@ -436,6 +600,10 @@ export function createCaptures(deps: CaptureDeps): Captures {
       dialog: { port: null, where: plan.dialog, windowId: null, nonce: id, dismissed: false },
       intent: null,
       committing: false,
+      finding: plan.bytes.via === 'record',
+      offer: null,
+      background: false,
+      pill: null,
       restaged: false,
       cropping: null,
       error: null,
@@ -463,6 +631,12 @@ export function createCaptures(deps: CaptureDeps): Captures {
 
   return {
     start,
+    recordProgress(id, seconds) {
+      const s = sessions.get(id)
+      if (s?.staging.type !== 'recording') return
+      s.staging = { ...s.staging, seconds }
+      render(s)
+    },
     attachDialog(port) {
       const s = sessions.get(port.name.slice(DIALOG_PORT_PREFIX.length) as CaptureId)
       if (!port.name.startsWith(DIALOG_PORT_PREFIX) || !s || s.ended) {
@@ -474,7 +648,7 @@ export function createCaptures(deps: CaptureDeps): Captures {
       port.onDisconnect.addListener(() => {
         s.dialog.port = null
         if (s.ended) dismiss(s)
-        else cancel(s)
+        else if (!s.background) cancel(s)
       })
       port.postMessage({ type: 'preview', preview: s.preview })
       render(s)
@@ -499,6 +673,23 @@ export function createCaptures(deps: CaptureDeps): Captures {
 
 const sizeOf = (thumb: EncodedThumb): Size => ({ width: thumb.width, height: thumb.height })
 
+function pillOf(s: Session): { text: string; tone: 'working' | 'done' | 'error' } | null {
+  if (s.ended?.type === 'saved') return { text: '已儲存', tone: 'done' }
+  if (s.ended?.type === 'failed') return { text: '影片沒有存成功', tone: 'error' }
+  if (s.ended) return null
+  if (s.staging.type === 'recording') {
+    return { text: `正在錄製影片 ${Math.floor(s.staging.seconds)} / ${Math.round(s.staging.total)} 秒`, tone: 'working' }
+  }
+  if (s.staging.type === 'progress' && s.staging.total) {
+    return { text: `影片處理中 ${Math.min(99, Math.floor((s.staging.received / s.staging.total) * 100))}%`, tone: 'working' }
+  }
+  return { text: '影片處理中…', tone: 'working' }
+}
+
+function recordLength(s: Session): number {
+  return Math.min(RECORD_MAX_SECONDS, s.inspection?.video?.duration ?? RECORD_MAX_SECONDS)
+}
+
 function fallbackPreview(s: Session): PreviewSource {
   const natural = s.inspection?.natural ?? null
   if (s.plan.kind === 'image' && s.context.mediaUrl) return { type: 'url', src: s.context.mediaUrl, size: natural }
@@ -514,6 +705,7 @@ function stagingView(staging: Staging): StagingView {
   switch (staging.type) {
     case 'pending':
     case 'progress':
+    case 'recording':
     case 'failed':
       return staging
     case 'staged':
@@ -544,11 +736,16 @@ export function viewOf(s: Session): CaptureView {
     staging: stagingView(s.staging),
     duplicate: staged?.duplicate ? { tags: staged.duplicate.tags, note: staged.duplicate.note } : null,
     notice:
-      s.plan.bytes.via === 'none' || staged?.outcome === 'stream-link'
-        ? 'stream-link'
-        : staged?.outcome === 'too-large'
-          ? 'too-large'
-          : null,
+      s.plan.bytes.via === 'record'
+        ? 'record'
+        : s.plan.bytes.via === 'none' || staged?.outcome === 'stream-link'
+          ? 'stream-link'
+          : staged?.outcome === 'too-large'
+            ? 'too-large'
+            : null,
+    recordSeconds: s.plan.bytes.via === 'record' ? Math.round(recordLength(s)) : null,
+    finding: s.finding,
+    offer: s.offer,
     confirm,
     error: s.error,
   }

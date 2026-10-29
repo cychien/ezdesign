@@ -149,7 +149,13 @@ export function createHostLink(): HostLinkHandle {
         greeted = true
         hostVersion = welcome.host.version
         settleIdle()
-        return { type: 'ready', version: welcome.host.version, node: welcome.host.node, libraryDir: welcome.library.dir }
+        return {
+          type: 'ready',
+          version: welcome.host.version,
+          node: welcome.host.node,
+          libraryDir: welcome.library.dir,
+          protocol: welcome.protocol,
+        }
       },
       (failure: HostFailure) => stateOf(failure.fault),
     )

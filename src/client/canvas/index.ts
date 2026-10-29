@@ -91,6 +91,12 @@ export interface CanvasUi {
   focusGuest(guestId: string): void
 }
 
+/** A canvas frame's keys reach the shell only as `ez:key`, which may not send,
+ *  so the board takes focus back from a frame that is done with it. */
+function returnKeysToShell(board: { el: HTMLElement }, frame: HTMLIFrameElement): void {
+  if (document.activeElement === frame) board.el.focus({ preventScroll: true })
+}
+
 /** Everything the client asks the canvas routes for, as data. */
 export type CanvasRequest =
   | { do: 'create' }
@@ -145,7 +151,7 @@ async function relayCall(api: ShellPorts['api'], op: RelayOp): Promise<Response>
       return api('/attachments', {
         method: 'POST',
         headers: { 'content-type': op.mime, 'x-ez-name': encodeURIComponent(op.name) },
-        body: op.bytes,
+        body: op.file,
       })
     case 'discard-upload':
       return api(`/attachments/${encodeURIComponent(op.id)}`, { method: 'DELETE' })
@@ -337,6 +343,9 @@ export function installCanvas(ports: ShellPorts): CanvasUi {
           pushed.delete(guest.id)
           if (b) ports.guests.post(guest.id, { type: 'ez:viewport', ...b.viewportFor(), scoped: false })
           if (snapshot) pushAnnotations(snapshot)
+          return false
+        case 'ez:popup':
+          if (!message.open && b) returnKeysToShell(b, guest.iframe)
           return false
         default:
           return false

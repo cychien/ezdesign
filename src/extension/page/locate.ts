@@ -1,10 +1,16 @@
 import { toBase64 } from '../shared/bytes.js'
 import type { FrameGrab, Inspection, ViewportRect } from '../shared/messages.js'
 import { encodePng, encodeThumbnail } from '../shared/thumbnail.js'
+import { TARGET_ATTR } from './originals.js'
 
 type Media = HTMLImageElement | HTMLVideoElement
 
 let inspected: Media | null = null
+let picked: Media | null = null
+
+export function pickMedia(el: Media): void {
+  picked = el
+}
 
 function sourcesOf(el: Media): string[] {
   const own = [el.currentSrc, el.getAttribute('src') ? el.src : '']
@@ -19,7 +25,12 @@ function visibleArea(el: Element): number {
   return w * h
 }
 
+export function sourceOf(el: Media): string | null {
+  return sourcesOf(el)[0] ?? null
+}
+
 export function findMedia(srcUrl: string, mediaType: 'image' | 'video'): Media | null {
+  if (picked?.isConnected && sourcesOf(picked).includes(srcUrl)) return picked
   const all = [...document.querySelectorAll<Media>(mediaType === 'image' ? 'img' : 'video')]
   const matches = all.filter((el) => sourcesOf(el).includes(srcUrl))
   if (matches.length <= 1) return matches[0] ?? null
@@ -53,7 +64,9 @@ export async function grabFrame(video: HTMLVideoElement, fullFrame: boolean): Pr
 
 export async function inspectMedia(srcUrl: string, mediaType: 'image' | 'video', fullFrame: boolean): Promise<Inspection> {
   const el = findMedia(srcUrl, mediaType)
+  inspected?.removeAttribute(TARGET_ATTR)
   inspected = el
+  el?.setAttribute(TARGET_ATTR, '')
   const viewport = { width: innerWidth, height: innerHeight }
   if (!el) return { found: false, viewport, rect: null, natural: null, video: null }
   const natural =
@@ -65,7 +78,15 @@ export async function inspectMedia(srcUrl: string, mediaType: 'image' | 'video',
     viewport,
     rect: clippedRect(el),
     natural: natural.width && natural.height ? natural : null,
-    video: el instanceof HTMLVideoElement ? { currentTime: el.currentTime, frame: await grabFrame(el, fullFrame) } : null,
+    video:
+      el instanceof HTMLVideoElement
+        ? {
+            currentTime: el.currentTime,
+            duration: Number.isFinite(el.duration) ? el.duration : null,
+            poster: /^https?:\/\//i.test(el.poster) ? el.poster : null,
+            frame: await grabFrame(el, fullFrame),
+          }
+        : null,
   }
 }
 

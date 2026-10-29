@@ -42,7 +42,7 @@ export interface KeyChordWire {
  *  overlay makes, and no others. Answered with `ez:relay-done`. */
 export type RelayOp =
   | { op: 'annotate'; body: Record<string, unknown> & { anchor: AnchorWire } }
-  | { op: 'upload'; name: string; mime: string; bytes: ArrayBuffer }
+  | { op: 'upload'; name: string; mime: string; file: Blob }
   | { op: 'discard-upload'; id: string }
 
 type Raw = Record<string, unknown>
@@ -219,8 +219,8 @@ export const GUEST_PROTOCOL = {
 } as const
 
 /** annotate: a body object with an anchor object, `body.anchor` replaced by
- *  `attributeAnchor(anchor, sender)`; upload: `name` and `mime` strings and an
- *  `ArrayBuffer`; discard-upload: an `id` string. Anything else is null. */
+ *  `attributeAnchor(anchor, sender)`; upload: `name` and `mime` strings and a
+ *  `Blob`; discard-upload: an `id` string. Anything else is null. */
 function parseRelayOp(op: Raw, sender: Sender): RelayOp | null {
   switch (op.op) {
     case 'annotate': {
@@ -235,8 +235,8 @@ function parseRelayOp(op: Raw, sender: Sender): RelayOp | null {
     case 'upload': {
       const name = str(op.name)
       const mime = str(op.mime)
-      if (name === null || mime === null || !(op.bytes instanceof ArrayBuffer)) return null
-      return { op: 'upload', name, mime, bytes: op.bytes }
+      if (name === null || mime === null || !(op.file instanceof Blob)) return null
+      return { op: 'upload', name, mime, file: op.file }
     }
     case 'discard-upload': {
       const id = str(op.id)

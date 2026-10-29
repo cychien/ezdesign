@@ -29,6 +29,9 @@
       "32": "icon-32.png"
     }
   },
+  "optional_permissions": [
+    "webRequest"
+  ],
   "optional_host_permissions": [
     "<all_urls>"
   ],

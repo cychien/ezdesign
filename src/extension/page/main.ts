@@ -1,8 +1,9 @@
 import type { PageCommand, PageReplies } from '../shared/messages.js'
 import { dismissDialog, presentDialog } from './dialog-host.js'
 import { inspectMedia, readBytes } from './locate.js'
+import { dropRecording, readRecording, recordVideo } from './record.js'
 import { selectRegion } from './region.js'
-import { clearSavedPill } from './saved-pill.js'
+import { clearSavedPill, showPill } from './saved-pill.js'
 
 const INSTALLED = Symbol.for('ezdesign.capture.page-agent')
 
@@ -16,6 +17,16 @@ const handlers: Handlers = {
   present: (command) => presentDialog(command),
   dismiss: async (command) => {
     dismissDialog(command.captureId)
+    return {}
+  },
+  pill: async (command) => {
+    showPill(command.text, command.tone)
+    return {}
+  },
+  record: (command) => recordVideo(command.captureId, command.srcUrl, command.maxSeconds),
+  'recording-read': (command) => readRecording(command.captureId, command.offset, command.length),
+  'recording-drop': async (command) => {
+    dropRecording(command.captureId)
     return {}
   },
 }

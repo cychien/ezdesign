@@ -5,6 +5,7 @@ import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { DatabaseSync } from 'node:sqlite'
+import { ALL_FORMATS, BufferSource, EncodedPacketSink, Input } from 'mediabunny'
 import { readExtensionSeen } from '../../src/capture-seen.js'
 import { EXTENSION_ID, HOST_NAME } from '../../src/capture-wire.js'
 import type { CaptureId, HostState } from '../../src/extension/shared/messages.js'
@@ -88,6 +89,19 @@ async function thePhoto(h: Harness): Promise<Buffer> {
     photo = await makeJpeg((e) => h.evaluate(blank.session, e), 3000, 2000, 7)
   }
   return photo
+}
+
+async function demux(bytes: Buffer): Promise<{ codec: string | null; width: number; height: number; frames: number }> {
+  const input = new Input({ formats: ALL_FORMATS, source: new BufferSource(bytes) })
+  try {
+    const track = await input.getPrimaryVideoTrack()
+    if (!track) return { codec: null, width: 0, height: 0, frames: 0 }
+    let frames = 0
+    for await (const _ of new EncodedPacketSink(track).packets()) frames++
+    return { codec: track.codec, width: track.displayWidth, height: track.displayHeight, frames }
+  } finally {
+    input.dispose()
+  }
 }
 
 function servePage(h: Harness, path: string, title: string, body: string): string {
@@ -425,7 +439,7 @@ const checks: Check[] = [
   },
   {
     id: 'CX-video-file',
-    name: 'a file video saves its original and a poster from the frame on screen',
+    name: 'a file video saves its original, with a thumbnail from its opening rather than the frame on screen',
     needs: 'ffmpeg',
     async run(ctx) {
       const h = await ctx.launch()
@@ -472,7 +486,7 @@ const checks: Check[] = [
           v.muted = true
           v.src = URL.createObjectURL(await (await fetch('/clip.webm')).blob())
           await new Promise((r) => v.addEventListener('loadeddata', r, { once: true }))
-          v.currentTime = 2.0
+          v.currentTime = 0
           await new Promise((r) => v.addEventListener('seeked', r, { once: true }))
           const c = new OffscreenCanvas(v.videoWidth, v.videoHeight)
           c.getContext('2d').drawImage(v, 0, 0)
@@ -487,12 +501,12 @@ const checks: Check[] = [
       writeFileSync(join(ctx.evidence, 'CX-video-file-reference.png'), reference)
       const difference = await meanDifference(h, blank.session, thumb, reference)
       writeFileSync(join(ctx.evidence, 'CX-video-file-frame-difference.txt'), `${difference}\n`)
-      check(difference < 8, `the poster differs from the frame at 2.0 s by ${difference.toFixed(2)} of 255`)
+      check(difference < 8, `the thumbnail differs from the opening frame by ${difference.toFixed(2)} of 255, though the page was paused at 2.0 s`)
     },
   },
   {
     id: 'CX-video-stream',
-    name: 'a MediaSource video saves as a link with its time and a full-size frame',
+    name: 'a MediaSource video is recorded from its start once 儲存 is pressed, and saves as a WebM it was restored after',
     needs: 'ffmpeg',
     async run(ctx) {
       const h = await ctx.launch()
@@ -528,26 +542,245 @@ const checks: Check[] = [
         const text = await dialog.evaluate<string>(`document.querySelector('[data-testid=ez-capture-status]').textContent`)
         return text || null
       }, 'the status line')
-      check(statusLine === '串流影片只會儲存連結、目前時間和畫面', `status ${statusLine}`)
+      const seconds = CLIP.frames / CLIP.fps
+      const recordLine = `這支影片無法直接下載，按下儲存後會從頭播放一次並錄下來（約 ${seconds} 秒），錄完前請不要關閉這個分頁`
+      const settledLine = await waitFor(async () => {
+        const text = await dialog.evaluate<string>(`document.querySelector('[data-testid=ez-capture-status]').textContent`)
+        return text === recordLine ? text : null
+      }, `the status line to read "${recordLine}" (it read "${statusLine}")`)
+      check(settledLine === recordLine, `status ${settledLine}`)
+      check(
+        await dialog.evaluate<boolean>(`!document.querySelector('[data-testid=ez-capture-streams]').hidden`),
+        'the dialog offers to see streams, since it has not been allowed',
+      )
       await waitFor(() => dialog.evaluate<boolean>(`!document.querySelector('[data-testid=ez-capture-save]').disabled`), 'save to be enabled')
+      check((await items(h)).length === 0, 'nothing is saved, or recorded, before 儲存')
       await animationsSettled(dialog)
       await h.screenshot(page.session, 'CX-video-stream-dialog.png')
       await dialog.click('ez-capture-save')
-      const outcome = await settled(h, id)
+      await waitFor(async () => !(await h.evaluate<boolean>(page.session, `!!document.querySelector('[data-ez-capture]')`)), 'the dialog to go once 儲存 is pressed', 3000)
+      await delay(1500)
+      await h.screenshot(page.session, 'CX-video-stream-recording.png')
+      const outcome = await settled(h, id, (seconds + 20) * 1000)
       check(outcome.type === 'saved', `outcome ${JSON.stringify(outcome)}`)
+      const restored = await h.evaluate<number>(page.session, `document.querySelector('video').currentTime`)
+      check(Math.abs(restored - 3.5) <= 0.05, `the page's video was left at ${restored}, not put back at 3.5`)
       const [item, ...rest] = await items(h)
       writeFileSync(join(ctx.evidence, 'CX-video-stream-item.json'), JSON.stringify(item, null, 2))
       check(item && rest.length === 0, 'one item')
-      check(item.kind === 'video' && item.content.type === 'link', `content ${JSON.stringify(item.content)}`)
-      if (item.content.type !== 'link') return
-      check(item.content.reason === 'stream', `reason ${item.content.reason}`)
-      check(Math.abs((item.content.playbackTime ?? -1) - 3.5) <= 0.05, `playbackTime ${item.content.playbackTime}`)
+      check(item.kind === 'video' && item.content.type === 'file', `content ${JSON.stringify(item.content)}`)
+      if (item.content.type !== 'file') return
+      check(item.content.mediaType === 'video/webm', `media type ${item.content.mediaType}`)
       check(item.source.pageUrl === url && item.source.mediaUrl === null, `source ${JSON.stringify(item.source)}`)
-      const frame = item.content.frame && readFileSync(item.content.frame.path)
-      check(frame && JSON.stringify(pngSize(frame)) === `{"width":${CLIP.width},"height":${CLIP.height}}`, 'a full-size PNG frame')
       check(item.thumbnail && existsSync(item.thumbnail.path), 'a thumbnail')
-      const blobs = filesUnder(join(h.dataDir, 'library', 'blobs'))
-      check(blobs.length === 1, `${blobs.length} blobs`)
+      const recorded = await demux(readFileSync(item.content.path))
+      writeFileSync(join(ctx.evidence, 'CX-video-stream-recorded.json'), JSON.stringify(recorded, null, 2))
+      check(recorded.width === CLIP.width && recorded.height === CLIP.height, `recorded at ${recorded.width}x${recorded.height}`)
+      const decoded = recorded.frames
+      check(decoded >= CLIP.frames * 0.8, `the recording holds ${decoded} frames, not about ${CLIP.frames}`)
+    },
+  },
+  {
+    id: 'CX-region-media',
+    name: 'with the right-click menu taken by the site, a click in the capture overlay saves the video or image under it',
+    needs: 'ffmpeg',
+    async run(ctx) {
+      const h = await ctx.launch()
+      const blank = await h.openTab('about:blank')
+      const clip = await makeClip((e) => h.evaluate(blank.session, e), findFfmpeg()!, ctx.scratch)
+      h.fixtures.serve('/clip.webm', { type: 'video/webm', body: clip.webm })
+      h.fixtures.serve('/still.jpg', { type: 'image/jpeg', body: await makeJpeg((e) => h.evaluate(blank.session, e), 640, 360, 5) })
+      const url = servePage(
+        h,
+        '/player',
+        'Player',
+        `<div style="position:relative;width:640px;height:360px">
+           <video muted style="width:640px;height:360px;display:block"></video>
+           <div id="cover" style="position:absolute;inset:0"></div>
+         </div>
+         <img src="/still.jpg" style="position:absolute;left:700px;top:0;width:320px;height:180px">
+         <script>
+          document.getElementById('cover').addEventListener('contextmenu', (e) => e.preventDefault())
+          const v = document.querySelector('video')
+          const ms = new MediaSource()
+          v.src = URL.createObjectURL(ms)
+          ms.addEventListener('sourceopen', async () => {
+            const sb = ms.addSourceBuffer('video/webm; codecs="vp8"')
+            const data = await (await fetch('/clip.webm')).arrayBuffer()
+            sb.addEventListener('updateend', () => { ms.endOfStream(); document.body.dataset.ready = '1' }, { once: true })
+            sb.appendBuffer(data)
+          })
+        </script>`,
+      )
+      const page = await h.openTab(url)
+      await waitFor(() => h.evaluate<boolean>(page.session, `document.body.dataset.ready === '1'`), 'the stream to load')
+
+      let before = await h.inWorker<CaptureId | null>('__ezCapture.latest()')
+      await page.pressShortcut()
+      await page.overlayShown()
+      await page.hover({ x: 320, y: 180 })
+      await delay(100)
+      await h.screenshot(page.session, 'CX-region-media-hover-video.png')
+      await page.click({ x: 320, y: 180 })
+      const video = await nextCapture(h, before)
+      let dialog = await page.dialog(video)
+      const status = await waitFor(async () => {
+        const text = await dialog.evaluate<string>(`document.querySelector('[data-testid=ez-capture-status]').textContent`)
+        return text || null
+      }, 'the status line')
+      check(status.startsWith('這支影片無法直接下載') || status === '正在找影片的原始檔…', `status ${status}`)
+      await h.screenshot(page.session, 'CX-region-media-video-dialog.png')
+      await waitFor(async () => {
+        const text = await dialog.evaluate<string>(`document.querySelector('[data-testid=ez-capture-status]').textContent`)
+        return text.startsWith('這支影片無法直接下載') ? text : null
+      }, 'the recording notice')
+      await dialog.click('ez-capture-save')
+      check((await settled(h, video, 30_000)).type === 'saved', 'the clicked video saves')
+      await waitFor(async () => !(await h.evaluate<boolean>(page.session, `!!document.querySelector('[data-ez-capture]')`)), 'the dialog to leave', 5000)
+
+      before = video
+      await page.pressShortcut()
+      await page.overlayShown()
+      await page.hover({ x: 860, y: 90 })
+      await delay(100)
+      await h.screenshot(page.session, 'CX-region-media-hover-image.png')
+      await page.click({ x: 860, y: 90 })
+      const image = await nextCapture(h, before)
+      dialog = await page.dialog(image)
+      await waitFor(() => dialog.evaluate<boolean>(`!document.querySelector('[data-testid=ez-capture-save]').disabled`), 'save to be enabled')
+      await dialog.click('ez-capture-save')
+      check((await settled(h, image)).type === 'saved', 'the clicked image saves')
+
+      const saved = (await items(h)).reverse()
+      writeFileSync(join(ctx.evidence, 'CX-region-media-items.json'), JSON.stringify(saved, null, 2))
+      check(saved.length === 2, `${saved.length} items`)
+      const [first, second] = saved as [(typeof saved)[0], (typeof saved)[0]]
+      check(first.kind === 'video' && first.content.type === 'file' && first.content.mediaType === 'video/webm', `video ${JSON.stringify(first.content)}`)
+      check(second.kind === 'image' && second.content.type === 'file' && second.content.mediaType === 'image/jpeg', `image ${JSON.stringify(second.content)}`)
+      check(second.source.mediaUrl === `${h.fixtures.same}/still.jpg`, `image source ${JSON.stringify(second.source)}`)
+    },
+  },
+  {
+    id: 'CX-stream-hls',
+    name: 'with streams allowed, a stream whose player fetched an HLS playlist is saved by joining its segments, not by playing it',
+    needs: 'ffmpeg',
+    async run(ctx) {
+      const h = await ctx.launch({ streamsAllowed: true })
+      const blank = await h.openTab('about:blank')
+      const clip = await makeClip((e) => h.evaluate(blank.session, e), findFfmpeg()!, ctx.scratch)
+      h.fixtures.serve('/clip.webm', { type: 'video/webm', body: clip.webm })
+      const hls = join(REPO, 'test', 'fixtures', 'hls', 'fmp4')
+      for (const name of readdirSync(hls)) {
+        const type = name.endsWith('.m3u8') ? 'application/vnd.apple.mpegurl' : 'video/mp4'
+        h.fixtures.serve(`/hls/${name}`, { type, body: readFileSync(join(hls, name)) })
+      }
+      const url = servePage(
+        h,
+        '/hls-player',
+        'HLS player',
+        `<video muted width="640" height="360"></video><script>
+          const v = document.querySelector('video')
+          const ms = new MediaSource()
+          v.src = URL.createObjectURL(ms)
+          ms.addEventListener('sourceopen', async () => {
+            await (await fetch('/hls/master.m3u8')).text()
+            await (await fetch('/hls/media.m3u8')).text()
+            const sb = ms.addSourceBuffer('video/webm; codecs="vp8"')
+            sb.appendWindowEnd = 4
+            const data = await (await fetch('/clip.webm')).arrayBuffer()
+            sb.addEventListener('updateend', () => { ms.endOfStream(); document.body.dataset.ready = '1' }, { once: true })
+            sb.appendBuffer(data)
+          })
+        </script>`,
+      )
+      const page = await h.openTab(url)
+      await waitFor(() => h.evaluate<boolean>(page.session, `document.body.dataset.ready === '1'`), 'the stream to load')
+      const src = await h.evaluate<string>(page.session, `document.querySelector('video').currentSrc`)
+      await page.grantActiveTab()
+      const id = await page.saveFromMenu(src, 'video')
+      const dialog = await page.dialog(id)
+      await waitFor(async () => {
+        const status = await dialog.evaluate<string>(`document.querySelector('[data-testid=ez-capture-status]').textContent`)
+        return status === '' || status === '已收藏過' ? true : null
+      }, 'the original to be found and no recording to be offered')
+      check(await dialog.evaluate<boolean>(`document.querySelector('[data-testid=ez-capture-streams]').hidden`), 'no grant is offered once allowed')
+      await animationsSettled(dialog)
+      await h.screenshot(page.session, 'CX-stream-hls-dialog.png')
+      const pressed = Date.now()
+      await dialog.click('ez-capture-save')
+      const outcome = await settled(h, id)
+      const tookMs = Date.now() - pressed
+      check(outcome.type === 'saved', `outcome ${JSON.stringify(outcome)}`)
+      const [item, ...rest] = await items(h)
+      writeFileSync(join(ctx.evidence, 'CX-stream-hls-item.json'), JSON.stringify({ tookMs, item }, null, 2))
+      check(item && rest.length === 0, 'one item')
+      check(item.kind === 'video' && item.content.type === 'file' && item.content.mediaType === 'video/mp4', `content ${JSON.stringify(item.content)}`)
+      if (item.content.type !== 'file') return
+      check(item.source.mediaUrl === `${h.fixtures.same}/hls/master.m3u8`, `source ${JSON.stringify(item.source)}`)
+      const joined = await demux(readFileSync(item.content.path))
+      check(joined.codec === 'avc' && joined.width === 320 && joined.height === 180, `joined ${JSON.stringify(joined)}`)
+      check(joined.frames >= 110, `the joined file holds ${joined.frames} frames of the 120 the playlist has`)
+      check(tookMs < 4000, `saving took ${tookMs} ms: no faster than playing the 4 s stream through`)
+    },
+  },
+  {
+    id: 'CX-stream-original',
+    name: "a stream whose page keeps its original file (as X does in a tweet's data) downloads that file",
+    needs: 'ffmpeg',
+    async run(ctx) {
+      const h = await ctx.launch()
+      const blank = await h.openTab('about:blank')
+      const clip = await makeClip((e) => h.evaluate(blank.session, e), findFfmpeg()!, ctx.scratch)
+      h.fixtures.serve('/clip.webm', { type: 'video/webm', body: clip.webm })
+      h.fixtures.serve('/vid/avc1/1280x720/orig.mp4', { type: 'video/mp4', body: clip.webm })
+      h.fixtures.serve('/vid/avc1/480x270/small.mp4', { type: 'video/mp4', body: Buffer.from('not this one') })
+      h.fixtures.serve('/amplify_video_thumb/2114736239425282048/img/poster.jpg', {
+        type: 'image/jpeg',
+        body: await makeJpeg((e) => h.evaluate(blank.session, e), 64, 36, 2),
+      })
+      const variants = JSON.stringify([
+        { content_type: 'application/x-mpegURL', url: '/2114736239425282048/pl/a.m3u8' },
+        { content_type: 'video/mp4', bitrate: 256000, url: `${h.fixtures.same}/vid/avc1/480x270/small.mp4?id=2114736239425282048` },
+        { content_type: 'video/mp4', bitrate: 2176000, url: `${h.fixtures.same}/vid/avc1/1280x720/orig.mp4?id=2114736239425282048` },
+      ])
+      const url = servePage(
+        h,
+        '/tweet',
+        'Tweet',
+        `<article><div><video muted width="640" height="360" poster="/amplify_video_thumb/2114736239425282048/img/poster.jpg"></video><div id="cover" style="position:absolute;inset:0"></div></div></article><script>
+          const article = document.querySelector('article')
+          article.__reactFiber$test = { memoizedProps: { className: 'x' }, return: { memoizedProps: { tweet: { legacy: { extended_entities: { media: [{ type: 'video', video_info: { variants: ${variants} } }] } } } } } }
+          const v = document.querySelector('video')
+          const ms = new MediaSource()
+          v.src = URL.createObjectURL(ms)
+          ms.addEventListener('sourceopen', async () => {
+            const sb = ms.addSourceBuffer('video/webm; codecs="vp8"')
+            const data = await (await fetch('/clip.webm')).arrayBuffer()
+            sb.addEventListener('updateend', () => { ms.endOfStream(); document.body.dataset.ready = '1' }, { once: true })
+            sb.appendBuffer(data)
+          })
+        </script>`,
+      )
+      const page = await h.openTab(url)
+      await waitFor(() => h.evaluate<boolean>(page.session, `document.body.dataset.ready === '1'`), 'the stream to load')
+      const src = await h.evaluate<string>(page.session, `document.querySelector('video').currentSrc`)
+      await page.grantActiveTab()
+      const id = await page.saveFromMenu(src, 'video')
+      const dialog = await page.dialog(id)
+      await waitFor(() => dialog.evaluate<boolean>(`!document.querySelector('[data-testid=ez-capture-save]').disabled`), 'save to be enabled')
+      await waitFor(async () => {
+        const status = await dialog.evaluate<string>(`document.querySelector('[data-testid=ez-capture-status]').textContent`)
+        return status === '' ? true : null
+      }, 'the original to be found')
+      await dialog.click('ez-capture-save')
+      check((await settled(h, id)).type === 'saved', 'the video saves')
+      const [item] = await items(h)
+      writeFileSync(join(ctx.evidence, 'CX-stream-original-item.json'), JSON.stringify(item, null, 2))
+      check(item?.content.type === 'file' && sha256(readFileSync(item.content.path)) === sha256(clip.webm), 'the item holds the highest-bitrate original')
+      check(item?.source.mediaUrl === `${h.fixtures.same}/vid/avc1/1280x720/orig.mp4?id=2114736239425282048`, `source ${JSON.stringify(item?.source)}`)
+      const thumb = item?.thumbnail && webpSize(readFileSync(item.thumbnail.path))
+      check(JSON.stringify(thumb) === '{"width":64,"height":36}', `the thumbnail is the 64 x 36 poster, not a frame: ${JSON.stringify(thumb)}`)
+      check(JSON.stringify(item?.dimensions) === `{"width":${CLIP.width},"height":${CLIP.height}}`, `dimensions ${JSON.stringify(item?.dimensions)}`)
     },
   },
   {
