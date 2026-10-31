@@ -1,0 +1,33 @@
+---
+import { markSvg } from '../lib/brand'
+
+interface Props {
+  size: number
+  class?: string
+  label?: string
+}
+
+const { size, class: className, label } = Astro.props
+---
+
+<span
+  class:list={['mark', className]}
+  style={`width:${size}px;height:${size}px`}
+  role={label ? 'img' : undefined}
+  aria-label={label}
+  aria-hidden={label ? undefined : 'true'}
+  set:html={markSvg()}
+/>
+
+<style>
+  .mark {
+    display: inline-block;
+    flex-shrink: 0;
+  }
+
+  .mark :global(svg) {
+    display: block;
+    width: 100%;
+    height: 100%;
+  }
+</style>

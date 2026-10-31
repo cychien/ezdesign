@@ -1,0 +1,113 @@
+---
+import Copy01Icon from '@hugeicons/core-free-icons/Copy01Icon'
+import Tick02Icon from '@hugeicons/core-free-icons/Tick02Icon'
+import Icon from './Icon.astro'
+import { messages } from '../i18n'
+
+interface Props {
+  command: string
+  size?: 'md' | 'lg'
+}
+
+const { command, size = 'md' } = Astro.props
+const t = messages(Astro.currentLocale).command
+---
+
+<span class:list={['cmd', size]} data-command={command} data-copy-label={t.copy} data-copied-label={t.copied}>
+  <code><span class="prompt" aria-hidden="true">$</span> {command}</code>
+  <button class="copy" type="button" aria-label={t.copy}>
+    <span class="idle"><Icon icon={Copy01Icon} size={15} /></span>
+    <span class="done"><Icon icon={Tick02Icon} size={15} /></span>
+  </button>
+</span>
+
+<script>
+  for (const cmd of document.querySelectorAll<HTMLElement>('.cmd[data-command]')) {
+    const button = cmd.querySelector('button')!
+    let reset = 0
+    button.addEventListener('click', async () => {
+      await navigator.clipboard.writeText(cmd.dataset.command!)
+      cmd.dataset.copied = ''
+      button.setAttribute('aria-label', cmd.dataset.copiedLabel!)
+      clearTimeout(reset)
+      reset = window.setTimeout(() => {
+        delete cmd.dataset.copied
+        button.setAttribute('aria-label', cmd.dataset.copyLabel!)
+      }, 1600)
+    })
+  }
+</script>
+
+<style>
+  .cmd {
+    display: inline-flex;
+    align-items: center;
+    gap: 14px;
+    max-width: 100%;
+    height: 52px;
+    padding: 0 8px 0 18px;
+    border-radius: 10px;
+    background: var(--ink);
+    color: #e9e6dd;
+    font-size: 15px;
+  }
+
+  .cmd.lg {
+    height: 58px;
+    padding: 0 10px 0 22px;
+    font-size: 16px;
+    box-shadow: 0 20px 40px -18px rgba(23, 23, 23, 0.45);
+  }
+
+  code {
+    overflow: hidden;
+    font-family: var(--mono);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .prompt {
+    color: var(--faint);
+  }
+
+  .copy {
+    display: grid;
+    flex-shrink: 0;
+    place-items: center;
+    width: 36px;
+    height: 36px;
+    border: 0;
+    border-radius: 7px;
+    background: #2a2a2a;
+    color: var(--ghost);
+    cursor: pointer;
+    transition: background 0.15s ease, color 0.15s ease;
+  }
+
+  .copy:hover {
+    background: #343434;
+    color: #fff;
+  }
+
+  .copy > span {
+    grid-area: 1 / 1;
+    display: grid;
+    transition: opacity 0.15s ease, transform 0.15s ease;
+  }
+
+  .done {
+    opacity: 0;
+    transform: scale(0.6);
+    color: #cee7c1;
+  }
+
+  .cmd[data-copied] .idle {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+
+  .cmd[data-copied] .done {
+    opacity: 1;
+    transform: none;
+  }
+</style>

@@ -1,0 +1,22 @@
+---
+import { lockupSvg } from '../lib/brand'
+
+interface Props {
+  height: number
+  class?: string
+}
+
+const { height, class: className } = Astro.props
+---
+
+<span class:list={['lockup', className]} role="img" aria-label="ezdesign" set:html={lockupSvg(height)} />
+
+<style>
+  .lockup {
+    display: inline-flex;
+  }
+
+  .lockup :global(svg) {
+    display: block;
+  }
+</style>

@@ -1,0 +1,204 @@
+---
+import ToolElement from './illustrations/ToolElement.astro'
+import ToolExplore from './illustrations/ToolExplore.astro'
+import ToolFile from './illustrations/ToolFile.astro'
+import ToolLibrary from './illustrations/ToolLibrary.astro'
+import WayClick from './illustrations/WayClick.astro'
+import WayDrag from './illustrations/WayDrag.astro'
+import WayEdit from './illustrations/WayEdit.astro'
+import WaySizes from './illustrations/WaySizes.astro'
+import { messages } from '../i18n'
+
+const t = messages(Astro.currentLocale).adjust
+---
+
+<section id="features">
+  <div class="wash" aria-hidden="true"></div>
+  <div class="kicker">{t.kicker}</div>
+  <h2>{t.title}</h2>
+  <p class="sub">{t.sub}</p>
+
+  <h3 class="label">{t.onPage}</h3>
+  <div class="ways">
+    <div class="way"><div class="vis"><WayClick /></div><h4>{t.click.title}</h4><p>{t.click.body}</p></div>
+    <div class="way"><div class="vis"><WayDrag /></div><h4>{t.drag.title}</h4><p>{t.drag.body}</p></div>
+    <div class="way"><div class="vis"><WayEdit /></div><h4>{t.edit.title}<span class="soon">{t.soon}</span></h4><p>{t.edit.body}</p></div>
+    <div class="way"><div class="vis"><WaySizes /></div><h4>{t.sizes.title}</h4><p>{t.sizes.body}</p></div>
+  </div>
+
+  <h3 class="label">{t.tools}</h3>
+  <div class="tools">
+    <div class="tool wide"><div class="vis"><ToolExplore /></div><h4>{t.explore.title} <code class="explore">/explore</code></h4><p>{t.explore.body}</p></div>
+    <div class="tool"><div class="vis"><ToolElement /></div><h4>{t.element.title} <code class="ref">/element</code></h4><p>{t.element.body}</p></div>
+    <div class="tool"><div class="vis"><ToolFile /></div><h4>{t.file.title} <code class="attach">/file</code></h4><p>{t.file.body}</p></div>
+    <div class="tool"><div class="vis"><ToolLibrary /></div><h4>{t.library.title} <code class="library">/library</code></h4><p>{t.library.body}</p></div>
+  </div>
+</section>
+
+<style>
+  .wash {
+    position: absolute;
+    top: -96px;
+    left: var(--bleed);
+    z-index: -1;
+    width: 100vw;
+    height: 420px;
+    pointer-events: none;
+    -webkit-mask-image: linear-gradient(180deg, #000, transparent);
+    mask-image: linear-gradient(180deg, #000, transparent);
+    background:
+      radial-gradient(40% 80% at 14% 0%, rgba(211, 224, 236, 0.85), transparent 70%),
+      radial-gradient(38% 70% at 52% 0%, rgba(241, 210, 196, 0.8), transparent 70%),
+      radial-gradient(36% 70% at 88% 0%, rgba(234, 223, 184, 0.85), transparent 70%);
+  }
+
+  .wash::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    opacity: 0.35;
+    mix-blend-mode: overlay;
+    background-image: var(--noise);
+    background-size: 200px;
+  }
+
+  .label {
+    margin: 56px 0 0;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--faint);
+  }
+
+  .ways {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 28px 24px;
+    margin-top: 16px;
+  }
+
+  .tools {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 28px 24px;
+    margin-top: 16px;
+  }
+
+  .tool.wide {
+    grid-column: 1 / -1;
+  }
+
+  .vis {
+    position: relative;
+    height: 150px;
+    overflow: hidden;
+    border-radius: 14px;
+    background: var(--sunk);
+  }
+
+  .vis::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    box-shadow: inset 0 0 0 1px rgb(40 30 18 / 0.1);
+    pointer-events: none;
+  }
+
+  .tool.wide .vis {
+    height: 200px;
+  }
+
+  h4 {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    margin: 14px 0 0;
+    font-size: 15px;
+    font-weight: 600;
+    letter-spacing: -0.03em;
+  }
+
+  .way p,
+  .tool p {
+    max-width: 340px;
+    margin: 8px 0 0;
+    font-size: 14.5px;
+    line-height: 1.6;
+    color: var(--muted);
+  }
+
+  .tool.wide p {
+    max-width: 620px;
+  }
+
+  .soon {
+    padding: 2px 7px;
+    border-radius: 999px;
+    background: var(--sunk);
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0;
+    color: var(--muted);
+  }
+
+  code {
+    padding: 2px 6px;
+    border-radius: 5px;
+    font-family: var(--mono);
+    font-size: 11.5px;
+    font-weight: 500;
+    letter-spacing: 0;
+  }
+
+  .explore {
+    background: rgba(107, 59, 170, 0.1);
+    color: #5e3f8c;
+  }
+
+  .ref {
+    background: #f4d3e2;
+    color: #7b3a5c;
+  }
+
+  .attach {
+    background: #cee7c1;
+    color: #3d5c36;
+  }
+
+  .library {
+    background: #c3e2d8;
+    color: #2c5a4b;
+  }
+
+  @media (max-width: 1000px) {
+    .ways {
+      grid-template-columns: repeat(2, 1fr);
+    }
+
+    .tools {
+      grid-template-columns: 1fr;
+    }
+
+    .tool.wide .vis {
+      height: auto;
+      aspect-ratio: 1096 / 168;
+    }
+
+    .tool .vis {
+      height: auto;
+      aspect-ratio: 339 / 124;
+    }
+  }
+
+  @media (max-width: 560px) {
+    .ways {
+      grid-template-columns: 1fr;
+    }
+
+    .way .vis {
+      height: auto;
+      aspect-ratio: 260 / 124;
+    }
+  }
+</style>

@@ -1,0 +1,676 @@
+---
+import { messages } from '../i18n'
+import Search01Icon from '@hugeicons/core-free-icons/Search01Icon'
+import Icon from './Icon.astro'
+import LumenPricing from './LumenPricing.astro'
+
+const TAGS = [
+  ['gradient', 2],
+  ['mobile', 2],
+  ['cards', 1],
+  ['chart', 1],
+  ['checkout', 1],
+  ['color', 1],
+  ['command menu', 1],
+  ['dark', 1],
+  ['editor', 1],
+  ['form', 1],
+  ['hero', 1],
+  ['list', 1],
+  ['onboarding', 1],
+  ['pricing', 1],
+  ['settings', 1],
+  ['testimonial', 1],
+  ['toggles', 1],
+  ['toolbar', 1],
+] as const
+
+const SWATCHES = [
+  ['Ember', '#FF6B4A'],
+  ['Saffron', '#FFC247'],
+  ['Fern', '#3FBF8F'],
+  ['Lake', '#3B7BFF'],
+  ['Ink', '#22223A'],
+]
+
+const SETTINGS = [
+  ['Push notifications', 'Mentions, replies and reminders', true],
+  ['Weekly digest', 'A summary every Monday morning', true],
+  ['Dark mode', 'Follow the system setting', false],
+  ['Two-step sign in', 'Ask for a code on new devices', true],
+] as const
+const t = messages(Astro.currentLocale).library
+---
+
+<div class="stage-frame" data-fit="1120">
+  <div class="stage">
+    <div class="shot lib" role="img" aria-label={t.label}>
+      <div class="library" aria-hidden="true">
+        <h4>Library</h4>
+        <div class="search"><Icon icon={Search01Icon} size={16} />Search notes or page titles</div>
+        <div class="tags">
+          <span class="on">All</span>
+          {
+            TAGS.map(([tag, uses]) => (
+              <span>
+                {tag}
+                <small>{uses}</small>
+              </span>
+            ))
+          }
+        </div>
+        <ul class="grid">
+          <li>
+            <div class="media"><div class="pic lumen-pic"><LumenPricing /></div></div>
+            <span>Lumen · Pricing</span>
+          </li>
+          <li>
+            <div class="media">
+              <div class="pic hue">
+                {
+                  SWATCHES.map(([name, hex]) => (
+                    <div>
+                      <i style={`background:${hex}`} />
+                      <b>{name}</b>
+                      <small>{hex}</small>
+                    </div>
+                  ))
+                }
+              </div>
+            </div>
+            <span>Hue · Color system</span>
+          </li>
+          <li>
+            <div class="media">
+              <div class="pic orbit">
+                {
+                  SETTINGS.map(([title, hint, on]) => (
+                    <div>
+                      <i />
+                      <span>
+                        <b>{title}</b>
+                        <small>{hint}</small>
+                      </span>
+                      <em class:list={{ on }} />
+                    </div>
+                  ))
+                }
+              </div>
+            </div>
+            <span>Orbit · Settings</span>
+          </li>
+          <li>
+            <div class="media">
+              <div class="pic meadow">
+                <div>
+                  <span class="stars">★★★★★</span>
+                  <q>We replaced three tools and a weekly meeting. Our whole team finally looks at the same numbers.</q>
+                  <footer><span class="faces"><i></i><i></i><i></i></span><b>Priya Raman</b><small>Head of Operations, Orchard</small></footer>
+                </div>
+              </div>
+            </div>
+            <span>Meadow · Customers</span>
+          </li>
+          <li>
+            <div class="media">
+              <div class="pic hoyt">
+                <div class="q"><Icon icon={Search01Icon} size={9} />Search or jump to…<kbd>⌘K</kbd></div>
+                <small>Suggestions</small>
+                <div class="on"><i></i>Create new project<kbd>N</kbd></div>
+                <div><i></i>Switch workspace<kbd>W</kbd></div>
+                <div><i></i>Invite teammates<kbd>I</kbd></div>
+                <small>Recent</small>
+                <div><i></i>Q4 launch plan</div>
+                <div><i></i>Design review notes</div>
+              </div>
+            </div>
+            <span>Hoyt &amp; Co · Workspace</span>
+          </li>
+          <li>
+            <div class="media">
+              <div class="pic kite">
+                <span class="badge">New · Offline maps in 140 countries</span>
+                <h5>Travel <em>lighter,</em><br />see more.</h5>
+                <p>Plan the whole trip in one place, share it with friends, and leave the paperwork at home.</p>
+                <div><span class="go">Plan a trip</span><span>See how it works</span></div>
+              </div>
+            </div>
+            <span>Kite · Travel lighter</span>
+          </li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="shot save" role="img" aria-label={t.save}>
+      <div class="dialog" aria-hidden="true">
+        <div class="preview"><LumenPricing /></div>
+        <div class="form">
+          <h4>Save to ezdesign</h4>
+          <div class="from">Lumen · Pricing</div>
+          <span class="lbl">Tags</span>
+          <div class="field tags-field"><span>pricing <i>×</i></span><span>cards <i>×</i></span></div>
+          <span class="lbl">Why it’s good</span>
+          <div class="field note">Price is the loudest thing on the card. One accent color only.</div>
+          <div class="actions"><span>Cancel</span><span class="save-btn">Save</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<style>
+  .stage-frame {
+    --fit: 1;
+    position: relative;
+    margin-top: 28px;
+    aspect-ratio: 1120 / 400;
+    overflow: hidden;
+    border-radius: 18px;
+    background: var(--sunk);
+  }
+
+  .stage {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 1120px;
+    height: 400px;
+    transform: scale(var(--fit));
+    transform-origin: 0 0;
+  }
+
+  .shot {
+    position: absolute;
+    overflow: hidden;
+    border-radius: 12px;
+  }
+
+  .lib {
+    top: 40px;
+    left: 40px;
+    width: 840px;
+    box-shadow:
+      0 0 0 1px rgba(23, 23, 23, 0.06),
+      0 16px 40px -20px rgba(60, 40, 20, 0.3);
+  }
+
+  .save {
+    right: 56px;
+    bottom: -60px;
+    width: 300px;
+    box-shadow:
+      0 0 0 1px rgba(23, 23, 23, 0.08),
+      0 30px 60px -20px rgba(40, 28, 14, 0.45);
+  }
+
+  /* ----------------------------------------------------- library page */
+
+  .library {
+    zoom: calc(840 / 1390);
+    width: 1390px;
+    height: 450px;
+    padding: 18px 32px 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  }
+
+  .library h4 {
+    margin: 0;
+    font-size: 20px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    line-height: 1.3;
+  }
+
+  .search {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 420px;
+    height: 36px;
+    margin-top: 14px;
+    padding: 0 11px;
+    border: 1px solid var(--edge);
+    border-radius: 8px;
+    background: #fff;
+    font-size: 14px;
+    color: var(--ghost);
+  }
+
+  .search :global(svg) {
+    color: var(--faint);
+  }
+
+  .tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 14px;
+  }
+
+  .tags span {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 28px;
+    padding: 0 10px;
+    border-radius: 7px;
+    background: var(--sunk);
+    font-size: 13px;
+    font-weight: 500;
+  }
+
+  .tags small {
+    font-size: 11px;
+    color: var(--faint);
+  }
+
+  .tags .on {
+    background: var(--ink);
+    color: #fff;
+  }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: 22px 16px;
+    margin: 0;
+    padding: 24px 0 0;
+    list-style: none;
+  }
+
+  .grid li {
+    display: grid;
+    gap: 8px;
+  }
+
+  .grid li > span {
+    font-size: 12px;
+    color: var(--muted);
+  }
+
+  .media {
+    position: relative;
+    aspect-ratio: 1;
+    border-radius: 14px;
+    background: var(--sunk);
+  }
+
+  .pic {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    overflow: hidden;
+    border-radius: 4px;
+    outline: 1px solid rgb(0 0 0 / 0.06);
+    outline-offset: -1px;
+    box-shadow: 0 1px 3px rgb(0 0 0 / 0.06);
+    translate: -50% -50%;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  }
+
+  .lumen-pic {
+    zoom: calc(188 / 438);
+    background: #f1efeb;
+  }
+
+  .hue {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 3px;
+    width: 188px;
+    padding: 6px;
+    background: #fff;
+  }
+
+  .hue i {
+    display: block;
+    height: 38px;
+    border-radius: 3px;
+  }
+
+  .hue b,
+  .hue small {
+    display: block;
+    font-size: 4px;
+    line-height: 1.5;
+  }
+
+  .hue b {
+    margin-top: 2px;
+    font-weight: 600;
+  }
+
+  .hue small {
+    color: #999;
+  }
+
+  .orbit {
+    display: grid;
+    width: 188px;
+    padding: 4px 8px;
+    background: #fff;
+  }
+
+  .orbit div {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 0;
+  }
+
+  .orbit div + div {
+    border-top: 1px solid #f1f1f4;
+  }
+
+  .orbit i {
+    width: 8px;
+    height: 8px;
+    border-radius: 2px;
+    background: #f1f0f5;
+  }
+
+  .orbit span {
+    flex: 1;
+  }
+
+  .orbit b,
+  .orbit small {
+    display: block;
+    font-size: 4.5px;
+  }
+
+  .orbit small {
+    color: #a1a1aa;
+  }
+
+  .orbit em {
+    width: 14px;
+    height: 8px;
+    border-radius: 4px;
+    background: #e4e4ea;
+  }
+
+  .orbit em.on {
+    background: radial-gradient(circle at 10px 4px, #fff 2.6px, transparent 3px), #7c83f0;
+  }
+
+  .orbit em:not(.on) {
+    background: radial-gradient(circle at 4px 4px, #fff 2.6px, transparent 3px), #e4e4ea;
+  }
+
+  .meadow {
+    width: 188px;
+    padding: 9px;
+    background: linear-gradient(140deg, #fbe6da, #f6d6c9);
+  }
+
+  .meadow > div {
+    padding: 9px 10px;
+    border-radius: 3px;
+    background: #fff;
+  }
+
+  .stars {
+    font-size: 4px;
+    letter-spacing: 0.5px;
+    color: #f2a541;
+  }
+
+  .meadow q {
+    display: block;
+    margin-top: 3px;
+    font-family: Georgia, serif;
+    font-size: 7.5px;
+    line-height: 1.35;
+    color: #222;
+  }
+
+  .meadow footer {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    margin-top: 6px;
+    font-size: 4px;
+  }
+
+  .faces {
+    display: flex;
+  }
+
+  .faces i {
+    width: 8px;
+    height: 8px;
+    margin-right: -2px;
+    border: 1px solid #fff;
+    border-radius: 50%;
+    background: #e88e7f;
+  }
+
+  .faces i:nth-child(2) {
+    background: #7f9fe8;
+  }
+
+  .faces i:nth-child(3) {
+    background: #b08ce8;
+  }
+
+  .meadow b {
+    margin-left: 4px;
+  }
+
+  .meadow small {
+    color: #999;
+  }
+
+  .hoyt {
+    display: grid;
+    gap: 1px;
+    width: 172px;
+    padding: 5px;
+    background: #fff;
+    font-size: 4.5px;
+    color: #333;
+  }
+
+  .hoyt .q {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    margin-bottom: 3px;
+    padding: 3px;
+    border-bottom: 1px solid #f0f0f0;
+    color: #999;
+  }
+
+  .hoyt small {
+    padding: 3px 3px 1px;
+    font-size: 3.5px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: #aaa;
+  }
+
+  .hoyt div {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px;
+    border-radius: 2px;
+  }
+
+  .hoyt div i {
+    width: 5px;
+    height: 5px;
+    border-radius: 1px;
+    background: #ddd;
+  }
+
+  .hoyt div.on {
+    background: #1d1d22;
+    color: #fff;
+  }
+
+  .hoyt div.on i {
+    background: #555;
+  }
+
+  .hoyt kbd {
+    margin-left: auto;
+    font-family: inherit;
+    font-size: 3.5px;
+    color: #aaa;
+  }
+
+  .kite {
+    display: grid;
+    justify-items: center;
+    width: 188px;
+    padding: 9px 12px 14px;
+    background: linear-gradient(150deg, #a3492f 0%, #4a1f52 45%, #2a1745 70%, #5b2d8c 100%);
+    color: #fff;
+    text-align: center;
+  }
+
+  .kite .badge {
+    padding: 2px 5px;
+    border-radius: 999px;
+    background: rgb(255 255 255 / 0.15);
+    font-size: 3.5px;
+  }
+
+  .kite h5 {
+    margin: 6px 0 0;
+    font-family: Georgia, serif;
+    font-size: 22px;
+    font-weight: 400;
+    line-height: 1;
+    letter-spacing: -0.02em;
+  }
+
+  .kite p {
+    max-width: 150px;
+    margin: 6px 0 0;
+    font-size: 4.5px;
+    line-height: 1.5;
+    color: rgb(255 255 255 / 0.8);
+  }
+
+  .kite div {
+    display: flex;
+    gap: 4px;
+    margin-top: 7px;
+    font-size: 4px;
+  }
+
+  .kite div span {
+    padding: 3px 6px;
+    border-radius: 999px;
+    background: rgb(255 255 255 / 0.14);
+  }
+
+  .kite div .go {
+    background: #fff;
+    color: #222;
+    font-weight: 600;
+  }
+
+  /* ------------------------------------------------------- save dialog */
+
+  .dialog {
+    zoom: calc(300 / 438);
+    width: 438px;
+    background: #fff;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    color: var(--ink);
+  }
+
+  .preview {
+    height: 209px;
+    overflow: hidden;
+    background: #f1efeb;
+    box-shadow: inset 0 -1px 0 var(--edge);
+  }
+
+  .form {
+    padding: 18px 19px 14px;
+  }
+
+  .form h4 {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 600;
+  }
+
+  .from {
+    margin-top: 6px;
+    font-size: 12px;
+    color: var(--muted);
+  }
+
+  .lbl {
+    display: block;
+    margin-top: 16px;
+    font-size: 11.5px;
+    color: var(--muted);
+  }
+
+  .field {
+    margin-top: 6px;
+    border: 1px solid var(--edge);
+    border-radius: 8px;
+  }
+
+  .tags-field {
+    display: flex;
+    gap: 3px;
+    padding: 4px 5px;
+  }
+
+  .tags-field span {
+    padding: 2px 7px;
+    border-radius: 5px;
+    background: #ece3d6;
+    color: #6b5038;
+    font-size: 12px;
+  }
+
+  .tags-field i {
+    font-style: normal;
+    opacity: 0.6;
+  }
+
+  .note {
+    height: 74px;
+    padding: 8px 9px;
+    border-color: #b3b3b3;
+    outline: 3px solid color-mix(in oklab, var(--ink) 12%, transparent);
+    font-size: 12px;
+    line-height: 1.5;
+  }
+
+  .actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 12px;
+    font-size: 13px;
+    font-weight: 500;
+  }
+
+  .actions span {
+    display: grid;
+    place-items: center;
+    height: 36px;
+    padding: 0 16px;
+    border: 1px solid var(--edge);
+    border-radius: 8px;
+  }
+
+  .actions .save-btn {
+    border-color: var(--ink);
+    background: var(--ink);
+    color: #fff;
+  }
+</style>

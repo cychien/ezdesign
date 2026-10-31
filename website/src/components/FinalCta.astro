@@ -1,0 +1,106 @@
+---
+import Command from './Command.astro'
+import Mark from './Mark.astro'
+import { messages } from '../i18n'
+import { INSTALL_WITH_URL, SKILL_INSTALL } from '../lib/links'
+
+const t = messages(Astro.currentLocale).cta
+---
+
+<section class="final">
+  <div class="veil" aria-hidden="true"></div>
+  <Mark size={64} />
+  <h2>{t.title}</h2>
+  <p class="sub">{t.sub}</p>
+  <div class="run"><Command command={INSTALL_WITH_URL} size="lg" /></div>
+  <div class="alt">{t.skill} <code>{SKILL_INSTALL}</code></div>
+</section>
+
+<style>
+  .final {
+    position: relative;
+    isolation: isolate;
+    overflow: hidden;
+    padding: 80px 24px 72px;
+    background: linear-gradient(180deg, transparent, #e6e1d6 60px);
+    text-align: center;
+  }
+
+  .final::before {
+    content: '';
+    position: absolute;
+    inset: -12%;
+    z-index: -2;
+    filter: blur(36px);
+    background: var(--sunset-glow);
+    -webkit-mask-image: linear-gradient(180deg, transparent calc(12% / 1.24), #000 calc(12% / 1.24 + 60px));
+    mask-image: linear-gradient(180deg, transparent calc(12% / 1.24), #000 calc(12% / 1.24 + 60px));
+  }
+
+  .final::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    background-image: var(--noise);
+    background-size: 200px;
+    opacity: 0.2;
+    mix-blend-mode: overlay;
+    pointer-events: none;
+    -webkit-mask-image: linear-gradient(180deg, transparent, #000 220px);
+    mask-image: linear-gradient(180deg, transparent, #000 220px);
+  }
+
+  .veil {
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    background: linear-gradient(180deg, #faf9f6 0, rgba(250, 249, 246, 0.82) 90px, rgba(250, 249, 246, 0.45) 220px);
+    pointer-events: none;
+  }
+
+  h2 {
+    margin: 22px auto 0;
+    font-size: 60px;
+  }
+
+  .sub {
+    margin: 14px auto 0;
+  }
+
+  .run {
+    margin-top: 36px;
+  }
+
+  .alt {
+    margin-top: 20px;
+    font-size: 13px;
+    color: var(--muted);
+  }
+
+  code {
+    padding: 3px 7px;
+    border-radius: 5px;
+    background: rgba(255, 255, 255, 0.55);
+    font-family: var(--mono);
+    color: var(--ink);
+    user-select: all;
+  }
+
+  @media (max-width: 760px) {
+    .final {
+      padding-top: 48px;
+    }
+
+    h2 {
+      font-size: 40px;
+    }
+
+    .alt code {
+      display: inline-block;
+      margin-top: 6px;
+      max-width: 100%;
+      overflow-wrap: anywhere;
+    }
+  }
+</style>

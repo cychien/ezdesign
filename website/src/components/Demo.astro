@@ -1,0 +1,1138 @@
+---
+import Add01Icon from '@hugeicons/core-free-icons/Add01Icon'
+import Album02Icon from '@hugeicons/core-free-icons/Album02Icon'
+import BubbleChatIcon from '@hugeicons/core-free-icons/BubbleChatIcon'
+import Cancel01Icon from '@hugeicons/core-free-icons/Cancel01Icon'
+import CanvasIcon from '@hugeicons/core-free-icons/CanvasIcon'
+import ChevronDownIcon from '@hugeicons/core-free-icons/ChevronDownIcon'
+import CursorMagicSelection02Icon from '@hugeicons/core-free-icons/CursorMagicSelection02Icon'
+import Edit02Icon from '@hugeicons/core-free-icons/Edit02Icon'
+import KeyboardIcon from '@hugeicons/core-free-icons/KeyboardIcon'
+import Navigation03Icon from '@hugeicons/core-free-icons/Navigation03Icon'
+import PlusSignIcon from '@hugeicons/core-free-icons/PlusSignIcon'
+import Select01Icon from '@hugeicons/core-free-icons/Select01Icon'
+import Undo02Icon from '@hugeicons/core-free-icons/Undo02Icon'
+import UserCircleIcon from '@hugeicons/core-free-icons/UserCircleIcon'
+import WebDesign01Icon from '@hugeicons/core-free-icons/WebDesign01Icon'
+import Icon from './Icon.astro'
+import Lockup from './Lockup.astro'
+import { messages } from '../i18n'
+
+const t = messages(Astro.currentLocale).demo
+const COMMENT = 'Too tight above the fine print. Add more space and make the button ink.'
+const CUSTOMERS = ['Northwind', 'Lumen', 'Basecamp 2', 'Hoyt & Co', 'Trellis', 'Kite']
+---
+
+<div class="demo">
+  <div class="rim" role="img" aria-label={t.label}>
+    <div class="screen" aria-hidden="true" data-fit="1440">
+      <div class="stage" data-demo data-comment={COMMENT}>
+        <div class="tabs">
+          <span class="tab on"><Icon icon={WebDesign01Icon} size={14} />App</span>
+          <span class="tab">Pricing options</span>
+          <span class="tab">Brand</span>
+          <span class="tab-tools"><Icon icon={PlusSignIcon} size={15} /><Icon icon={CanvasIcon} size={15} /></span>
+        </div>
+
+        <div class="view">
+          <div class="cad" data-app>
+            <header class="cad-nav">
+              <span class="cad-brand"><i></i>Cadence</span>
+              <nav><span>Product</span><span>Pricing</span><span>Changelog</span><span>Docs</span></nav>
+              <span class="cad-login">Log in</span>
+              <span class="cad-btn primary sm">Start free</span>
+            </header>
+            <section class="cad-hero">
+              <div>
+                <p class="cad-eyebrow">Async status updates</p>
+                <h1>Weekly updates,<br />without the meeting.</h1>
+                <p class="cad-lede">Cadence pulls progress from the tools your team already uses and writes one weekly brief anyone can read. No more 30-minute status meetings.</p>
+                <div class="cad-cta">
+                  <span class="cad-btn primary" data-target="trial">Start 14-day trial</span>
+                  <span class="cad-btn ghost">Watch the 2-min demo</span>
+                </div>
+                <p class="cad-fine">No credit card · Set up in 5 minutes</p>
+              </div>
+              <div class="cad-preview">
+                <div class="cad-chrome"><i></i><i></i><i></i><span>This week · Engineering</span></div>
+                <ul>
+                  <li><b>Checkout redesign</b><span class="pill done">Shipped</span></li>
+                  <li><b>Payment retries</b><span class="pill">In progress · 80%</span></li>
+                  <li><b>Webhook redelivery</b><span class="pill risk">Stuck 3 days</span></li>
+                  <li><b>Database migration</b><span class="pill">Scheduled</span></li>
+                </ul>
+              </div>
+            </section>
+            <section class="cad-logos">
+              <p>Used by 1,200 teams every week</p>
+              <div>{CUSTOMERS.map((name) => <span>{name}</span>)}</div>
+            </section>
+          </div>
+        </div>
+
+        <aside class="panel">
+          <div class="p-head">
+            <div class="p-row">
+              <Lockup height={15} />
+              <span class="p-version">v0.9.2</span>
+              <span class="p-keys"><Icon icon={KeyboardIcon} size={14} /></span>
+              <span class="p-status"><i></i><span data-status>Agent connected</span></span>
+            </div>
+            <div class="p-url">localhost:5456/</div>
+            <div class="p-sizes"><span class="on">Desktop<Icon icon={ChevronDownIcon} size={12} /></span><span>All sizes</span></div>
+            <div class="p-modes">
+              <span class="p-mode" data-target="element"><Icon icon={CursorMagicSelection02Icon} size={14} />Element</span>
+              <span class="p-mode"><Icon icon={Select01Icon} size={14} />Region</span>
+            </div>
+          </div>
+
+          <div class="p-body">
+            <p class="p-hint">What should change? 🎨</p>
+            <div class="p-thread">
+              <div class="p-sent"><span>1.</span>{COMMENT}</div>
+              <div class="p-working"><span class="p-dots"><i></i><i></i><i></i></span><span data-activity></span></div>
+              <p class="p-reply">
+                Done. In <code>src/styles.css</code>, <code>.fine-print</code> now has <code>margin-top: 28px</code> (was 16px), and <code>.btn-primary</code> uses <code>--ink</code>.
+              </p>
+            </div>
+          </div>
+
+          <div class="p-foot">
+            <div class="p-queued">
+              <div class="p-queued-head">
+                <span class="marker">1</span>
+                <span class="p-anchor">src/sections/Hero.tsx:20 · hero · "Start 14…</span>
+                <Icon icon={Edit02Icon} size={11} />
+                <Icon icon={Cancel01Icon} size={11} />
+              </div>
+              <p>{COMMENT}</p>
+            </div>
+            <div class="p-composer">Add a note, or type / for commands</div>
+            <span class="p-send" data-target="send"><Icon icon={Navigation03Icon} size={14} />Send to agent</span>
+          </div>
+        </aside>
+
+        <nav class="rail">
+          <span class="on"><Icon icon={BubbleChatIcon} size={17} /></span>
+          <span><Icon icon={Album02Icon} size={17} /></span>
+          <span class="me"><Icon icon={UserCircleIcon} size={17} /></span>
+        </nav>
+
+        <div class="hl" data-hl></div>
+        <div class="badge" data-badge>&lt;Hero&gt; · src/sections/Hero.tsx:20</div>
+        <span class="marker pin" data-pin>1</span>
+        <div class="popup" data-popup>
+          <div class="field">
+            <span class="ph">What should change? Type / for commands</span>
+            <span data-typed></span><span class="caret"></span>
+          </div>
+          <div class="actions">
+            <span class="cancel">Cancel</span>
+            <span class="add" data-target="add"><Icon icon={Add01Icon} size={13} />Add to queue</span>
+          </div>
+        </div>
+
+        <div class="cursor" data-cursor>
+          <i></i>
+          <svg width="15" height="22" viewBox="0 0 15 22"><path d="M1 1v17.2l4.1-4 2.7 6.3 2.9-1.2-2.7-6.2h5.7z" fill="#171717" stroke="#fff" stroke-width="1.4" stroke-linejoin="round"></path></svg>
+        </div>
+      </div>
+    </div>
+  </div>
+  <button class="replay" type="button" data-replay aria-label={t.replay} title={t.replayTitle}>
+    <span class="bar"><i data-progress></i><span class="undo"><Icon icon={Undo02Icon} size={12} /></span></span>
+  </button>
+</div>
+
+<script>
+  import { runDemo } from '../scripts/demo'
+
+  const stage = document.querySelector<HTMLElement>('[data-demo]')
+  const progress = document.querySelector<HTMLElement>('[data-progress]')
+  const replay = document.querySelector<HTMLButtonElement>('[data-replay]')
+  if (stage && progress && replay) runDemo(stage, progress, replay)
+</script>
+
+<style>
+  .demo {
+    --pad: 44px;
+    position: relative;
+    z-index: 1;
+    isolation: isolate;
+    width: var(--stage);
+    overflow: clip;
+    margin: 0 0 -52px calc((var(--wrap) - var(--stage)) / 2);
+    padding: var(--pad) 0;
+    border-radius: clamp(0px, (100vw - var(--stage)) / 2, 24px);
+    background: #e6e1d6;
+  }
+
+  .demo::before {
+    content: '';
+    position: absolute;
+    inset: -12%;
+    z-index: -2;
+    filter: blur(36px);
+    background: var(--sunset-glow);
+  }
+
+  .demo::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    background-image: var(--noise);
+    background-size: 200px;
+    opacity: 0.3;
+    mix-blend-mode: overlay;
+    pointer-events: none;
+  }
+
+  .rim {
+    width: min(1092px, 100vw - 24px);
+    margin: 0 auto;
+    padding: 10px;
+    border-radius: 22px;
+    background: rgba(255, 255, 255, 0.16);
+    -webkit-backdrop-filter: blur(18px) saturate(1.15);
+    backdrop-filter: blur(18px) saturate(1.15);
+    box-shadow:
+      inset 0 0 0 1px rgba(255, 255, 255, 0.28),
+      0 30px 80px -30px rgba(8, 18, 28, 0.6);
+  }
+
+  .screen {
+    --fit: 0.7444;
+    position: relative;
+    aspect-ratio: 1440 / 854;
+    overflow: hidden;
+    border-radius: 13px;
+    background: #fff;
+    box-shadow: 0 0 0 1px rgba(10, 20, 30, 0.12);
+  }
+
+  .stage {
+    --s-paper: #faf9f6;
+    --s-sunk: #f2f0e9;
+    --s-edge: #e9e6dd;
+    --s-ink: #171717;
+    --s-muted: #676767;
+    --s-faint: #878787;
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 1440px;
+    height: 854px;
+    overflow: hidden;
+    transform: scale(var(--fit));
+    transform-origin: 0 0;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    color: var(--s-ink);
+    cursor: default;
+    user-select: none;
+  }
+
+  .stage :global(svg) {
+    display: block;
+    flex-shrink: 0;
+  }
+
+  /* ------------------------------------------------------------ tab bar */
+
+  .tabs {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 1052px;
+    height: 42px;
+    display: flex;
+    align-items: stretch;
+    background: #f5f3ee;
+    border-bottom: 1px solid var(--s-edge);
+    font-size: 13px;
+    color: var(--s-muted);
+  }
+
+  .tab {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 0 14px;
+  }
+
+  .tab.on {
+    background: var(--s-paper);
+    color: var(--s-ink);
+    box-shadow: 1px 0 0 var(--s-edge);
+  }
+
+  .tab.on :global(svg) {
+    color: #ee7a2a;
+  }
+
+  .tab-tools {
+    display: flex;
+    gap: 14px;
+    align-items: center;
+    margin-left: auto;
+    padding-right: 17px;
+    color: var(--s-muted);
+  }
+
+  /* --------------------------------------------------------- the app */
+
+  .view {
+    position: absolute;
+    top: 42px;
+    left: 0;
+    width: 1052px;
+    height: 812px;
+    overflow: hidden;
+    background: #fff;
+  }
+
+  .cad {
+    --c-ink: #14161a;
+    --c-ink-2: #3d434e;
+    --c-muted: #6d7480;
+    --c-line: #e6e8ec;
+    --c-line-soft: #f1f3f6;
+    --c-surface-2: #f7f8fa;
+    --c-accent: #2f5cff;
+    font-size: 16px;
+    line-height: 1.65;
+    color: var(--c-ink);
+  }
+
+  .cad-nav {
+    display: flex;
+    align-items: center;
+    gap: 32px;
+    padding: 14px 32px;
+    border-bottom: 1px solid var(--c-line-soft);
+  }
+
+  .cad-brand {
+    display: inline-flex;
+    align-items: center;
+    gap: 9px;
+    font-weight: 650;
+    letter-spacing: -0.01em;
+  }
+
+  .cad-brand i {
+    width: 18px;
+    height: 18px;
+    border-radius: 6px;
+    background: linear-gradient(140deg, var(--c-accent), #7aa2ff);
+  }
+
+  .cad-nav nav {
+    display: flex;
+    gap: 26px;
+    margin-right: auto;
+    font-size: 15px;
+    color: var(--c-ink-2);
+  }
+
+  .cad-login {
+    margin-right: -14px;
+    font-size: 15px;
+    color: var(--c-ink-2);
+  }
+
+  .cad-btn {
+    display: inline-flex;
+    align-items: center;
+    padding: 11px 20px;
+    border: 1px solid transparent;
+    border-radius: 10px;
+    font-size: 15px;
+    font-weight: 550;
+    transition: background-color 0.5s ease;
+  }
+
+  .cad-btn.sm {
+    padding: 8px 15px;
+    font-size: 14px;
+  }
+
+  .cad-btn.primary {
+    background: var(--c-accent);
+    color: #fff;
+  }
+
+  .cad-hero {
+    display: grid;
+    grid-template-columns: 1.05fr 0.95fr;
+    gap: 56px;
+    align-items: center;
+    padding: 88px 32px 72px;
+  }
+
+  .cad-eyebrow {
+    margin: 0 0 14px;
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--c-accent);
+  }
+
+  .cad h1 {
+    margin: 0;
+    font-size: 48px;
+    font-weight: 700;
+    line-height: 1.2;
+    letter-spacing: -0.02em;
+  }
+
+  .cad-lede {
+    max-width: 44ch;
+    margin: 20px 0 0;
+    font-size: 17px;
+    color: var(--c-muted);
+  }
+
+  .cad-cta {
+    display: flex;
+    gap: 12px;
+    margin-top: 32px;
+  }
+
+  .cad-fine {
+    margin: 16px 0 0;
+    font-size: 13px;
+    color: var(--c-muted);
+    transition: margin-top 0.5s cubic-bezier(0.2, 0.7, 0.2, 1);
+  }
+
+  .cad-preview {
+    overflow: hidden;
+    border: 1px solid var(--c-line);
+    border-radius: 14px;
+    box-shadow: 0 22px 48px -28px rgba(20, 22, 26, 0.4);
+  }
+
+  .cad-chrome {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--c-line-soft);
+    background: var(--c-surface-2);
+  }
+
+  .cad-chrome i {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: #d8dce3;
+  }
+
+  .cad-chrome span {
+    margin-left: 10px;
+    font-size: 13px;
+    color: var(--c-muted);
+  }
+
+  .cad-preview ul {
+    margin: 0;
+    padding: 8px 0;
+    list-style: none;
+  }
+
+  .cad-preview li {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 11px 16px;
+    font-size: 14px;
+  }
+
+  .cad-preview li + li {
+    border-top: 1px solid var(--c-line-soft);
+  }
+
+  .pill {
+    padding: 3px 9px;
+    border-radius: 999px;
+    background: var(--c-surface-2);
+    color: var(--c-muted);
+    font-size: 12px;
+  }
+
+  .pill.done {
+    background: #e7f6ee;
+    color: #1f7a4d;
+  }
+
+  .pill.risk {
+    background: #fdecec;
+    color: #b3352f;
+  }
+
+  .cad-logos {
+    padding: 28px 32px 56px;
+  }
+
+  .cad-logos p {
+    margin: 0 0 20px;
+    font-size: 13px;
+    letter-spacing: 0.04em;
+    text-align: center;
+    color: var(--c-muted);
+  }
+
+  .cad-logos div {
+    display: flex;
+    justify-content: space-between;
+    padding: 20px 28px;
+    border-top: 1px solid var(--c-line-soft);
+    border-bottom: 1px solid var(--c-line-soft);
+  }
+
+  .cad-logos span {
+    font-size: 17px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    color: #9aa1ac;
+  }
+
+  [data-applied] .cad-btn.primary {
+    background: var(--c-ink);
+  }
+
+  [data-applied] .cad-fine {
+    margin-top: 28px;
+  }
+
+  /* --------------------------------------------------------- the panel */
+
+  .panel {
+    position: absolute;
+    top: 0;
+    left: 1052px;
+    width: 345px;
+    height: 854px;
+    display: flex;
+    flex-direction: column;
+    background: var(--s-paper);
+    box-shadow: inset 1px 0 0 var(--s-edge);
+    font-size: 13px;
+  }
+
+  .p-head {
+    padding: 12px 15px 12px 16px;
+    border-bottom: 1px solid var(--s-edge);
+  }
+
+  .p-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    height: 22px;
+  }
+
+  .p-version {
+    margin-top: 2px;
+    font-size: 11px;
+    color: var(--s-faint);
+  }
+
+  .p-keys {
+    margin-left: auto;
+    color: var(--s-faint);
+  }
+
+  .p-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 22px;
+    padding: 0 9px;
+    border-radius: 999px;
+    background: var(--s-sunk);
+    font-size: 11.5px;
+    color: var(--s-muted);
+  }
+
+  .p-status i {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #3a9d5d;
+    transition: background 0.2s ease;
+  }
+
+  [data-working] .p-status i {
+    background: #e8b45a;
+  }
+
+  .p-url {
+    margin-top: 8px;
+    font-size: 12px;
+    color: var(--s-muted);
+  }
+
+  .p-sizes {
+    display: inline-flex;
+    gap: 2px;
+    margin-top: 9px;
+    padding: 2px;
+    border-radius: 8px;
+    background: var(--s-sunk);
+    font-size: 12px;
+    color: var(--s-muted);
+  }
+
+  .p-sizes span {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    height: 26px;
+    padding: 0 9px;
+    border-radius: 6px;
+  }
+
+  .p-sizes .on {
+    background: #fff;
+    color: var(--s-ink);
+    font-weight: 600;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+  }
+
+  .p-modes {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+    margin-top: 9px;
+  }
+
+  .p-mode {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    height: 29px;
+    border-radius: 7px;
+    background: #fff;
+    box-shadow: inset 0 0 0 1px var(--s-edge);
+    font-size: 12.5px;
+    font-weight: 600;
+    transition: background 0.12s ease, color 0.12s ease;
+  }
+
+  [data-mode='element'] [data-target='element'] {
+    background: var(--s-ink);
+    color: #fff;
+    box-shadow: none;
+  }
+
+  .p-body {
+    flex: 1;
+    padding: 16px 16px 0;
+    overflow: hidden;
+  }
+
+  .p-hint {
+    margin: 0;
+    font-size: 12px;
+    color: var(--s-muted);
+  }
+
+  [data-sent] .p-hint {
+    display: none;
+  }
+
+  .p-thread {
+    display: none;
+  }
+
+  [data-sent] .p-thread {
+    display: block;
+  }
+
+  .p-sent {
+    display: flex;
+    gap: 6px;
+    margin-left: auto;
+    width: fit-content;
+    max-width: 262px;
+    padding: 9px 11px;
+    border-radius: 12px;
+    background: var(--s-sunk);
+    line-height: 1.6;
+    animation: rise 0.3s ease both;
+  }
+
+  .p-sent span {
+    color: var(--s-faint);
+  }
+
+  .p-working {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    margin-top: 22px;
+    font-size: 12px;
+    color: var(--s-muted);
+  }
+
+  [data-applied] .p-working {
+    display: none;
+  }
+
+  .p-dots {
+    display: flex;
+    gap: 3px;
+  }
+
+  .p-dots i {
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: var(--s-faint);
+    animation: dot 1s ease-in-out infinite;
+  }
+
+  .p-dots i:nth-child(2) {
+    animation-delay: 0.15s;
+  }
+
+  .p-dots i:nth-child(3) {
+    animation-delay: 0.3s;
+  }
+
+  .p-reply {
+    display: none;
+    margin: 22px 0 0;
+    line-height: 1.75;
+  }
+
+  [data-applied] .p-reply {
+    display: block;
+    animation: rise 0.3s ease both;
+  }
+
+  .p-reply code {
+    padding: 1px 4px;
+    border-radius: 4px;
+    background: rgba(180, 72, 42, 0.09);
+    color: #b4482a;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 11.5px;
+  }
+
+  .p-foot {
+    padding: 10px 15px 8px 16px;
+    border-top: 1px solid var(--s-edge);
+  }
+
+  .p-queued {
+    display: none;
+    margin-bottom: 10px;
+    padding: 9px 10px 10px;
+    border-radius: 10px;
+    background: var(--s-sunk);
+  }
+
+  [data-queued] .p-queued {
+    display: block;
+    animation: rise 0.25s ease both;
+  }
+
+  .p-queued-head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    color: var(--s-muted);
+  }
+
+  .p-anchor {
+    flex: 1;
+    overflow: hidden;
+    white-space: nowrap;
+  }
+
+  .p-queued-head :global(svg) {
+    color: var(--s-faint);
+  }
+
+  .p-queued .marker {
+    position: static;
+    width: 17px;
+    height: 17px;
+    font-size: 10px;
+    line-height: 17px;
+    box-shadow: none;
+  }
+
+  .p-queued p {
+    margin: 6px 0 0;
+    line-height: 1.55;
+  }
+
+  .p-composer {
+    height: 55px;
+    padding: 9px 10px;
+    border-radius: 8px;
+    background: #fff;
+    box-shadow: inset 0 0 0 1px var(--s-edge);
+    font-size: 12.5px;
+    color: #a3a3a3;
+  }
+
+  .p-send {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    height: 34px;
+    margin-top: 9px;
+    border-radius: 7px;
+    background: var(--s-ink);
+    color: #fff;
+    font-weight: 600;
+    transition: opacity 0.2s ease;
+  }
+
+  [data-working] .p-send {
+    opacity: 0.86;
+  }
+
+  /* ---------------------------------------------------------- the rail */
+
+  .rail {
+    position: absolute;
+    top: 0;
+    left: 1397px;
+    width: 43px;
+    height: 854px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    padding-top: 6px;
+    background: var(--s-paper);
+    box-shadow: inset 1px 0 0 var(--s-edge);
+    color: var(--s-muted);
+  }
+
+  .rail span {
+    display: grid;
+    place-items: center;
+    width: 30px;
+    height: 30px;
+    border-radius: 8px;
+  }
+
+  .rail .on {
+    background: #fff;
+    color: var(--s-ink);
+    box-shadow: 0 0 0 1px var(--s-edge);
+  }
+
+  .rail .me {
+    margin-top: auto;
+    margin-bottom: 10px;
+  }
+
+  /* ------------------------------------------------------- the overlay */
+
+  .hl,
+  .badge,
+  .pin,
+  .popup {
+    position: absolute;
+    top: 0;
+    left: 0;
+    display: none;
+  }
+
+  .hl {
+    border: 3px solid #e56d41;
+    border-radius: 4px;
+    background: color-mix(in oklab, #e56d41 10%, transparent);
+    box-shadow:
+      0 0 0 1px rgb(255 255 255 / 0.6),
+      inset 0 0 0 1px rgb(255 255 255 / 0.6);
+  }
+
+  [data-hover] .hl,
+  [data-selected] .hl {
+    display: block;
+  }
+
+  .badge {
+    padding: 2px 8px;
+    border-radius: 5px;
+    background: var(--s-ink);
+    box-shadow: 0 0 0 1px rgb(255 255 255 / 0.25);
+    color: #fff;
+    font-size: 11px;
+    font-weight: 500;
+    line-height: 1.6;
+    white-space: nowrap;
+  }
+
+  [data-hover]:not([data-selected]) .badge {
+    display: block;
+  }
+
+  .marker {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: #e56d41;
+    color: #fff;
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 20px;
+    text-align: center;
+    box-shadow: 0 0 0 2px rgb(255 255 255 / 0.85);
+  }
+
+  [data-queued] .pin {
+    display: block;
+  }
+
+  .popup {
+    width: 300px;
+    padding: 8px;
+    border: 1px solid var(--s-edge);
+    border-radius: 14px;
+    background: #fff;
+    box-shadow:
+      0 12px 32px rgb(0 0 0 / 0.12),
+      0 2px 8px rgb(0 0 0 / 0.06);
+  }
+
+  [data-popup-open] .popup {
+    display: block;
+  }
+
+  .field {
+    position: relative;
+    min-height: 76px;
+    padding: 7px 9px;
+    border: 1px solid #b3b3b3;
+    border-radius: 10px;
+    outline: 3px solid color-mix(in oklab, #171717 12%, transparent);
+    background: var(--s-sunk);
+    font-size: 13px;
+    line-height: 1.5;
+  }
+
+  .ph {
+    position: absolute;
+    inset: 7px 9px auto;
+    color: var(--s-faint);
+  }
+
+  [data-typing] .ph {
+    display: none;
+  }
+
+  .caret {
+    display: inline-block;
+    width: 1px;
+    height: 15px;
+    margin-left: 1px;
+    vertical-align: -3px;
+    background: var(--s-ink);
+    animation: blink 1s steps(1) infinite;
+  }
+
+  .actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 6px;
+    margin-top: 6px;
+    font-size: 13px;
+  }
+
+  .actions span {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 6px 12px;
+    border-radius: 8px;
+  }
+
+  .cancel {
+    color: var(--s-muted);
+  }
+
+  .add {
+    background: var(--s-ink);
+    color: #fff;
+    font-weight: 600;
+  }
+
+  /* -------------------------------------------------------- the cursor */
+
+  .cursor {
+    position: absolute;
+    top: 0;
+    left: 0;
+    z-index: 2;
+    width: 15px;
+    height: 22px;
+    pointer-events: none;
+    filter: drop-shadow(0 1px 1.5px rgba(0, 0, 0, 0.35));
+    will-change: transform;
+  }
+
+  .cursor i {
+    position: absolute;
+    top: -13px;
+    left: -13px;
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    background: rgba(229, 109, 65, 0.35);
+    opacity: 0;
+    transform: scale(0.4);
+  }
+
+  .cursor svg {
+    transform-origin: 0 0;
+    transition: transform 0.08s;
+  }
+
+  .cursor:global(.press) i {
+    animation: press 0.42s ease-out;
+  }
+
+  .cursor:global(.press) svg {
+    transform: scale(0.9);
+  }
+
+  @keyframes press {
+    0% {
+      opacity: 1;
+      transform: scale(0.4);
+    }
+
+    100% {
+      opacity: 0;
+      transform: scale(1.5);
+    }
+  }
+
+  @keyframes rise {
+    from {
+      opacity: 0;
+      transform: translateY(4px);
+    }
+  }
+
+  @keyframes blink {
+    50% {
+      opacity: 0;
+    }
+  }
+
+  @keyframes dot {
+    0%,
+    100% {
+      opacity: 0.35;
+      transform: translateY(0);
+    }
+
+    50% {
+      opacity: 1;
+      transform: translateY(-2px);
+    }
+  }
+
+  /* ------------------------------------------------------ the controls */
+
+  .replay {
+    position: absolute;
+    bottom: calc((var(--pad) - 24px) / 2);
+    left: 50%;
+    display: grid;
+    place-items: center;
+    width: 56px;
+    height: 24px;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: #fff;
+    cursor: pointer;
+    transform: translateX(-50%);
+  }
+
+  .bar {
+    position: relative;
+    width: 100%;
+    height: 6px;
+    overflow: hidden;
+    border-radius: 999px;
+    background: rgb(23 23 23 / 0.16);
+    transition:
+      height 0.25s cubic-bezier(0.3, 0.7, 0.2, 1),
+      background 0.2s ease;
+  }
+
+  .bar i {
+    position: absolute;
+    inset: 0;
+    background: rgb(23 23 23 / 0.45);
+    transform: scaleX(0);
+    transform-origin: 0 50%;
+    transition: opacity 0.2s ease;
+  }
+
+  .undo {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+  }
+
+  .undo :global(path) {
+    stroke-width: 2.5;
+  }
+
+  .replay:is(:hover, :focus-visible) .bar {
+    height: 24px;
+    background: rgb(23 23 23 / 0.45);
+  }
+
+  .replay:is(:hover, :focus-visible) .bar i {
+    opacity: 0;
+  }
+
+  .replay:is(:hover, :focus-visible) .undo {
+    opacity: 1;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .replay {
+      display: none;
+    }
+  }
+
+  @media (max-width: 1140px) {
+    .rim {
+      padding: 6px;
+      border-radius: 16px;
+    }
+
+    .screen {
+      border-radius: 10px;
+    }
+  }
+
+  @media (max-width: 640px) {
+    .demo {
+      --pad: 24px;
+    }
+  }
+</style>

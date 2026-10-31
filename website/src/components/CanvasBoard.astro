@@ -1,0 +1,552 @@
+---
+import { messages } from '../i18n'
+import { CLAUDE_PATH } from '../lib/agents'
+
+const TIERS = [
+  { name: 'Starter', price: '$0', unit: ' /mo', perks: ['3 projects', 'Weekly digest', 'Slack sync'], cta: 'Get started' },
+  { name: 'Team', price: '$12', unit: ' /seat', perks: ['Unlimited projects', 'Daily digest', 'All integrations'], cta: 'Start 14-day trial', primary: true },
+  { name: 'Business', price: '$29', unit: ' /seat', perks: ['SSO and audit log', 'Custom reports', 'Priority support'], cta: 'Talk to sales' },
+]
+
+const ROWS = [
+  ['Projects', '3', 'Unlimited', 'Unlimited'],
+  ['Digest', 'Weekly', 'Daily', 'Daily'],
+  ['Integrations', 'Slack', 'All', 'All'],
+  ['SSO', '-', '-', '✓'],
+  ['Support', 'Community', 'Email', 'Priority'],
+]
+const t = messages(Astro.currentLocale).canvas
+---
+
+<div class="board-frame" data-fit="1120">
+  <div class="board" role="img" aria-label={t.label}>
+    <div class="zoom" aria-hidden="true"><span>Pricing ideas</span><b>50%</b></div>
+    <div class="chat" aria-hidden="true">
+      <div class="chat-head">Chat<span>3 frames added</span></div>
+      <div class="chat-log">
+        <div class="msg you"><div class="who">You</div><div class="body">Design the pricing page. Use <span class="tok">ref 1</span> for the cards and keep our colors.</div></div>
+        <div class="msg">
+          <div class="who"><svg width="13" height="13" viewBox="0 0 24 24" fill="#D97757"><path d={CLAUDE_PATH}></path></svg>Claude Code</div>
+          Added three options to the canvas, all in Cadence's own blue.
+          <ul class="done"><li><i></i>A · Cards</li><li><i></i>B · Gradient header</li><li><i></i>C · Comparison table</li></ul>
+        </div>
+      </div>
+      <div class="composer">
+        <span>Build <span class="fchip">B · Gradient header</span> into the app</span>
+        <b><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M6 11l6-6 6 6"></path></svg></b>
+      </div>
+    </div>
+
+    <div class="frame" style="left:368px" aria-hidden="true">
+      <span class="ft">A · Cards<em>1440</em></span>
+      <div class="vp">
+        <div class="pg">
+          <div class="nv"><i></i>Cadence<span>Product Pricing Docs</span><em>Start free</em></div>
+          <div class="hd"><b>Pricing that grows with your team</b><span>Start free. Upgrade when your updates do.</span></div>
+          <div class="tiers">
+            {
+              TIERS.map((tier) => (
+                <div class:list={['t', { dark: tier.primary }]}>
+                  <div class="n">{tier.name}</div>
+                  <div class="pr">{tier.price}<small>{tier.unit}</small></div>
+                  <ul>{tier.perks.map((perk) => <li>{perk}</li>)}</ul>
+                  <div class:list={['go', { fill: tier.primary }]}>{tier.cta}</div>
+                </div>
+              ))
+            }
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="frame on" style="left:616px" aria-hidden="true">
+      <span class="ft">B · Gradient header<em>1440</em></span>
+      <div class="vp">
+        <div class="pg grad">
+          <div class="top">
+            <div class="nv"><i style="background:#fff"></i>Cadence<span>Product Pricing Docs</span><em>Start free</em></div>
+            <div class="hd"><b>Simple pricing, no meetings</b><span>Every plan writes your weekly update for you.</span></div>
+          </div>
+          <div class="tiers">
+            {
+              TIERS.map((tier) => (
+                <div class="t">
+                  <div class="n">{tier.name}</div>
+                  <div class="pr">{tier.price}<small>{tier.unit}</small></div>
+                  <ul>{tier.perks.map((perk) => <li>{perk}</li>)}</ul>
+                  <div class:list={['go', { fill: tier.primary }]}>{tier.cta}</div>
+                </div>
+              ))
+            }
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="frame" style="left:864px" aria-hidden="true">
+      <span class="ft">C · Comparison table<em>1440</em></span>
+      <div class="vp">
+        <div class="pg">
+          <div class="nv"><i></i>Cadence<span>Product Pricing Docs</span><em>Start free</em></div>
+          <div class="hd"><b>Compare plans</b><span>Everything you get, side by side.</span></div>
+          <div class="tb">
+            <div><span></span><span>Starter<small>$0</small></span><span class="hl">Team<small>$12</small></span><span>Business<small>$29</small></span></div>
+            {
+              ROWS.map(([label, ...cells]) => (
+                <div>
+                  <span>{label}</span>
+                  {cells.map((cell, i) => (
+                    <span class:list={{ y: cell === '✓' || (label === 'Integrations' && i > 0) }}>{cell}</span>
+                  ))}
+                </div>
+              ))
+            }
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<style>
+  .board-frame {
+    --fit: 1;
+    position: relative;
+    margin-top: 28px;
+    aspect-ratio: 1120 / 476;
+    overflow: hidden;
+    border-radius: 18px;
+    background: var(--sunk) radial-gradient(circle, #dcd8cd 1px, transparent 1.2px) 0 0 / calc(22px * var(--fit)) calc(22px * var(--fit));
+  }
+
+  .board {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 1120px;
+    height: 476px;
+    transform: scale(var(--fit));
+    transform-origin: 0 0;
+  }
+
+  .zoom {
+    position: absolute;
+    top: 20px;
+    right: 20px;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    height: 30px;
+    padding: 0 12px;
+    border-radius: 8px;
+    background: #fff;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+    font-size: 12px;
+    color: var(--muted);
+  }
+
+  .zoom b {
+    font-weight: 500;
+    color: var(--ink);
+  }
+
+  .chat {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    display: flex;
+    flex-direction: column;
+    width: 340px;
+    background: #fff;
+    box-shadow: 1px 0 0 var(--edge);
+    font-size: 13px;
+    line-height: 1.55;
+  }
+
+  .chat-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: 48px;
+    padding: 0 18px;
+    border-bottom: 1px solid var(--edge);
+    font-size: 13px;
+    font-weight: 600;
+  }
+
+  .chat-head span {
+    font-size: 11.5px;
+    font-weight: 500;
+    color: var(--faint);
+  }
+
+  .chat-log {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: 16px;
+    padding: 18px;
+  }
+
+  .who {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 4px;
+    font-size: 11.5px;
+    font-weight: 500;
+    color: var(--faint);
+  }
+
+  .you .body {
+    padding: 10px 12px;
+    border-radius: 12px;
+    background: var(--sunk);
+  }
+
+  .done {
+    display: grid;
+    gap: 4px;
+    margin: 8px 0 0;
+    padding: 0;
+    list-style: none;
+    font-size: 12.5px;
+    color: var(--muted);
+  }
+
+  .done li {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+  }
+
+  .done i {
+    width: 14px;
+    height: 14px;
+    border-radius: 4px;
+    background: var(--sunk);
+    box-shadow: inset 0 0 0 1px var(--edge);
+  }
+
+  .tok {
+    display: inline-block;
+    padding: 0 5px;
+    border-radius: 4px;
+    background: var(--ref);
+    color: var(--ref-ink);
+    font-size: 12px;
+    font-weight: 500;
+  }
+
+  .fchip {
+    display: inline-block;
+    padding: 0 5px;
+    border-radius: 4px;
+    background: color-mix(in oklab, var(--arrange) 14%, #fff);
+    color: #0b6fc0;
+    font-size: 12px;
+    font-weight: 500;
+  }
+
+  .composer {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0 14px 14px;
+    padding: 10px 10px 10px 14px;
+    border-radius: 12px;
+    box-shadow: inset 0 0 0 1px var(--edge);
+  }
+
+  .composer > span {
+    flex: 1;
+  }
+
+  .composer b {
+    display: grid;
+    place-items: center;
+    width: 26px;
+    height: 26px;
+    border-radius: 7px;
+    background: var(--ink);
+    color: #fff;
+  }
+
+  .frame {
+    position: absolute;
+    top: 142px;
+    width: 232px;
+    height: 212px;
+    border-radius: 4px;
+    background: #fff;
+    box-shadow:
+      0 0 0 1px rgba(0, 0, 0, 0.06),
+      0 8px 24px -10px rgba(0, 0, 0, 0.15);
+  }
+
+  .frame.on {
+    box-shadow:
+      0 0 0 2px var(--arrange),
+      0 8px 24px -10px rgba(0, 0, 0, 0.15);
+  }
+
+  .ft {
+    position: absolute;
+    top: -22px;
+    left: 0;
+    font-size: 11.5px;
+    white-space: nowrap;
+    color: var(--muted);
+  }
+
+  .ft em {
+    margin-left: 6px;
+    font-style: normal;
+    color: var(--faint);
+  }
+
+  .frame.on .ft {
+    font-weight: 500;
+    color: var(--arrange);
+  }
+
+  .vp {
+    width: 232px;
+    height: 212px;
+    overflow: hidden;
+    border-radius: 4px;
+  }
+
+  .pg {
+    width: 600px;
+    height: 776px;
+    transform: scale(0.3867);
+    transform-origin: 0 0;
+    background: #fff;
+    color: #14161a;
+    font-size: 12px;
+  }
+
+  .nv {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    height: 52px;
+    padding: 0 28px;
+    border-bottom: 1px solid #eef0f3;
+    font-size: 14px;
+    font-weight: 600;
+  }
+
+  .nv i {
+    width: 16px;
+    height: 16px;
+    border-radius: 5px;
+    background: linear-gradient(140deg, #2f5cff, #7aa2ff);
+  }
+
+  .nv span {
+    margin-left: 24px;
+    font-size: 12px;
+    font-weight: 400;
+    word-spacing: 14px;
+    color: #6b7280;
+  }
+
+  .nv em {
+    display: inline-flex;
+    align-items: center;
+    height: 28px;
+    margin-left: auto;
+    padding: 0 12px;
+    border-radius: 7px;
+    background: #2f5cff;
+    color: #fff;
+    font-size: 12px;
+    font-style: normal;
+    font-weight: 500;
+  }
+
+  .hd {
+    padding: 34px 28px 0;
+    text-align: center;
+  }
+
+  .hd b {
+    display: block;
+    font-size: 30px;
+    font-weight: 600;
+    line-height: 1.1;
+    letter-spacing: -0.035em;
+  }
+
+  .hd span {
+    display: block;
+    margin-top: 8px;
+    font-size: 13px;
+    color: #6b7280;
+  }
+
+  .tiers {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+    margin: 0;
+    padding: 28px 28px 0;
+  }
+
+  .t {
+    padding: 16px;
+    border-radius: 12px;
+    background: #f7f8fa;
+  }
+
+  .n {
+    font-size: 13px;
+    font-weight: 600;
+  }
+
+  .pr {
+    margin-top: 6px;
+    font-size: 30px;
+    font-weight: 600;
+    letter-spacing: -0.03em;
+  }
+
+  .pr small {
+    font-size: 12px;
+    font-weight: 400;
+    letter-spacing: 0;
+    color: #6b7280;
+  }
+
+  .t ul {
+    display: grid;
+    gap: 7px;
+    margin: 12px 0 0;
+    padding: 0;
+    list-style: none;
+    color: #4b5563;
+  }
+
+  .t li::before {
+    content: '✓';
+    margin-right: 6px;
+    color: #2f5cff;
+  }
+
+  .go {
+    display: grid;
+    place-items: center;
+    height: 34px;
+    margin-top: 18px;
+    border-radius: 8px;
+    background: #fff;
+    box-shadow: inset 0 0 0 1px #e6e8ec;
+    font-weight: 500;
+  }
+
+  .go.fill {
+    background: #2f5cff;
+    color: #fff;
+    box-shadow: none;
+  }
+
+  .t.dark {
+    background: #14161a;
+    color: #fff;
+  }
+
+  .t.dark ul,
+  .t.dark .pr small {
+    color: #aab0bc;
+  }
+
+  .t.dark li::before {
+    color: #7aa2ff;
+  }
+
+  .grad .nv {
+    border-color: transparent;
+    background: transparent;
+    color: #fff;
+  }
+
+  .grad .nv span {
+    color: rgba(255, 255, 255, 0.75);
+  }
+
+  .grad .nv em {
+    background: #fff;
+    color: #2f5cff;
+  }
+
+  .grad .top {
+    height: 236px;
+    background: linear-gradient(140deg, #2f5cff, #7aa2ff);
+    color: #fff;
+  }
+
+  .grad .hd span {
+    color: rgba(255, 255, 255, 0.8);
+  }
+
+  .grad .tiers {
+    margin-top: -96px;
+  }
+
+  .grad .t {
+    background: #fff;
+    box-shadow:
+      0 0 0 1px #eef0f3,
+      0 12px 28px -14px rgba(20, 30, 60, 0.35);
+  }
+
+  .tb {
+    margin: 28px 28px 0;
+    overflow: hidden;
+    border-radius: 12px;
+    box-shadow: inset 0 0 0 1px #e6e8ec;
+  }
+
+  .tb div {
+    display: grid;
+    grid-template-columns: 1.5fr 1fr 1fr 1fr;
+    align-items: center;
+    height: 42px;
+    padding: 0 16px;
+    border-top: 1px solid #eef0f3;
+    color: #4b5563;
+  }
+
+  .tb div:first-child {
+    height: 76px;
+    border-top: 0;
+    background: #f7f8fa;
+    color: #14161a;
+    font-size: 13px;
+    font-weight: 600;
+  }
+
+  .tb div:first-child small {
+    display: block;
+    margin-top: 2px;
+    font-size: 20px;
+    letter-spacing: -0.03em;
+  }
+
+  .tb span:not(:first-child) {
+    text-align: center;
+  }
+
+  .tb .y {
+    font-weight: 600;
+    color: #2f5cff;
+  }
+
+  .tb .hl {
+    color: #2f5cff;
+  }
+</style>

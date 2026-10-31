@@ -1,0 +1,84 @@
+---
+const WIDTH = 3840
+const STEP = 8
+const HEIGHT = 24
+
+const ticks = Array.from({ length: WIDTH / STEP + 1 }, (_, i) => i * STEP)
+const major = ticks.filter((x) => x % 160 === 0)
+const mid = ticks.filter((x) => x % 160 !== 0 && x % 40 === 0)
+const minor = ticks.filter((x) => x % 40 !== 0)
+const path = (xs: number[], length: number) => xs.map((x) => `M${x + 0.5} ${HEIGHT}V${HEIGHT - length}`).join('')
+---
+
+<div class="seam ruler" aria-hidden="true">
+  <svg class="ticks">
+    <path d={path(minor, 4)} stroke="#d6d1c4" />
+    <path d={path(mid, 7)} stroke="#b9b4a8" />
+    <path d={path(major, 11)} stroke="#b9b4a8" />
+    {
+      major.map((x) => (
+        <text x={x + 4} y="10" font-family="Geist Variable" font-size="9" fill="#a39e92">
+          {x}
+        </text>
+      ))
+    }
+  </svg>
+  <svg class="cross l t" viewBox="0 0 15 15"><path d="M7.5 0V15M0 7.5H15" stroke="#9a958a" stroke-width="1.2" /></svg>
+  <svg class="cross r t" viewBox="0 0 15 15"><path d="M7.5 0V15M0 7.5H15" stroke="#9a958a" stroke-width="1.2" /></svg>
+  <svg class="cross l b" viewBox="0 0 15 15"><path d="M7.5 0V15M0 7.5H15" stroke="#9a958a" stroke-width="1.2" /></svg>
+  <svg class="cross r b" viewBox="0 0 15 15"><path d="M7.5 0V15M0 7.5H15" stroke="#9a958a" stroke-width="1.2" /></svg>
+</div>
+
+<style>
+  .ruler {
+    position: relative;
+    height: 24px;
+    margin: 120px var(--bleed) 96px;
+    background: #f4f2ec;
+    box-shadow:
+      0 1px 0 var(--line),
+      0 -1px 0 var(--line);
+  }
+
+  .ticks {
+    display: block;
+    width: 100%;
+    height: 24px;
+  }
+
+  .cross {
+    position: absolute;
+    z-index: 2;
+    width: 15px;
+    height: 15px;
+  }
+
+  .cross.l {
+    left: calc(-1 * var(--bleed) - 31px);
+  }
+
+  .cross.r {
+    right: calc(-1 * var(--bleed) - 31px);
+  }
+
+  .cross.t {
+    top: -8px;
+  }
+
+  .cross.b {
+    bottom: -8px;
+  }
+
+  @media (max-width: 1199px) {
+    .cross {
+      display: none;
+    }
+  }
+
+  @media (max-width: 900px) {
+    .ruler {
+      margin-top: 88px;
+      margin-bottom: 72px;
+    }
+  }
+</style>

@@ -1,0 +1,194 @@
+---
+import ArrowDown01Icon from '@hugeicons/core-free-icons/ArrowDown01Icon'
+import GlobalIcon from '@hugeicons/core-free-icons/GlobalIcon'
+import Tick02Icon from '@hugeicons/core-free-icons/Tick02Icon'
+import Icon from './Icon.astro'
+import Lockup from './Lockup.astro'
+import { DEFAULT_LOCALE, LOCALE_COOKIE, MESSAGES, isLocale, localeUrls } from '../i18n'
+import { LINKS } from '../lib/links'
+
+const locale = isLocale(Astro.currentLocale) ? Astro.currentLocale : DEFAULT_LOCALE
+const t = MESSAGES[locale]
+const urls = localeUrls(Astro.url.pathname, locale)
+---
+
+<nav class="nav" aria-label={t.nav.label}>
+  <a href={urls[locale]} aria-label="ezdesign home"><Lockup height={22} /></a>
+  <div class="links">
+    <a href="#features">{t.nav.features}</a>
+    <a href="#library">{t.nav.library}</a>
+    <a href={LINKS.docs}>{t.nav.docs}</a>
+    <a href={LINKS.releases}>{t.nav.changelog}</a>
+  </div>
+  <div class="right">
+    <div class="lang" data-lang data-cookie={LOCALE_COOKIE}>
+      <button class="btn trigger" type="button" aria-expanded="false" aria-controls="lang-menu" aria-label={`${t.nav.language}: ${t.languageName}`}>
+        <Icon icon={GlobalIcon} size={14} />
+        <span class="label">{t.languageName}</span>
+        <span class="chevron"><Icon icon={ArrowDown01Icon} size={12} /></span>
+      </button>
+      <ul class="menu" id="lang-menu" hidden>
+        {
+          Object.entries(MESSAGES).map(([code, { lang, languageName }]) => (
+            <li>
+              <a href={urls[code as keyof typeof urls]} hreflang={lang} lang={lang} data-locale={code} aria-current={code === locale ? 'page' : undefined}>
+                {languageName}
+                {code === locale && <Icon icon={Tick02Icon} size={14} />}
+              </a>
+            </li>
+          ))
+        }
+      </ul>
+    </div>
+    <a class="btn ghost github" href={LINKS.github}>GitHub</a>
+    <a class="btn ink" href="#get-started">{t.nav.getStarted}</a>
+  </div>
+</nav>
+
+<script>
+  for (const root of document.querySelectorAll<HTMLElement>('[data-lang]')) {
+    const trigger = root.querySelector('button')!
+    const menu = root.querySelector('ul')!
+    const toggle = (open: boolean) => {
+      menu.hidden = !open
+      trigger.setAttribute('aria-expanded', String(open))
+    }
+    trigger.addEventListener('click', () => toggle(menu.hidden))
+    for (const link of menu.querySelectorAll<HTMLAnchorElement>('a[data-locale]')) {
+      link.addEventListener('click', () => {
+        document.cookie = `${root.dataset.cookie}=${link.dataset.locale}; path=/; max-age=31536000; samesite=lax`
+      })
+    }
+    document.addEventListener('click', (event) => {
+      if (!root.contains(event.target as Node)) toggle(false)
+    })
+    root.addEventListener('keydown', (event) => {
+      if (event.key !== 'Escape' || menu.hidden) return
+      toggle(false)
+      trigger.focus()
+    })
+  }
+</script>
+
+<style>
+  .nav {
+    display: flex;
+    align-items: center;
+    height: 72px;
+  }
+
+  .links {
+    display: flex;
+    gap: 28px;
+    margin-left: 48px;
+    font-size: 14px;
+    color: var(--muted);
+  }
+
+  .links a:hover {
+    color: var(--ink);
+  }
+
+  .right {
+    display: flex;
+    align-items: center;
+    margin-left: auto;
+  }
+
+  .right .ghost {
+    padding: 0 9px;
+  }
+
+  .right .github {
+    margin: 0 4px 0 -4px;
+  }
+
+  .right .ink {
+    margin-left: 9px;
+  }
+
+  .lang {
+    position: relative;
+  }
+
+  .trigger {
+    gap: 6px;
+    padding: 0 9px;
+    border: 0;
+    background: none;
+    color: var(--muted);
+    font-size: 13px;
+    font-weight: 400;
+    cursor: pointer;
+  }
+
+  .trigger:hover,
+  .trigger[aria-expanded='true'] {
+    color: var(--ink);
+  }
+
+  .chevron {
+    display: grid;
+    margin-left: -2px;
+    color: var(--faint);
+    transition: transform 0.15s ease;
+  }
+
+  .trigger[aria-expanded='true'] .chevron {
+    transform: rotate(180deg);
+  }
+
+  .menu {
+    position: absolute;
+    top: calc(100% + 4px);
+    right: 0;
+    z-index: 10;
+    min-width: 128px;
+    margin: 0;
+    padding: 3px;
+    list-style: none;
+    border-radius: 9px;
+    background: #fff;
+    box-shadow:
+      0 0 0 1px rgb(23 23 23 / 0.08),
+      0 8px 24px rgb(0 0 0 / 0.08);
+  }
+
+  .menu a {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    justify-content: space-between;
+    height: 28px;
+    padding: 0 8px;
+    border-radius: 6px;
+    font-size: 13px;
+    color: var(--ink);
+  }
+
+  .menu a:hover {
+    background: var(--sunk);
+  }
+
+  .menu a :global(svg) {
+    color: var(--mark);
+  }
+
+  @media (max-width: 760px) {
+    .links {
+      display: none;
+    }
+  }
+
+  @media (max-width: 560px) {
+    .trigger :is(.label, .chevron) {
+      display: none;
+    }
+  }
+
+  @media (max-width: 420px) {
+    .right .github {
+      display: none;
+    }
+  }
+</style>

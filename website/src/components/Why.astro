@@ -1,0 +1,103 @@
+---
+import ValueExplore from './illustrations/ValueExplore.astro'
+import ValuePrecision from './illustrations/ValuePrecision.astro'
+import ValueSpeed from './illustrations/ValueSpeed.astro'
+import { messages } from '../i18n'
+
+const t = messages(Astro.currentLocale).why
+const VALUES = [
+  { key: 'speed', Vis: ValueSpeed },
+  { key: 'precision', Vis: ValuePrecision },
+  { key: 'explore', Vis: ValueExplore },
+] as const
+---
+
+<section class="why" id="why">
+  <div class="kicker">{t.kicker}</div>
+  <h2>{t.title}</h2>
+  <p class="sub" set:html={t.sub} />
+  <div class="values">
+    {
+      VALUES.map(({ key, Vis }) => (
+        <article class="value">
+          <div class="vis">
+            <Vis />
+          </div>
+          <span class="vs">{t[key].vs}</span>
+          <h3>{t[key].title}</h3>
+          <p set:html={t[key].body} />
+        </article>
+      ))
+    }
+  </div>
+</section>
+
+<style>
+  .why {
+    padding-top: 128px;
+  }
+
+  .values {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+    margin-top: 32px;
+  }
+
+  .value {
+    display: flex;
+    flex-direction: column;
+    padding: 6px 6px 24px;
+    border-radius: 14px;
+    background: #fff;
+  }
+
+  .vis {
+    position: relative;
+    height: 160px;
+    overflow: hidden;
+    border-radius: 10px;
+    background: var(--sunk);
+  }
+
+  .vs {
+    margin: 18px 18px 0;
+    font-family: var(--mono);
+    font-size: 11.5px;
+    color: var(--faint);
+  }
+
+  h3 {
+    margin: 6px 18px 0;
+    font-size: 19px;
+    font-weight: 600;
+    letter-spacing: -0.03em;
+  }
+
+  .value p {
+    margin: 8px 18px 0;
+    font-size: 14.5px;
+    line-height: 1.6;
+    color: var(--muted);
+  }
+
+  .value p :global(b) {
+    font-weight: 500;
+    color: var(--ink);
+  }
+
+  @media (max-width: 900px) {
+    .why {
+      padding-top: 96px;
+    }
+
+    .values {
+      grid-template-columns: 1fr;
+    }
+
+    .vis {
+      height: auto;
+      aspect-ratio: 339 / 160;
+    }
+  }
+</style>

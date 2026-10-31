@@ -1,0 +1,136 @@
+---
+import CanvasBoard from './CanvasBoard.astro'
+import LibraryStage from './LibraryStage.astro'
+import Mark from './Mark.astro'
+import { messages } from '../i18n'
+
+const t = messages(Astro.currentLocale).more
+---
+
+<section>
+  <div class="kicker">{t.kicker}</div>
+  <h2>{t.title}</h2>
+  <p class="sub">{t.sub}</p>
+
+  <div class="feat" id="canvas">
+    <div class="feat-head">
+      <h3>{t.canvas.title}</h3>
+      <p>{t.canvas.body}</p>
+    </div>
+    <CanvasBoard />
+  </div>
+
+  <div class="feat" id="library">
+    <div class="feat-head">
+      <h3>{t.library.title}</h3>
+      <p>{t.library.lead}<Mark size={19} class="chrome" /><b>{t.library.name}</b>{t.library.tail}</p>
+    </div>
+    <LibraryStage />
+    <div class="points">
+      {
+        t.points.map(([title, body]) => (
+          <div>
+            <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M5 12.5l4.5 4.5L19 7" fill="none" stroke="#e56d41" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+            <span>
+              <b>{title}</b>
+              <Fragment set:html={body} />
+            </span>
+          </div>
+        ))
+      }
+    </div>
+  </div>
+</section>
+
+<style>
+  .feat {
+    margin-top: 64px;
+    scroll-margin-top: 24px;
+  }
+
+  .feat + .feat {
+    margin-top: 88px;
+  }
+
+  .feat-head {
+    display: grid;
+    grid-template-columns: 1fr 1.5fr;
+    gap: 48px;
+    align-items: baseline;
+  }
+
+  h3 {
+    margin: 0;
+    font-size: 26px;
+    font-weight: 600;
+    letter-spacing: -0.03em;
+  }
+
+  .feat-head p {
+    margin: 0;
+    font-size: 16px;
+    line-height: 1.65;
+    color: var(--muted);
+  }
+
+  .feat-head b {
+    font-weight: 500;
+    color: var(--ink);
+  }
+
+  .feat-head :global(.chrome) {
+    margin-right: 4px;
+    vertical-align: -4px;
+  }
+
+  .points {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 32px;
+    margin-top: 32px;
+  }
+
+  .points div {
+    display: flex;
+    gap: 10px;
+    font-size: 14.5px;
+    line-height: 1.55;
+    color: var(--muted);
+  }
+
+  .points svg {
+    flex-shrink: 0;
+    margin-top: 2px;
+  }
+
+  .points b {
+    display: block;
+    font-weight: 500;
+    color: var(--ink);
+  }
+
+  .points :global(.keys) {
+    font-family: var(--mono);
+    font-size: 13.5px;
+  }
+
+  @media (max-width: 900px) {
+    .feat-head {
+      grid-template-columns: 1fr;
+      gap: 12px;
+    }
+
+    .points {
+      grid-template-columns: repeat(2, 1fr);
+      gap: 24px;
+    }
+  }
+
+  @media (max-width: 560px) {
+    .points {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>
