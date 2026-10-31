@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, readdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
-import type { CanvasId, FrameId, Rect, ShellView, TabId, ViewStore } from '../src/canvas/types.js'
+import type { AssetName, CanvasId, FrameId, Rect, ShellView, TabId, ViewStore } from '../src/canvas/types.js'
 import type { CanvasWire, FrameWire, LayoutOp, OpId } from '../src/canvas/wire.js'
 import { openCanvasWorkspace } from '../src/canvas/workspace.js'
 import { parseLayoutStep } from '../src/canvas/routes.js'
@@ -13,6 +13,7 @@ import {
   HISTORY_LIMIT,
   NUDGE_FOLD_MS,
   planDuplicate,
+  planImages,
   planMove,
   planRemove,
   withPending,
@@ -165,4 +166,29 @@ test('a frame keeps the size it was added at: no user edit carries one', () => {
   assert.deepEqual(moved.frames[0]!.rect, { x: 50, y: 60, width: 390, height: 844 })
   const copy = ok(ws.user.duplicate(canvas.id, { from: phone.id, id: id(0xc0), at: { x: 1000, y: 0 } }))
   assert.deepEqual(copy.frames.find((f) => f.id === id(0xc0))!.rect, { x: 1000, y: 0, width: 390, height: 844 })
+})
+
+test('pasted images land as one row centred on the view, undone and redone as one step', () => {
+  let n = 0xa0
+  const step = planImages(
+    [
+      { asset: 'aaaaaaaaaaaa.png' as AssetName, title: 'image', size: { width: 400, height: 300 } },
+      { asset: 'bbbbbbbbbbbb.jpg' as AssetName, title: 'photo', size: { width: 240, height: 600 } },
+    ],
+    { x: 1000, y: 500 },
+    () => id(n++),
+  )
+  assert.equal(step.label, '貼上 2 張圖片')
+  assert.deepEqual(step.added, [id(0xa0), id(0xa1)])
+  assert.deepEqual(step.apply, [
+    { t: 'image', input: { id: id(0xa0), asset: 'aaaaaaaaaaaa.png', title: 'image', rect: { x: 640, y: 350, width: 400, height: 300 } } },
+    { t: 'image', input: { id: id(0xa1), asset: 'bbbbbbbbbbbb.jpg', title: 'photo', rect: { x: 1120, y: 200, width: 240, height: 600 } } },
+  ])
+  assert.deepEqual(step.undo, [{ t: 'remove', ids: [id(0xa0), id(0xa1)] }])
+  assert.deepEqual(step.redo, [{ t: 'restore', ids: [id(0xa0), id(0xa1)] }])
+  const one = planImages([{ asset: 'aaaaaaaaaaaa.png' as AssetName, title: 'image', size: { width: 401, height: 301 } }], { x: 0, y: 0 }, () => id(1))
+  assert.equal(one.label, '貼上圖片')
+  assert.deepEqual((one.apply[0] as { input: { rect: Rect } }).input.rect, { x: -200, y: -150, width: 401, height: 301 })
+  const existing = frame(1, { x: 0, y: 0, width: 100, height: 100 })
+  assert.deepEqual(withPending(canvasOf([existing]), step.apply), [existing], 'nothing to show until the daemon writes it')
 })

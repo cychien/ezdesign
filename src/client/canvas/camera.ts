@@ -68,6 +68,11 @@ export function viewportRect(camera: Camera, stage: Size, margin = 0): Rect {
   }
 }
 
+/** The rect with `a` and `b` at opposite corners, whichever way it was drawn. */
+export function boxBetween(a: Point, b: Point): Rect {
+  return { x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), width: Math.abs(a.x - b.x), height: Math.abs(a.y - b.y) }
+}
+
 export function intersects(a: Rect, b: Rect): boolean {
   return !(a.x + a.width < b.x || b.x + b.width < a.x || a.y + a.height < b.y || b.y + b.height < a.y)
 }
@@ -75,4 +80,23 @@ export function intersects(a: Rect, b: Rect): boolean {
 /** The world element's transform. One string, built in one place. */
 export function worldTransform(camera: Camera): string {
   return `translate(${-camera.x * camera.zoom}px, ${-camera.y * camera.zoom}px) scale(${camera.zoom})`
+}
+
+/** How close to the board's edge, in screen px, a drag starts panning. */
+export const EDGE_ZONE = 24
+/** Screen px per second at the very edge or past it. */
+export const EDGE_SPEED = 1200
+
+/** The pan, in screen px per second, that dragging with the pointer at `at`
+ *  asks for: ramping up across `EDGE_ZONE` to `EDGE_SPEED` at the edge and
+ *  beyond it. Only toward where the pointer is heading from `from`, where the
+ *  drag began, so grabbing a frame near an edge does not set the board off. */
+export function edgePan(at: Point, from: Point, stage: Size): Point {
+  const axis = (p: number, start: number, length: number): number => {
+    const zone = Math.min(EDGE_ZONE, length / 4)
+    if (p < zone && p < start) return -EDGE_SPEED * Math.min(1, (zone - p) / zone)
+    if (p > length - zone && p > start) return EDGE_SPEED * Math.min(1, (p - (length - zone)) / zone)
+    return 0
+  }
+  return { x: axis(at.x, from.x, stage.width), y: axis(at.y, from.y, stage.height) }
 }

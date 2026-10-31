@@ -12,7 +12,7 @@
  *  The layouts are the ones the agent itself probes when it resolves a skill by
  *  name, so anything listed here can actually be invoked. */
 
-import { readFileSync, readdirSync } from 'node:fs'
+import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { agentBrandFor } from './agents.js'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
@@ -59,13 +59,23 @@ function readFrontmatter(
   return fields
 }
 
+/** Directories, and links to directories: a skill kept in its own repo is
+ *  usually linked into `~/.claude/skills`, and the agent follows the link. */
 function entries(dir: string): string[] {
   try {
     return readdirSync(dir, { withFileTypes: true })
-      .filter((e) => e.isDirectory() && !e.name.startsWith('.'))
+      .filter((e) => !e.name.startsWith('.') && (e.isDirectory() || (e.isSymbolicLink() && isDir(join(dir, e.name)))))
       .map((e) => e.name)
   } catch {
     return []
+  }
+}
+
+function isDir(path: string): boolean {
+  try {
+    return statSync(path).isDirectory()
+  } catch {
+    return false
   }
 }
 

@@ -14,6 +14,7 @@ export async function launch(url, { out, width = 2200, height = 1300 } = {}) {
   const profile = mkdtempSync(join(tmpdir(), 'vz-cdp-chrome-'))
   const chrome = spawn(CHROME, [
     '--headless=new', '--remote-debugging-port=0', `--user-data-dir=${profile}`, '--no-first-run', '--no-default-browser-check',
+    '--use-mock-keychain', '--password-store=basic',
     `--window-size=${width},${height}`, 'about:blank',
   ], { stdio: ['ignore', 'ignore', 'pipe'] })
   const wsUrl = await new Promise((ok, fail) => {

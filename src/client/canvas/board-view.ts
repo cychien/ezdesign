@@ -28,6 +28,10 @@
  *  - A changed `hash` reloads that one frame with `location.replace`, which
  *    leaves no history entry.
  *
+ *  A drag on the background draws a selection box over every frame it touches.
+ *  A drag that reaches the board's edge pans it (`edgePan`) for as long as the
+ *  pointer stays there, the frames or the box riding along under the pointer.
+ *
  *  Edits are applied at once and sent one request at a time; what is still in
  *  flight is re-applied over every canvas the daemon pushes (`withPending`).
  *
@@ -38,19 +42,29 @@
 import AiSketchIcon from '@hugeicons/core-free-icons/AiSketchIcon'
 import MinusIcon from '@hugeicons/core-free-icons/MinusIcon'
 import PlusIcon from '@hugeicons/core-free-icons/PlusIcon'
-import { type Camera, type FrameId, type Rect, type Size, mintFrameId } from '../../canvas/types.js'
-import { boundsOf } from '../../canvas/place.js'
+import {
+  type AssetName,
+  type Camera,
+  type FrameId,
+  MAX_FRAME_TITLE,
+  type Point,
+  type Rect,
+  type Size,
+  mintFrameId,
+} from '../../canvas/types.js'
+import { boundsOf, imageFrameSize } from '../../canvas/place.js'
 import type { CanvasWire, FrameWire, LayoutOp } from '../../canvas/wire.js'
 import { type CanvasGuestPort, canvasGuestId } from '../frame-registry.js'
 import { type IconNode, icon } from '../icon.js'
 import type { Mode } from '../guest-messages.js'
-import { fitAll, panned, worldToScreen, worldTransform, zoomedAround } from './camera.js'
+import { boxBetween, edgePan, fitAll, intersects, panned, screenToWorld, worldToScreen, worldTransform, zoomedAround } from './camera.js'
 import { type Guide, snapMove } from './guides.js'
 import {
   type BoardEdit,
   EditHistory,
   type EditStep,
   planDuplicate,
+  planImages,
   planMove,
   planRemove,
   withPending,
@@ -69,6 +83,8 @@ export interface BoardHost {
    *  daemon answered, or null on refusal (the next pushed canvas, without the
    *  edit pending, rolls it back). */
   send(edit: BoardEdit): Promise<CanvasWire | null>
+  /** A pasted image's bytes, stored on the canvas. Null on refusal. */
+  storeImage(image: Blob): Promise<AssetName | null>
   /** Debounced after a gesture ends; persisted as the session's view. */
   saveCamera(camera: Camera): void
   /** Escape on the board, or a click on its empty background: stand down any
@@ -89,6 +105,8 @@ const WHEEL_ZOOM = 0.0025
 /** How far the pointer has to travel, in screen pixels, before a press on a
  *  frame becomes a drag rather than a click. */
 const DRAG_PX = 3
+/** The longest step an edge pan takes, so a stalled frame does not jump. */
+const MAX_PAN_STEP_S = 1 / 30
 
 interface Card {
   frame: FrameWire
@@ -104,6 +122,10 @@ type Gesture =
       pointer: number
       x: number
       y: number
+      /** Board-relative: where the press was, and where the pointer is now. */
+      from: Point
+      at: Point
+      camera: Camera
       ids: ReadonlySet<FrameId>
       started: boolean
       dx: number
@@ -111,6 +133,18 @@ type Gesture =
       /** A shift-press on a frame already selected leaves the selection alone
        *  until the press turns out to be a click, which then deselects it. */
       toggleOnClick: FrameId | null
+    }
+  | {
+      t: 'marquee'
+      pointer: number
+      /** The press in world coordinates, so the box stays put while the camera pans. */
+      origin: Point
+      /** Board-relative: where the press was, and where the pointer is now. */
+      from: Point
+      at: Point
+      /** What a shift-press keeps selected. */
+      base: ReadonlySet<FrameId>
+      started: boolean
     }
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, className: string, text?: string): HTMLElementTagNameMap[K] {
@@ -124,6 +158,7 @@ export class BoardView {
   readonly el: HTMLElement
   private readonly world: HTMLElement
   private readonly heads: HTMLElement
+  private readonly marquee: HTMLElement
   private readonly guides: HTMLElement
   private readonly empty: HTMLElement
   private readonly readout: HTMLElement
@@ -147,6 +182,8 @@ export class BoardView {
   private stage: Size = { width: 0, height: 0 }
   private shown = false
   private frameRequested = 0
+  private edgePanRequested = 0
+  private edgePanAt = 0
   private settleTimer = 0
   private saveTimer = 0
   /** The zoom the frames were last told, so a pan sends them nothing. */
@@ -176,6 +213,8 @@ export class BoardView {
     this.guides = el('div', 'ez-guides')
     this.world.append(this.guides)
     this.heads = el('div', 'ez-board-heads')
+    this.marquee = el('div', 'ez-board-marquee')
+    this.marquee.hidden = true
     this.empty = el('div', 'ez-board-empty')
     this.empty.append(icon(AiSketchIcon as IconNode, 64))
 
@@ -198,7 +237,7 @@ export class BoardView {
       this.readout,
       button(LABELS.zoomIn, PlusIcon as IconNode, () => this.zoomBy(ZOOM_STEP)),
     )
-    this.el.append(this.world, this.heads, this.empty, tools)
+    this.el.append(this.world, this.heads, this.marquee, this.empty, tools)
 
     this.el.addEventListener('wheel', (e) => this.onBoardWheel(e), { passive: false })
     this.el.addEventListener('pointerdown', (e) => this.onPointerDown(e))
@@ -296,6 +335,7 @@ export class BoardView {
     window.clearTimeout(this.settleTimer)
     window.clearTimeout(this.saveTimer)
     cancelAnimationFrame(this.frameRequested)
+    cancelAnimationFrame(this.edgePanRequested)
     this.el.remove()
   }
 
@@ -466,6 +506,24 @@ export class BoardView {
     const step = planDuplicate(this.frames, this.selection, () => mintFrameId((b) => crypto.getRandomValues(b)))
     this.commit(step)
     this.select(new Set(step.copies))
+  }
+
+  /** Pasted images, each at its natural size, in a row centred on the view and
+   *  selected, as a paste lands in Figma. */
+  async pasteImages(files: readonly File[]): Promise<void> {
+    const stored = await Promise.all(
+      files.map(async (file) => {
+        const natural = await naturalSize(file)
+        const asset = natural && (await this.host.storeImage(file))
+        return natural && asset ? { asset, title: imageTitle(file), size: imageFrameSize(natural) } : null
+      }),
+    )
+    const images = stored.filter((image) => image !== null)
+    if (!images.length || !this.camera) return
+    const center = screenToWorld(this.camera, { x: this.stage.width / 2, y: this.stage.height / 2 })
+    const step = planImages(images, center, () => mintFrameId((b) => crypto.getRandomValues(b)))
+    this.commit(step)
+    this.select(new Set(step.added))
   }
 
   private select(ids: Set<FrameId>): void {
@@ -661,7 +719,7 @@ export class BoardView {
 
   // ------------------------------------------------------------------ input
 
-  private boardPoint(e: { clientX: number; clientY: number }): { x: number; y: number } {
+  private boardPoint(e: { clientX: number; clientY: number }): Point {
     const box = this.el.getBoundingClientRect()
     return { x: e.clientX - box.left, y: e.clientY - box.top }
   }
@@ -675,12 +733,14 @@ export class BoardView {
     } else {
       this.setCamera(panned(this.camera, -e.deltaX * unit, -e.deltaY * unit))
     }
+    if (this.gesture?.t === 'move' && this.gesture.started) this.dragTo(this.gesture)
+    if (this.gesture?.t === 'marquee' && this.gesture.started) this.paintMarquee(this.gesture)
   }
 
-  /** The background, or anywhere with Space held, pans; a frame's head or body
-   *  selects and drags it. */
+  /** Space held or the middle button pans; the background draws a selection
+   *  box; a frame's head or body selects and drags it. */
   private onPointerDown(e: PointerEvent): void {
-    if (e.button !== 0 || !this.camera || this.gesture) return
+    if ((e.button !== 0 && e.button !== 1) || !this.camera || this.gesture) return
     const target = e.target as HTMLElement
     if (target.closest('.ez-board-tools')) return
     // The user has the board now: frames that arrive no longer move the camera.
@@ -691,7 +751,7 @@ export class BoardView {
       this.el.setPointerCapture(e.pointerId)
       this.gesture = gesture
     }
-    if (this.spaceHeld) {
+    if (this.spaceHeld || e.button === 1) {
       start({ t: 'pan', pointer: e.pointerId, x: e.clientX, y: e.clientY, camera: this.camera })
       this.el.classList.add('ez-panning')
       return
@@ -713,24 +773,53 @@ export class BoardView {
       } else if (!this.selection.has(id)) {
         this.select(new Set([id]))
       }
-      start({ t: 'move', pointer: e.pointerId, x: e.clientX, y: e.clientY, ids: new Set(this.selection), started: false, dx: 0, dy: 0, toggleOnClick })
+      const from = this.boardPoint(e)
+      start({
+        t: 'move',
+        pointer: e.pointerId,
+        x: e.clientX,
+        y: e.clientY,
+        from,
+        at: from,
+        camera: this.camera,
+        ids: new Set(this.selection),
+        started: false,
+        dx: 0,
+        dy: 0,
+        toggleOnClick,
+      })
       return
     }
     if (!id) {
       this.setLive(null)
-      this.select(new Set())
+      if (!e.shiftKey) this.select(new Set())
       this.host.escape()
-      start({ t: 'pan', pointer: e.pointerId, x: e.clientX, y: e.clientY, camera: this.camera })
-      this.el.classList.add('ez-panning')
+      const from = this.boardPoint(e)
+      start({
+        t: 'marquee',
+        pointer: e.pointerId,
+        origin: screenToWorld(this.camera, from),
+        from,
+        at: from,
+        base: new Set(this.selection),
+        started: false,
+      })
     }
   }
 
   private onPointerMove(e: PointerEvent): void {
     const g = this.gesture
     if (!g || e.pointerId !== g.pointer || !this.camera) return
-    const zoom = this.camera.zoom
     if (g.t === 'pan') {
       this.setCamera(panned(g.camera, e.clientX - g.x, e.clientY - g.y))
+      return
+    }
+    if (g.t === 'marquee') {
+      g.at = this.boardPoint(e)
+      if (!g.started && Math.hypot(g.at.x - g.from.x, g.at.y - g.from.y) < DRAG_PX) return
+      g.started = true
+      this.paintMarquee(g)
+      this.startEdgePan()
       return
     }
     if (!g.started) {
@@ -738,12 +827,24 @@ export class BoardView {
       g.started = true
       this.el.classList.add('ez-arranging')
     }
+    g.at = { x: g.from.x + e.clientX - g.x, y: g.from.y + e.clientY - g.y }
+    this.dragTo(g)
+    this.startEdgePan()
+  }
+
+  /** The dragged frames under the pointer, wherever the camera has gone since
+   *  the press. */
+  private dragTo(g: Extract<Gesture, { t: 'move' }>): void {
+    const camera = this.camera
+    if (!camera) return
     const moving = this.frames.filter((f) => g.ids.has(f.id))
     const box = boundsOf(moving.map((f) => f.rect))
     if (!box) return
-    const raw = { ...box, x: box.x + (e.clientX - g.x) / zoom, y: box.y + (e.clientY - g.y) / zoom }
+    const grabbed = screenToWorld(g.camera, g.from)
+    const pointer = screenToWorld(camera, g.at)
+    const raw = { ...box, x: box.x + pointer.x - grabbed.x, y: box.y + pointer.y - grabbed.y }
     const others = this.frames.filter((f) => !g.ids.has(f.id)).map((f) => f.rect)
-    const snapped = snapMove(raw, others, zoom)
+    const snapped = snapMove(raw, others, camera.zoom)
     g.dx = Math.round(snapped.rect.x - box.x)
     g.dy = Math.round(snapped.rect.y - box.y)
     for (const f of moving) {
@@ -753,12 +854,51 @@ export class BoardView {
     this.paintGuides(snapped.guides)
   }
 
+  /** Selects every frame the box touches, on top of what a shift-press kept. */
+  private paintMarquee(g: Extract<Gesture, { t: 'marquee' }>): void {
+    const camera = this.camera
+    if (!camera) return
+    const box = boxBetween(g.origin, screenToWorld(camera, g.at))
+    const hits = this.frames.filter((f) => intersects(box, f.rect)).map((f) => f.id)
+    this.select(new Set([...g.base, ...hits]))
+    const screen = boxBetween(worldToScreen(camera, g.origin), g.at)
+    this.marquee.style.transform = `translate(${screen.x}px, ${screen.y}px)`
+    this.marquee.style.width = `${screen.width}px`
+    this.marquee.style.height = `${screen.height}px`
+    this.marquee.hidden = false
+  }
+
+  private startEdgePan(): void {
+    if (this.edgePanRequested) return
+    this.edgePanAt = performance.now()
+    this.edgePanRequested = requestAnimationFrame((now) => this.edgePanStep(now))
+  }
+
+  /** One frame of a drag held at the edge: pan, then carry the frames along.
+   *  Stops by itself once the pointer leaves the edge or the drag ends. */
+  private edgePanStep(now: number): void {
+    this.edgePanRequested = 0
+    const g = this.gesture
+    if (!g || g.t === 'pan' || !g.started || !this.camera) return
+    const speed = edgePan(g.at, g.from, this.stage)
+    if (!speed.x && !speed.y) return
+    const dt = Math.min(MAX_PAN_STEP_S, Math.max(0, now - this.edgePanAt) / 1000)
+    this.edgePanAt = now
+    this.setCamera(panned(this.camera, -speed.x * dt, -speed.y * dt))
+    if (g.t === 'move') this.dragTo(g)
+    else this.paintMarquee(g)
+    this.edgePanRequested = requestAnimationFrame((next) => this.edgePanStep(next))
+  }
+
   private onPointerUp(e: PointerEvent, cancelled = false): void {
     const g = this.gesture
     if (!g || e.pointerId !== g.pointer) return
     this.gesture = null
+    cancelAnimationFrame(this.edgePanRequested)
+    this.edgePanRequested = 0
     this.el.classList.remove('ez-panning', 'ez-arranging')
     this.paintGuides([])
+    this.marquee.hidden = true
     if (g.t !== 'move') return
     if (!g.started) {
       if (g.toggleOnClick) this.select(new Set([...this.selection].filter((id) => id !== g.toggleOnClick)))
@@ -778,4 +918,31 @@ export class BoardView {
     const id = frame?.dataset.frameId as FrameId | undefined
     if (id && this.cards.get(id)?.iframe) this.setLive(id)
   }
+}
+
+async function naturalSize(image: Blob): Promise<Size | null> {
+  const bitmap = await createImageBitmap(image).catch(() => null)
+  if (bitmap) {
+    const size = { width: bitmap.width, height: bitmap.height }
+    bitmap.close()
+    return size
+  }
+  // SVG has no bitmap decode; an `<img>` takes it.
+  const url = URL.createObjectURL(image)
+  try {
+    const img = new Image()
+    img.src = url
+    await img.decode()
+    return img.naturalWidth && img.naturalHeight ? { width: img.naturalWidth, height: img.naturalHeight } : null
+  } catch {
+    return null
+  } finally {
+    URL.revokeObjectURL(url)
+  }
+}
+
+/** The file's name without its extension: `image` for a copied screenshot. */
+function imageTitle(file: File): string {
+  const stem = file.name.replace(/\.[^.]*$/, '').trim()
+  return [...(stem || '圖片')].slice(0, MAX_FRAME_TITLE).join('')
 }

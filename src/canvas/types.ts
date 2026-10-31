@@ -84,6 +84,35 @@ export const MAX_FRAME_TITLE = 80
 export const DEFAULT_FRAME_WIDTH = 1280
 export const MIN_FRAME_SIZE: Size = { width: 240, height: 240 }
 export const MAX_FRAME_SIZE: Size = { width: 3840, height: 12000 }
+/** A pasted image. Stored as its own file, not inlined, so it is held to this
+ *  rather than to `MAX_FRAME_HTML`. */
+export const MAX_IMAGE_BYTES = 20 * 1024 * 1024
+
+/** What an `<img>` shows, by the extension its file is stored under. */
+export const IMAGE_TYPES: Readonly<Record<string, string>> = {
+  'image/png': 'png',
+  'image/jpeg': 'jpg',
+  'image/gif': 'gif',
+  'image/webp': 'webp',
+  'image/avif': 'avif',
+  'image/svg+xml': 'svg',
+}
+
+declare const assetNameBrand: unique symbol
+/** `<sha1-12>.<ext>`: an image file in a canvas's `frames/assets/`, named by its
+ *  bytes, so storing the same image twice writes one file. */
+export type AssetName = string & { readonly [assetNameBrand]: true }
+
+const ASSET_SHAPE = new RegExp(`^[0-9a-f]{12}\\.(${Object.values(IMAGE_TYPES).join('|')})$`)
+
+export function asAssetName(raw: unknown): AssetName | null {
+  return typeof raw === 'string' && ASSET_SHAPE.test(raw) ? (raw as AssetName) : null
+}
+
+export function mimeOfAsset(name: AssetName): string {
+  const ext = name.slice(name.indexOf('.') + 1)
+  return Object.keys(IMAGE_TYPES).find((mime) => IMAGE_TYPES[mime] === ext)!
+}
 
 /** One live frame as every reader sees it: the manifest entry joined with its
  *  rect from the layout. Deleted frames are not in this projection at all, so
@@ -162,5 +191,10 @@ export type CanvasProblem =
   | { code: 'TOO_MANY_FRAMES'; limit: number }
   | { code: 'BAD_NAME'; max: number }
   | { code: 'BAD_RECT'; reason: string }
+  | { code: 'IMAGE_UNSUPPORTED'; mime: string }
+  | { code: 'IMAGE_TOO_LARGE'; bytes: number; limit: number }
+  | { code: 'IMAGE_EMPTY' }
+  /** An image frame named a file the canvas does not hold. */
+  | { code: 'ASSET_NOT_FOUND'; canvasId: CanvasId; asset: string }
 
 export type Outcome<T> = { ok: true; value: T } | { ok: false; problem: CanvasProblem }

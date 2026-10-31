@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import type { CanvasId, FrameId } from '../src/canvas/types.js'
-import { fitAll, sanitizeCamera, screenToWorld, zoomedAround } from '../src/client/canvas/camera.js'
+import { boxBetween, edgePan, fitAll, intersects, sanitizeCamera, screenToWorld, zoomedAround } from '../src/client/canvas/camera.js'
 import { MAX_CONCURRENT_LOADS, planMounts } from '../src/client/canvas/mounting.js'
 import { tabsModel } from '../src/client/canvas/tabs.js'
 
@@ -93,4 +93,28 @@ test('tabs: the App first while attached, open canvases by age, a stale active t
     ['b', true],
   ])
   assert.equal(noApp.active, 'b'.repeat(12))
+})
+
+test('a drag at the board edge pans toward it, faster the closer it gets, and only the way it is heading', () => {
+  const stage = { width: 1000, height: 800 }
+  const middle = { x: 500, y: 400 }
+  assert.deepEqual(edgePan({ x: 500, y: 400 }, middle, stage), { x: 0, y: 0 })
+  assert.deepEqual(edgePan({ x: 500, y: 24 }, middle, stage), { x: 0, y: 0 }, 'the zone starts inside the edge')
+  assert.deepEqual(edgePan({ x: 500, y: 12 }, middle, stage), { x: 0, y: -600 })
+  assert.deepEqual(edgePan({ x: 500, y: 0 }, middle, stage), { x: 0, y: -1200 })
+  assert.deepEqual(edgePan({ x: 500, y: -300 }, middle, stage), { x: 0, y: -1200 }, 'past the edge is full speed')
+  assert.deepEqual(edgePan({ x: 1000, y: 800 }, middle, stage), { x: 1200, y: 1200 })
+  assert.deepEqual(edgePan({ x: 6, y: 400 }, middle, stage), { x: -900, y: 0 })
+  const nearTop = { x: 500, y: 10 }
+  assert.deepEqual(edgePan({ x: 500, y: 16 }, nearTop, stage), { x: 0, y: 0 }, 'grabbed near the edge and moved away')
+  assert.deepEqual(edgePan({ x: 500, y: 6 }, nearTop, stage), { x: 0, y: -900 })
+  assert.deepEqual(edgePan({ x: 50, y: 50 }, { x: 60, y: 60 }, { width: 100, height: 100 }), { x: 0, y: 0 }, 'a tiny board keeps a middle')
+})
+
+test('a selection box is the same rect whichever corner it was drawn from, and takes every frame it touches', () => {
+  assert.deepEqual(boxBetween({ x: 300, y: 100 }, { x: 100, y: 400 }), { x: 100, y: 100, width: 200, height: 300 })
+  assert.deepEqual(boxBetween({ x: 100, y: 400 }, { x: 300, y: 100 }), { x: 100, y: 100, width: 200, height: 300 })
+  const box = boxBetween({ x: 0, y: 0 }, { x: 500, y: 500 })
+  assert.equal(intersects(box, { x: 480, y: 480, width: 1280, height: 800 }), true, 'a corner is enough')
+  assert.equal(intersects(box, { x: 600, y: 0, width: 390, height: 844 }), false)
 })

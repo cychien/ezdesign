@@ -149,6 +149,29 @@ test('CV-p5-conflict: an update against a stale hash writes nothing and names th
   assert.equal(removed.removed, added.frameId)
 })
 
+test('update_frame changes a frame\'s height, and the frames under it move down to keep clear', () => {
+  const { port, project } = setup()
+  const id = value<{ canvasId: string }>(runCanvasTool(port, 'create_canvas', { name: 'c' })).canvasId
+  const add = (title: string, position: { x: number; y: number }) =>
+    value<{ frameId: string }>(runCanvasTool(port, 'add_frame', { canvasId: id, title, html: DOC(title), position })).frameId
+  const top = add('top', { x: 0, y: 0 })
+  const under = add('under', { x: 0, y: 1040 })
+  const beside = add('beside', { x: 1360, y: 0 })
+  const rects = () => JSON.parse(readFileSync(join(project, '.ezdesign', 'canvases', id, 'layout.json'), 'utf8')).rects
+  const grown = value<{ width: number; height: number }>(
+    runCanvasTool(port, 'update_frame', { canvasId: id, frameId: top, html: DOC('top, longer'), height: 1400 }),
+  )
+  assert.deepEqual([grown.width, grown.height], [1280, 1400])
+  assert.deepEqual(rects(), {
+    [top]: { x: 0, y: 0, width: 1280, height: 1400 },
+    [under]: { x: 0, y: 1640, width: 1280, height: 800 },
+    [beside]: { x: 1360, y: 0, width: 1280, height: 800 },
+  })
+  runCanvasTool(port, 'update_frame', { canvasId: id, frameId: top, height: 900 })
+  assert.deepEqual(rects()[top], { x: 0, y: 0, width: 1280, height: 900 })
+  assert.deepEqual(rects()[under], { x: 0, y: 1640, width: 1280, height: 800 }, 'a shrink leaves the rest where it is')
+})
+
 test('only this server\'s own tools are auto-granted', () => {
   assert.equal(isCanvasTool('mcp__ezdesign-canvas__add_frame'), true)
   assert.equal(isCanvasTool('mcp__ezdesign-canvas__rm_rf'), false)

@@ -11,6 +11,8 @@
  *      DELETE /canvases/:canvasId                 -> {ok: true}        (archived only, else 409)
  *      POST   /canvases/:canvasId/ops  LayoutStepWire -> CanvasWire
  *      POST   /canvases/:canvasId/frames DuplicateWire -> CanvasWire
+ *      POST   /canvases/:canvasId/assets  <image bytes> -> AssetWire
+ *      POST   /canvases/:canvasId/image-frames ImageFrameWire -> CanvasWire
  *      PUT    /view                ViewWire       -> {ok: true}
  *
  *  Errors are `{error, code}` with `statusOf(problem)`. Every route parses at the
@@ -19,23 +21,27 @@
  *
  *  Frame host (`Host: localhost:<port>`), see `frameHost`:
  *
- *      GET    /__ezdesign/frames/:canvasId/:frameId?rev=   -> the stamped document */
+ *      GET    /__ezdesign/frames/:canvasId/:frameId?rev=   -> the stamped document
+ *      GET    /__ezdesign/frames/:canvasId/assets/:name    -> an image a frame shows */
 
-import { type RequestHandler, type Response, Router } from 'express'
+import express, { type Request, type RequestHandler, type Response, Router } from 'express'
 import { URL_PREFIX } from '../constants.js'
 import { FRAME_ROUTE, isFrameHost } from './frame-document.js'
 import {
   type CanvasProblem,
   type FrameId,
+  MAX_IMAGE_BYTES,
   type Outcome,
   type Point,
+  type Rect,
   ZOOM_MAX,
   ZOOM_MIN,
+  asAssetName,
   asCanvasId,
   asFrameId,
   asTabId,
 } from './types.js'
-import type { DuplicateWire, LayoutOp, LayoutStepWire, OpId, ViewWire } from './wire.js'
+import type { AssetWire, DuplicateWire, ImageFrameWire, LayoutOp, LayoutStepWire, OpId, ViewWire } from './wire.js'
 import type { CanvasReader, UserCanvasPort } from './workspace.js'
 
 export interface CanvasRouteHost {
@@ -66,20 +72,33 @@ export function problemText(problem: CanvasProblem): string {
       return `a name is 1 to ${problem.max} characters`
     case 'BAD_RECT':
       return `bad frame geometry: ${problem.reason}`
+    case 'IMAGE_UNSUPPORTED':
+      return `${problem.mime || 'this file'} is not an image a frame can show`
+    case 'IMAGE_TOO_LARGE':
+      return `the image is ${problem.bytes} bytes; the limit is ${problem.limit}`
+    case 'IMAGE_EMPTY':
+      return 'the image is empty'
+    case 'ASSET_NOT_FOUND':
+      return `no image ${problem.asset} on canvas ${problem.canvasId}`
   }
 }
 
-export function statusOf(problem: CanvasProblem): 400 | 404 | 409 | 413 {
+export function statusOf(problem: CanvasProblem): 400 | 404 | 409 | 413 | 415 {
   switch (problem.code) {
     case 'CANVAS_NOT_FOUND':
     case 'FRAME_NOT_FOUND':
+    case 'ASSET_NOT_FOUND':
       return 404
     case 'CANVAS_ARCHIVED':
     case 'FRAME_CONFLICT':
       return 409
     case 'HTML_TOO_LARGE':
+    case 'IMAGE_TOO_LARGE':
       return 413
+    case 'IMAGE_UNSUPPORTED':
+      return 415
     case 'HTML_EMPTY':
+    case 'IMAGE_EMPTY':
     case 'NOT_A_DOCUMENT':
     case 'TOO_MANY_FRAMES':
     case 'BAD_NAME':
@@ -167,6 +186,37 @@ export function parseDuplicate(raw: unknown): DuplicateWire | null {
   return { from: source, id: copy, ...(at ? { at } : {}) }
 }
 
+function rect(raw: unknown): Rect | null {
+  const at = point(raw)
+  const { width, height } = (raw ?? {}) as Record<string, unknown>
+  return at && finite(width) && finite(height) ? { ...at, width, height } : null
+}
+
+export function parseImageFrame(raw: unknown): ImageFrameWire | null {
+  if (typeof raw !== 'object' || raw === null) return null
+  const { id: rawId, asset: rawAsset, title, rect: rawRect } = raw as Record<string, unknown>
+  const id = asFrameId(rawId)
+  const asset = asAssetName(rawAsset)
+  const at = rect(rawRect)
+  if (!id || !asset || !at || typeof title !== 'string') return null
+  return { id, asset, title, rect: at }
+}
+
+const rawImage = express.raw({ type: () => true, limit: MAX_IMAGE_BYTES })
+
+/** The body as bytes, whatever its type, refused past the image limit before a
+ *  byte is buffered when the length is declared. */
+function receiveImage(req: Request, res: Response, then: (bytes: Buffer) => void): void {
+  if (Number(req.get('content-length')) > MAX_IMAGE_BYTES) {
+    return void res.status(413).json({ error: 'the image is too large', code: 'IMAGE_TOO_LARGE' })
+  }
+  rawImage(req, res, (err?: unknown) => {
+    if (!err) return then(Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0))
+    const status = (err as { status?: number }).status === 413 ? 413 : 400
+    res.status(status).json({ error: status === 413 ? 'the image is too large' : 'unreadable image body' })
+  })
+}
+
 export function canvasApiRouter(host: CanvasRouteHost): Router {
   const api = Router()
   const { user, read } = host
@@ -206,6 +256,17 @@ export function canvasApiRouter(host: CanvasRouteHost): Router {
     if (!input) return res.status(400).json({ error: 'not a duplicate' })
     answer(res, user.duplicate(req.params.canvasId, input), (wire) => wire)
   })
+  api.post('/canvases/:canvasId/assets', (req, res) => {
+    const mime = (req.get('content-type') ?? '').split(';')[0]!.trim().toLowerCase()
+    receiveImage(req, res, (bytes) =>
+      answer(res, user.addAsset(req.params.canvasId, mime, bytes), (asset): AssetWire => ({ asset })),
+    )
+  })
+  api.post('/canvases/:canvasId/image-frames', (req, res) => {
+    const input = parseImageFrame(req.body)
+    if (!input) return res.status(400).json({ error: 'not an image frame' })
+    answer(res, user.addImageFrame(req.params.canvasId, input), (wire) => wire)
+  })
   api.put('/view', (req, res) => {
     const view = parseView(req.body)
     if (!view) return res.status(400).json({ error: 'not a view' })
@@ -237,6 +298,20 @@ export function frameHost(read: CanvasReader, shellOrigin: () => string): Reques
     }
     const [canvasRaw, frameRaw, extra] = framePath ? req.path.slice(FRAMES_PATH.length).split('/') : []
     const canvasId = asCanvasId(canvasRaw)
+    const assetName = frameRaw === 'assets' ? asAssetName(extra) : null
+    const image = req.method === 'GET' && canvasId && assetName ? read.asset(canvasId, assetName) : null
+    if (image) {
+      res.sendFile(image.path, {
+        // The project's `.ezdesign/` is a dot directory.
+        dotfiles: 'allow',
+        headers: {
+          'content-type': image.mime,
+          'cache-control': 'public, max-age=31536000, immutable',
+          'x-content-type-options': 'nosniff',
+        },
+      })
+      return
+    }
     const frameId = asFrameId(frameRaw)
     const doc = req.method === 'GET' && canvasId && frameId && extra === undefined ? read.frameDocument(canvasId, frameId) : null
     if (!doc) {

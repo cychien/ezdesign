@@ -55,6 +55,41 @@ export function normalizeRect(raw: Rect): Rect {
   }
 }
 
+/** A frame's new height, and the frames that move down to make room for it: every
+ *  frame below its old bottom whose span overlaps it, then every frame below
+ *  those whose span overlaps one of them, each by the growth, so the gaps
+ *  between them hold. A frame that shrinks moves nothing. */
+export function growDown<K>(
+  rect: Rect,
+  height: number,
+  others: readonly (readonly [K, Rect])[],
+): { rect: Rect; moved: [K, Rect][] } {
+  const next = normalizeRect({ ...rect, height })
+  const growth = next.height - rect.height
+  if (growth <= 0) return { rect: next, moved: [] }
+  const spanned = (a: Rect, b: Rect) => a.x < b.x + b.width && b.x < a.x + a.width
+  const pushers: Rect[] = [rect]
+  const moved: [K, Rect][] = []
+  const below = others.filter(([, r]) => r.y >= rect.y + rect.height).sort((a, b) => a[1].y - b[1].y)
+  for (const [id, r] of below) {
+    if (!pushers.some((p) => spanned(p, r))) continue
+    pushers.push(r)
+    moved.push([id, { ...r, y: r.y + growth }])
+  }
+  return { rect: next, moved }
+}
+
+/** A pasted image's frame: its natural size, scaled down to fit
+ *  `MAX_FRAME_SIZE` with its aspect kept, and never under `MIN_FRAME_SIZE`
+ *  (the document letterboxes a small image). */
+export function imageFrameSize(natural: Size): Size {
+  const scale = Math.min(1, MAX_FRAME_SIZE.width / natural.width, MAX_FRAME_SIZE.height / natural.height)
+  return {
+    width: Math.max(MIN_FRAME_SIZE.width, Math.round(natural.width * scale)),
+    height: Math.max(MIN_FRAME_SIZE.height, Math.round(natural.height * scale)),
+  }
+}
+
 /** The first spot at or right of `from`, on its row, that overlaps nothing:
  *  past every frame in the way, never past `limit`. Null when the row is full. */
 function freeAlongRow(from: Point, size: Size, existing: readonly Rect[], limit: number): Point | null {

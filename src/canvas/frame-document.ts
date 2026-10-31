@@ -23,7 +23,7 @@
 
 import { URL_PREFIX } from '../constants.js'
 import type { FrameRef } from '../protocol.js'
-import { type CanvasId, type CanvasProblem, type FrameId, MAX_FRAME_HTML } from './types.js'
+import { type AssetName, type CanvasId, type CanvasProblem, type FrameId, MAX_FRAME_HTML } from './types.js'
 
 /** The frame host. Chrome resolves `localhost` to loopback without DNS. */
 export const FRAME_HOST = 'localhost'
@@ -35,6 +35,30 @@ export const FRAME_ROUTE = '/frames'
  *  what makes a changed hash a reload. */
 export function frameUrl(frameOrigin: string, canvasId: CanvasId, frameId: FrameId, hash: string): string {
   return `${frameOrigin}${URL_PREFIX}${FRAME_ROUTE}/${canvasId}/${frameId}?rev=${hash}`
+}
+
+/** Canvas-relative. Beside the frame files, so `assets/<name>` reaches the image
+ *  both from a frame's url and from its file on disk, which is the one the
+ *  agent opens. */
+export const ASSETS_DIR = 'frames/assets'
+
+/** The document of a pasted image's frame: the image, filling the frame. */
+export function imageFrameHtml(title: string, asset: AssetName): string {
+  const text = title.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;')
+  return [
+    '<!doctype html>',
+    '<html>',
+    '<head>',
+    '<meta charset="utf-8">',
+    `<title>${text}</title>`,
+    '<style>html,body{margin:0;height:100%}img{display:block;width:100%;height:100%;object-fit:contain}</style>',
+    '</head>',
+    '<body>',
+    `<img src="assets/${asset}" alt="${text}">`,
+    '</body>',
+    '</html>',
+    '',
+  ].join('\n')
 }
 
 /** Whether a `Host` header names the frame host. Shared by the request switch

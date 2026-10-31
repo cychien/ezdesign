@@ -140,3 +140,40 @@ test('the shell routes run the lifecycle, and the empty start waits for a shell'
   const status = await w.run(['status'], { cwd: dir })
   assert.match(status.stdout, /canvases: 1 open/)
 })
+
+test('a pasted image goes up as bytes, becomes a frame, and is served beside it on the frame host', async () => {
+  const { world: w, control } = await world()
+  const dir = project(w, true)
+  const { port } = await w.openSession(control, { url: 'http://127.0.0.1:9/', project: dir })
+  const api = (path: string, init: RequestInit & { type: string }) =>
+    fetch(`http://127.0.0.1:${port}/__ezdesign/api${path}`, { ...init, headers: { 'content-type': init.type } })
+  const png = Buffer.from('89504e470d0a1a0a0000000d49484452', 'hex')
+
+  const stored = await api(`/canvases/${CANVAS}/assets`, { method: 'POST', type: 'image/png', body: png })
+  assert.equal(stored.status, 200)
+  const { asset } = (await stored.json()) as { asset: string }
+  assert.equal(asset, '22f545ac6b50.png')
+  const html = await api(`/canvases/${CANVAS}/assets`, { method: 'POST', type: 'text/html', body: '<p>' })
+  assert.deepEqual([html.status, await html.json()], [415, { error: 'text/html is not an image a frame can show', code: 'IMAGE_UNSUPPORTED' }])
+
+  const input = { id: 'cccccccccccc', asset, title: 'image', rect: { x: 500, y: 0, width: 640, height: 480 } }
+  const made = await api(`/canvases/${CANVAS}/image-frames`, { method: 'POST', type: 'application/json', body: JSON.stringify(input) })
+  assert.equal(made.status, 200)
+  const wire = (await made.json()) as { frames: { id: string; rect: unknown; src: string }[] }
+  const frame = wire.frames.find((f) => f.id === 'cccccccccccc')!
+  assert.deepEqual(frame.rect, { x: 500, y: 0, width: 640, height: 480 })
+  const bad = await api(`/canvases/${CANVAS}/image-frames`, { method: 'POST', type: 'application/json', body: JSON.stringify({ ...input, asset: '../x' }) })
+  assert.equal(bad.status, 400)
+
+  const src = new URL(frame.src)
+  const doc = await get(port, src.host, `${src.pathname}${src.search}`)
+  assert.match(doc.body, new RegExp(`<img data-ez-source="\\.ezdesign/canvases/${CANVAS}/frames/cccccccccccc\\.html:9" src="assets/${asset}" alt="image">`))
+  const imagePath = new URL(`assets/${asset}`, src).pathname
+  assert.equal(imagePath, `/__ezdesign/frames/${CANVAS}/assets/${asset}`)
+  const image = await get(port, src.host, imagePath)
+  assert.equal(image.status, 200)
+  assert.equal(image.headers['content-type'], 'image/png')
+  assert.equal(image.headers['cache-control'], 'public, max-age=31536000, immutable')
+  assert.equal((await get(port, `127.0.0.1:${port}`, imagePath)).status, 404, 'never on the shell origin')
+  assert.equal((await get(port, src.host, `/__ezdesign/frames/${CANVAS}/assets/../canvas.json`)).status, 404)
+})

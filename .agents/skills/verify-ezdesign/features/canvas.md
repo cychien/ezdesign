@@ -7,11 +7,11 @@ The review shell has a tab strip: an App tab while a dev server is attached, the
 - `canvas-empty-start` `ezdesign` with no url opens the shell on one `未命名 canvas`, created when the shell connects, with no App tab.
 - `canvas-attach` `ezdesign <url>` in that project adds the App tab to the open shell and selects it, without a reload.
 - `canvas-tabs` `新增 canvas`, double-click a tab to rename, `關閉 <name>` archives (an empty untitled canvas is deleted instead), `Canvas` lists every canvas with `重新開啟 <name>` for a closed one and, on every row's hover, `刪除 <name>` behind a modal `永久刪除 "<name>"？` dialog (`取消` focused, Escape or a backdrop click cancels).
-- `canvas-camera` drag the background or Space+drag to pan, wheel to pan, Cmd/Ctrl+wheel or a pinch to zoom around the cursor, `縮小`, `放大`, ⇧1 fits all, ⇧0 resets to 100%; the zoom readout is `status "縮放比例"`. The camera is saved per canvas.
+- `canvas-camera` Space+drag or a middle-button drag to pan, wheel to pan, Cmd/Ctrl+wheel or a pinch to zoom around the cursor, `縮小`, `放大`, ⇧1 fits all, ⇧0 resets to 100%; the zoom readout is `status "縮放比例"`. The camera is saved per canvas.
 - `canvas-frames` frames are drawn at their real width; double-click one to scroll it or use its controls, Escape or a background click hands the pointer back.
 - `canvas-annotate` `元素`/`範圍` work inside frames; the queue names the frame (`Hero A:14`), and the agent's label starts with `.ezdesign/canvases/<c>/frames/<f>.html:<line>` and ends with `[canvas frame "<title>" on canvas "<name>"]`.
 - `canvas-isolation` a frame cannot act on the session api, read the shell's storage or DOM; its own `localStorage` works.
-- `canvas-edit` click, Shift+click and `⌘A` select; drag moves with guides; `⌘D`, `⌫`, arrows, `⌘Z`, `⌘⇧Z`; all of it persists in `layout.json`. A frame has no resize handles, and no edit changes its size.
+- `canvas-edit` click, Shift+click, `⌘A` and a drag on the background (a box over every frame it touches, Shift adds) select; drag moves with guides; `⌘D`, `⌫`, arrows, `⌘Z`, `⌘⇧Z`; all of it persists in `layout.json`. A frame has no resize handles; only the agent's `update_frame` changes its height.
 - `canvas-agent` an ACP agent's `ezdesign-canvas` tools create canvases and frames live; editing a frame file updates the board.
 - `canvas-cross-tab` `/element` started on one tab is answered on another, and the comment comes back on its own tab with the ref.
 
