@@ -21,6 +21,7 @@ import BubbleChatIcon from '@hugeicons/core-free-icons/BubbleChatIcon'
 import BubbleChatOutcomeIcon from '@hugeicons/core-free-icons/BubbleChatOutcomeIcon'
 import Edit02Icon from '@hugeicons/core-free-icons/Edit02Icon'
 import Album02Icon from '@hugeicons/core-free-icons/Album02Icon'
+import DollarSquareIcon from '@hugeicons/core-free-icons/DollarSquareIcon'
 import type { SessionConfigOption } from '@agentclientprotocol/sdk'
 import type { AcpAskAnswer, AcpAskField, AcpAskOption } from '../acp-ask.js'
 import { askComplete, askSendsOnPick } from '../acp-ask.js'
@@ -32,7 +33,7 @@ import {
   configValues,
   shortConfigValueName,
 } from '../acp-config.js'
-import { attachify, directAttachments } from './attach.js'
+import { type AttachController, attachify, directAttachments } from './attach.js'
 import { type AppGuest, FrameRegistry, type Guest, senderOf } from './frame-registry.js'
 import { type GuestKind, parseGuestMessage } from './guest-messages.js'
 import { type CanvasUi, installCanvas } from './canvas/index.js'
@@ -1881,16 +1882,7 @@ const noteAttach = attachify({
   placeholder: '整體想法或補充說明，輸入 / 用指令（選填）',
   onChange: () => paintSendState(),
   commands: [
-    {
-      id: 'element',
-      label: 'Element',
-      hint: '選取頁面元素或範圍',
-      keywords: ['element', 'pick', 'ref', 'reference', '元素', '指定', '參考', '框選'],
-      icon: AlignSelectionIcon as IconNode,
-      // The pointer is in the other document, so this can only ask. The answer
-      // comes back as a message and lands here via the pick reducer.
-      run: () => startPick('note'),
-    },
+    elementCommand(() => noteAttach),
     {
       id: 'new',
       label: 'New chat',
@@ -1915,12 +1907,40 @@ const noteAttach = attachify({
       enabled: () => !!snapshot?.acp && (snapshot.chats?.length ?? 0) > 1,
       run: () => void openResume(),
     },
+    {
+      id: 'skills',
+      label: 'Skills',
+      hint: '輸入 $ 使用 skill',
+      keywords: ['skill', 'skills', '$', '技能'],
+      icon: DollarSquareIcon as IconNode,
+      // Skills have their own menu, behind `$`: this one row is how a user who
+      // only knows `/` finds it. Typed rather than inserted, so it opens there.
+      enabled: () => !!snapshot?.acp,
+      run: () => document.execCommand('insertText', false, '$'),
+    },
   ],
   skills: () => fetchSkills(),
   chooseLibrary: () => chooseLibraryAttachments(API),
 })
 const note = noteAttach.editable
 note.title = '寫補充說明（N）'
+/** The sidebar composer a pick started from is waiting in: the note box, or the
+ *  queued annotation being edited. */
+let pickComposer: AttachController = noteAttach
+
+/** `/element` from a sidebar composer. The pointer is in the other document, so
+ *  this can only ask; the answer comes back as a message and lands in `into` via
+ *  the pick reducer. */
+function elementCommand(into: () => AttachController): SlashCommand {
+  return {
+    id: 'element',
+    label: 'Element',
+    hint: '選取頁面元素或範圍',
+    keywords: ['element', 'pick', 'ref', 'reference', '元素', '指定', '參考', '框選'],
+    icon: AlignSelectionIcon as IconNode,
+    run: () => startPick(into()),
+  }
+}
 
 /** What the batch about to be sent will be answered by: the model, and whatever
  *  else the agent lets a session be set to.
@@ -2319,6 +2339,8 @@ const editAttach = attachify({
     paintEditState()
     capQueue()
   },
+  commands: [elementCommand(() => editAttach)],
+  chooseLibrary: () => chooseLibraryAttachments(API),
 })
 
 /** Capture on the composer's wrapper, so this outranks both the slash menu inside
@@ -3203,10 +3225,10 @@ function dispatchPick(e: PickEvent): void {
   paintPickPill()
   // One place for every way a pick can end without an answer - aborted, timed
   // out, called off from the page - so none of them can leave a placeholder
-  // stranded in the note box. A no-op when there is none, which is every
+  // stranded in a sidebar composer. A no-op when there is none, which is every
   // popup-host pick: that placeholder lives in the overlay's own composer.
   if (was && !pickState && !out.effects.some((x) => x.do === 'insert-note')) {
-    noteAttach.cancelRef()
+    pickComposer.cancelRef()
     paintSendState()
   }
 }
@@ -3225,7 +3247,7 @@ function applyPickEffect(effect: PickEffect): void {
       // does for its own. Idempotent, so a re-arm after a navigation does not
       // stack a second one.
       if (effect.host === 'note') {
-        noteAttach.beginRef(PICKING_LABEL)
+        pickComposer.beginRef(PICKING_LABEL)
         paintSendState()
       }
       for (const f of pickFrames(effect.frame)) {
@@ -3258,8 +3280,9 @@ function applyPickEffect(effect: PickEffect): void {
       for (const f of pickFrames(effect.frame)) if (f.kind === 'app') navigateFrame(f, effect.page)
       return
     case 'insert-note':
-      noteAttach.resolveRef(effect.ref)
-      focusNote()
+      pickComposer.resolveRef(effect.ref)
+      if (pickComposer === noteAttach) focusNote()
+      else pickComposer.editable.focus()
       paintSendState()
       return
     case 'banner':
@@ -3269,11 +3292,12 @@ function applyPickEffect(effect: PickEffect): void {
   }
 }
 
-function startPick(host: 'note'): void {
+function startPick(into: AttachController): void {
+  pickComposer = into
   dispatchPick({
     t: 'arm',
     id: `s${++pickSeq}-${Date.now().toString(36)}`,
-    host,
+    host: 'note',
     now: Date.now(),
   })
 }
@@ -3557,6 +3581,7 @@ function openEdit(a: AnnotationWire): void {
 function closeEdit(reason: 'cancelled' | 'saved' | 'switched' | 'gone'): void {
   const at = editing
   if (!at) return
+  if (pickState?.host === 'note' && pickComposer === editAttach) abortPick('escape')
   editing = null
   editSaving = false
   if (reason === 'cancelled' || reason === 'switched') {
@@ -3814,8 +3839,7 @@ async function fetchSkills(): Promise<SlashCommand[]> {
   // No glyph and no source label. The row is the name the user is about to type,
   // and a column of identical lightning bolts beside a list of skills says only
   // that they are all skills, which the `$` already said. Where a skill came from
-  // is not what anyone is choosing on - it stays searchable through `keywords`,
-  // which is where the description lives too.
+  // is not what anyone is choosing on.
   //
   // The one already chosen is marked, because this is a list of which skill the
   // batch runs and not a list of skills to collect: a batch runs one, so picking
@@ -3824,7 +3848,8 @@ async function fetchSkills(): Promise<SlashCommand[]> {
   return skills.map((skill) => ({
     id: skill.name,
     label: skill.name,
-    keywords: [skill.description],
+    keywords: [],
+    description: skill.description,
     run: () => noteAttach.insertSkill(skill.name),
   }))
 }

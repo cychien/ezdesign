@@ -11,12 +11,14 @@
  *  Installed on the first snapshot or canvas event, whichever comes first. */
 
 import type { BatchView, FrameRef } from '../../protocol.js'
-import { type CanvasId, type TabId, asCanvasId } from '../../canvas/types.js'
+import { type CanvasId, IMAGE_TYPES, type TabId, asCanvasId } from '../../canvas/types.js'
 import type {
+  AssetWire,
   CanvasEventWire,
   CanvasSnapshotWire,
   CanvasWire,
   DuplicateWire,
+  ImageFrameWire,
   LayoutStepWire,
   OpId,
   ViewWire,
@@ -107,6 +109,8 @@ export type CanvasRequest =
   | { do: 'delete'; canvasId: CanvasId }
   | { do: 'ops'; canvasId: CanvasId; step: LayoutStepWire }
   | { do: 'duplicate'; canvasId: CanvasId; input: DuplicateWire }
+  | { do: 'asset'; canvasId: CanvasId; image: Blob }
+  | { do: 'image-frame'; canvasId: CanvasId; input: ImageFrameWire }
   | { do: 'view'; view: ViewWire }
 
 /** The one place the canvas urls are spelled on the client. Resolves with the
@@ -130,11 +134,20 @@ export async function canvasRequest(api: ShellPorts['api'], request: CanvasReque
         return ['POST', `/canvases/${request.canvasId}/ops`, request.step]
       case 'duplicate':
         return ['POST', `/canvases/${request.canvasId}/frames`, request.input]
+      case 'asset':
+        return ['POST', `/canvases/${request.canvasId}/assets`, request.image]
+      case 'image-frame':
+        return ['POST', `/canvases/${request.canvasId}/image-frames`, request.input]
       case 'view':
         return ['PUT', '/view', request.view]
     }
   })()
-  const res = await api(path, { method, ...(body !== undefined ? { body: JSON.stringify(body) } : {}) })
+  const res = await api(
+    path,
+    body instanceof Blob
+      ? { method, headers: { 'content-type': body.type }, body }
+      : { method, ...(body !== undefined ? { body: JSON.stringify(body) } : {}) },
+  )
   const answer = (await res.json().catch(() => null)) as { error?: string } | null
   if (!res.ok) throw new Error(answer?.error ?? `HTTP ${res.status}`)
   return answer
@@ -212,8 +225,12 @@ export function installCanvas(ports: ShellPorts): CanvasUi {
         (await request(
           edit.t === 'ops'
             ? { do: 'ops', canvasId: id, step: { opId: newOpId(), ops: edit.ops } }
-            : { do: 'duplicate', canvasId: id, input: edit.input },
+            : edit.t === 'duplicate'
+              ? { do: 'duplicate', canvasId: id, input: edit.input }
+              : { do: 'image-frame', canvasId: id, input: edit.input },
         )) as CanvasWire | null,
+      storeImage: async (image) =>
+        ((await request({ do: 'asset', canvasId: id, image })) as AssetWire | null)?.asset ?? null,
       saveCamera: (camera) => void request({ do: 'view', view: { camera: { canvasId: id, camera } } }),
       escape: ports.escape,
       chooseFrame: (frame) =>
@@ -247,6 +264,7 @@ export function installCanvas(ports: ShellPorts): CanvasUi {
     shown = tab
     for (const [id, b] of boards) if (id !== tab) b.hide()
     ports.stage.hidden = tab !== 'app'
+    document.documentElement.classList.toggle('ez-on-board', next !== null)
     ports.onTabShown(tab)
     if (next) {
       next.show()
@@ -271,6 +289,23 @@ export function installCanvas(ports: ShellPorts): CanvasUi {
   function activeBoard(): BoardView | null {
     return shown && shown !== 'app' ? (boards.get(shown) ?? null) : null
   }
+
+  /** The board on screen, while it or nothing has focus: a key or a paste
+   *  meant for a sidebar field never reaches it. */
+  function focusedBoard(): BoardView | null {
+    const board = activeBoard()
+    const focus = document.activeElement
+    return board && (!focus || focus === document.body || board.el.contains(focus)) ? board : null
+  }
+
+  document.addEventListener('paste', (e) => {
+    const board = focusedBoard()
+    if (!board || e.defaultPrevented || document.querySelector('dialog[open]')) return
+    const images = [...(e.clipboardData?.files ?? [])].filter((f) => f.type in IMAGE_TYPES)
+    if (!images.length) return
+    e.preventDefault()
+    void board.pasteImages(images)
+  })
 
   /** Each canvas guest is handed only its own frame's annotations. */
   function pushAnnotations(s: CanvasShellSnapshot): void {
@@ -353,12 +388,7 @@ export function installCanvas(ports: ShellPorts): CanvasUi {
     },
 
     onKeyDown(e) {
-      const board = activeBoard()
-      // Only while the board, or nothing, has focus: Backspace on a focused
-      // sidebar control must not delete the selected frames.
-      const focus = document.activeElement
-      if (!board || (focus && focus !== document.body && !board.el.contains(focus))) return false
-      return board.onKeyDown(e)
+      return focusedBoard()?.onKeyDown(e) ?? false
     },
 
     onKeyUp(e) {

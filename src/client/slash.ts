@@ -22,6 +22,9 @@ export interface SlashCommand {
   hint?: string | (() => string | undefined)
   /** Extra words the filter should match, so `/圖片` finds the file command. */
   keywords: string[]
+  /** Prose about the command. Searched by word start, and only when nothing
+   *  matched a name or keyword: a paragraph contains most short queries. */
+  description?: string
   /** Optional. A command with no glyph is one whose name is the whole of it -
    *  the skills under `$` are all skills, so a column of identical marks beside
    *  them says only what the `$` already said. */
@@ -45,8 +48,37 @@ export interface SlashController {
 /** A query this long stopped being a command name and started being prose. */
 const MAX_QUERY = 24
 const BREAK = /[\s ]/
+/** Punctuation that is part of a path or a url rather than the end of a clause. */
+const PATH_CHAR = /[./\\:@#%&=?~+*_-]/
+
+/** A trigger can follow a space, or punctuation that closes a clause or opens a
+ *  bracket (`，` `,` `。` `(`), but not a letter or anything a path is spelled with. */
+function opensTrigger(prev: string): boolean {
+  return BREAK.test(prev) || (/[\p{P}\p{S}]/u.test(prev) && !PATH_CHAR.test(prev))
+}
 
 let menuCount = 0
+
+/** Where the menu's top-left goes for a trigger at `at`, all in viewport pixels.
+ *  `box` is the menu as drawn, `scale` times its layout size. */
+export function menuPosition(
+  at: { left: number; top: number; bottom: number },
+  box: { width: number; height: number },
+  view: { width: number; height: number },
+  scale: number,
+): { left: number; top: number } {
+  const margin = 8 * scale
+  const gap = 6 * scale
+  const left = Math.max(margin, Math.min(at.left, view.width - box.width - margin))
+  const below = at.bottom + gap
+  const above = at.top - box.height - gap
+  // Fitting inside the window is not the whole question: a composer parked at
+  // the bottom has its own send button just below it, and a menu that merely
+  // fits would open right on top of it. Low anchors open upward.
+  const crowded = below + box.height > view.height - margin || at.top > view.height * 0.6
+  const top = crowded && above >= margin ? above : Math.min(below, view.height - box.height - margin)
+  return { left, top }
+}
 
 /** Where the caret's own text run turns into a command, if it does. `before` is
  *  that run up to the caret.
@@ -62,19 +94,44 @@ export function detectSlash(
   const start = before.lastIndexOf(trigger)
   if (start === -1) return null
   const prev = start === 0 ? '' : before[start - 1]
-  if (prev && !BREAK.test(prev)) return null
+  if (prev && !opensTrigger(prev)) return null
   const query = before.slice(start + 1)
   if (query.length > MAX_QUERY || BREAK.test(query)) return null
   return { start, query }
+}
+
+const WORD_BREAK = /[^\p{L}\p{N}]/u
+
+/** 0 for a name that starts with the query, 1 for a later word of it, 2 for the
+ *  query anywhere in a name or keyword, null for no match. */
+function rank(command: SlashCommand, q: string): number | null {
+  const names = [command.id, command.label].map((term) => term.toLowerCase())
+  if (names.some((name) => name.startsWith(q))) return 0
+  if (names.some((name) => startsWord(name, q))) return 1
+  if ([...names, ...command.keywords.map((k) => k.toLowerCase())].some((term) => term.includes(q))) return 2
+  return null
+}
+
+function startsWord(text: string, q: string): boolean {
+  let at = text.indexOf(q)
+  while (at !== -1) {
+    if (at === 0 || WORD_BREAK.test(text.charAt(at - 1))) return true
+    at = text.indexOf(q, at + 1)
+  }
+  return false
 }
 
 export function filterCommands<T extends SlashCommand>(commands: T[], query: string): T[] {
   const available = commands.filter((c) => c.enabled?.() ?? true)
   const q = query.trim().toLowerCase()
   if (!q) return available
-  return available.filter((c) =>
-    [c.id, c.label, ...c.keywords].some((term) => term.toLowerCase().includes(q)),
-  )
+  const ranked = available
+    .map((command) => ({ command, rank: rank(command, q) }))
+    .filter((r): r is { command: T; rank: number } => r.rank !== null)
+    .sort((a, b) => a.rank - b.rank)
+    .map((r) => r.command)
+  if (ranked.length > 0) return ranked
+  return available.filter((c) => c.description && startsWord(c.description.toLowerCase(), q))
 }
 
 interface Trigger {
@@ -142,14 +199,9 @@ export function attachSlashMenu(
     const at = slashRect()
     if (!at) return
     const box = menu.getBoundingClientRect()
-    const left = Math.max(8, Math.min(at.left, view.innerWidth - box.width - 8))
-    const below = at.bottom + 6
-    const above = at.top - box.height - 6
-    // Fitting inside the window is not the whole question: a composer parked at
-    // the bottom has its own send button just below it, and a menu that merely
-    // fits would open right on top of it. Low anchors open upward.
-    const crowded = below + box.height > view.innerHeight - 8 || at.top > view.innerHeight * 0.6
-    const top = crowded && above >= 8 ? above : Math.min(below, view.innerHeight - box.height - 8)
+    // Drawn scaled inside a zoomed canvas frame, so its gaps are scaled to match.
+    const scale = box.width / menu.offsetWidth || 1
+    const { left, top } = menuPosition(at, box, { width: view.innerWidth, height: view.innerHeight }, scale)
     menu.style.left = `${left}px`
     menu.style.top = `${top}px`
   }

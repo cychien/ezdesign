@@ -225,3 +225,45 @@ test('CV-p6-agent-geometry: the agent cannot move a frame the user placed', asyn
   const layout = JSON.parse(readFileSync(join(dir, '.ezdesign', 'canvases', canvas.id, 'layout.json'), 'utf8'))
   assert.deepEqual([layout.rects[first.id].x, layout.rects[first.id].y], [900, 0])
 })
+
+test('CV-agent-height: update_frame grows a frame over MCP, the frame under it moves down, and its width stays fixed', async () => {
+  const { w, control } = await world()
+  const dir = project(w)
+  const port = await ready(w, control, dir)
+  for (const frames of [3, 6]) {
+    await api(port, '/send', { note: '建立 design system', view: { tab: 'app', page: '/' } })
+    await waitFor(async () => {
+      const s = (await w.state(port)) as unknown as State
+      return s.canvas?.canvases.find((c) => c.frames === frames) && s.acp?.state === 'idle'
+    }, `${frames} frames`, 15_000)
+  }
+  const canvas = ((await w.state(port)) as unknown as State).canvas!.canvases.find((c) => c.name === 'Design system')!
+  const server = Object.values((await report(w, port)).mcpServers).flat().find((s) => s.name === 'ezdesign-canvas')!
+  const call = async (name: string, args: unknown) => {
+    const res = await fetch(server.url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream', authorization: server.headers[0]!.value },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } }),
+    })
+    return (await res.json()) as { result?: { isError?: boolean; content: { text: string }[]; structuredContent?: { height: number } } }
+  }
+  const board = async () =>
+    ((await (await fetch(`http://127.0.0.1:${port}/__ezdesign/api/canvases/${canvas.id}`)).json()) as {
+      frames: { id: string; rect: { x: number; y: number; width: number; height: number } }[]
+    }).frames.map((f) => [f.rect.x, f.rect.y, f.rect.width, f.rect.height])
+  const first = ((await (await fetch(`http://127.0.0.1:${port}/__ezdesign/api/canvases/${canvas.id}`)).json()) as { frames: { id: string }[] }).frames[0]!
+  const wider = await call('update_frame', { canvasId: canvas.id, frameId: first.id, width: 1280 })
+  assert.equal(wider.result?.isError, true)
+  assert.match(wider.result!.content[0]!.text, /width/)
+  const grown = await call('update_frame', { canvasId: canvas.id, frameId: first.id, height: 1444 })
+  assert.notEqual(grown.result?.isError, true)
+  assert.equal(grown.result?.structuredContent?.height, 1444)
+  assert.deepEqual(await board(), [
+    [0, 0, 390, 1444],
+    [470, 0, 390, 844],
+    [940, 0, 390, 844],
+    [0, 1684, 390, 844],
+    [470, 1084, 390, 844],
+    [940, 1084, 390, 844],
+  ])
+})

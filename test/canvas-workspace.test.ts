@@ -307,3 +307,80 @@ test('names and views are checked at the door', () => {
   workspace.user.setView({ camera: { canvasId: c.id, camera: { x: 1, y: 2, zoom: 0.5 } } })
   assert.deepEqual(workspace.read.wire(c.id)!.camera, { x: 1, y: 2, zoom: 0.5 })
 })
+
+const PNG = Buffer.from('89504e470d0a1a0a0000000d49484452', 'hex')
+
+test('a pasted image is stored once by its bytes and shown by a frame the daemon writes', () => {
+  const { workspace, root, changes } = setup()
+  const canvas = unwrap(workspace.user.create('貼圖'))
+  const asset = unwrap(workspace.user.addAsset(canvas.id, 'image/png', PNG))
+  assert.equal(asset, '22f545ac6b50.png')
+  assert.equal(unwrap(workspace.user.addAsset(canvas.id, 'image/png', PNG)), asset)
+  assert.deepEqual(readdirSync(join(root, canvas.id, 'frames', 'assets')), [asset])
+  assert.deepEqual(workspace.read.asset(canvas.id, asset), { path: join(root, canvas.id, 'frames', 'assets', asset), mime: 'image/png' })
+
+  changes.length = 0
+  const input = { id: 'a1a1a1a1a1a1', asset, title: 'image', rect: { x: -200.4, y: 10, width: 640, height: 480 } } as const
+  const wire = unwrap(workspace.user.addImageFrame(canvas.id, input as never))
+  assert.deepEqual(changes, [{ kind: 'updated', canvasId: canvas.id }])
+  const frame = wire.frames.find((f) => f.id === 'a1a1a1a1a1a1')!
+  assert.deepEqual(frame.rect, { x: -200, y: 10, width: 640, height: 480 })
+  assert.equal(frame.title, 'image')
+  assert.equal(
+    readFileSync(join(root, canvas.id, 'frames', 'a1a1a1a1a1a1.html'), 'utf8'),
+    [
+      '<!doctype html>',
+      '<html>',
+      '<head>',
+      '<meta charset="utf-8">',
+      '<title>image</title>',
+      '<style>html,body{margin:0;height:100%}img{display:block;width:100%;height:100%;object-fit:contain}</style>',
+      '</head>',
+      '<body>',
+      `<img src="assets/${asset}" alt="image">`,
+      '</body>',
+      '</html>',
+      '',
+    ].join('\n'),
+  )
+  const again = unwrap(workspace.user.addImageFrame(canvas.id, input as never))
+  assert.equal(again.frames.length, 1, 'a retried paste creates nothing twice')
+})
+
+test('an image is refused for its type, size or a missing file, and nothing is written', () => {
+  const { workspace, root } = setup()
+  const canvas = unwrap(workspace.user.create('貼圖'))
+  const refused = (o: { ok: boolean; problem?: unknown }) => (o.ok ? null : o.problem)
+  assert.deepEqual(refused(workspace.user.addAsset(canvas.id, 'text/html', PNG)), { code: 'IMAGE_UNSUPPORTED', mime: 'text/html' })
+  assert.deepEqual(refused(workspace.user.addAsset(canvas.id, 'image/png', Buffer.alloc(0))), { code: 'IMAGE_EMPTY' })
+  const huge = Buffer.alloc(20 * 1024 * 1024 + 1)
+  assert.deepEqual(refused(workspace.user.addAsset(canvas.id, 'image/png', huge)), {
+    code: 'IMAGE_TOO_LARGE',
+    bytes: 20 * 1024 * 1024 + 1,
+    limit: 20 * 1024 * 1024,
+  })
+  const input = { id: 'a1a1a1a1a1a1', asset: 'cccccccccccc.png', title: 'image', rect: { x: 0, y: 0, width: 400, height: 300 } }
+  assert.deepEqual(refused(workspace.user.addImageFrame(canvas.id, input as never)), {
+    code: 'ASSET_NOT_FOUND',
+    canvasId: canvas.id,
+    asset: 'cccccccccccc.png',
+  })
+  assert.deepEqual(readdirSync(join(root, canvas.id, 'frames')), [])
+  assert.equal(workspace.read.asset(canvas.id, 'cccccccccccc.png' as never), null)
+})
+
+test('the sweep keeps images a frame shows and collects old ones none does', () => {
+  const { workspace, root } = setup()
+  seedCanvas(root, 'aaaaaaaaaaaa', 'seeded', [
+    { id: 'bbbbbbbbbbbb', html: '<!doctype html><html><body><img src="assets/111111111111.png"></body></html>' },
+  ])
+  const assets = join(root, 'aaaaaaaaaaaa', 'frames', 'assets')
+  mkdirSync(assets)
+  const old = new Date(Date.now() - 2 * 60 * 60_000)
+  for (const name of ['111111111111.png', '222222222222.png', '333333333333.png']) writeFileSync(join(assets, name), PNG)
+  utimesSync(join(assets, '111111111111.png'), old, old)
+  utimesSync(join(assets, '222222222222.png'), old, old)
+  workspace.start()
+  assert.deepEqual(readdirSync(assets).sort(), ['111111111111.png', '333333333333.png'])
+  assert.deepEqual(readdirSync(join(root, 'aaaaaaaaaaaa', 'frames')).sort(), ['assets', 'bbbbbbbbbbbb.html'])
+})

@@ -285,10 +285,15 @@
   color: var(--ez-ink);
   white-space: pre-wrap;
   word-break: break-word;
-  outline: none;
   /* Keeps a long comment's own scroll from chaining out to the page once it hits
      an end - the page is meant to be still while the popup is open. */
   overscroll-behavior: contain;
+}
+
+/* The field draws the focus ring. Two classes' weight, so a host page's own
+   `:focus-visible` outline cannot paint a second one inside it. */
+.ez-input:is(:focus, :focus-visible) {
+  outline: none;
 }
 
 /* `:empty` will not do: the browser leaves a stray <br> behind after the last
@@ -396,6 +401,8 @@
   background: #fff;
   border: 1px solid var(--ez-paper-edge);
   cursor: auto;
+  transform-origin: top left;
+  transform: scale(var(--ez-ui-scale, 1));
   box-shadow:
     0 12px 32px oklch(0% 0 0 / 0.12),
     0 2px 8px oklch(0% 0 0 / 0.06);

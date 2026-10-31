@@ -10,7 +10,7 @@
  *  every open canvas so a tab opens with no fetch. Frame HTML never travels
  *  here: each iframe loads its own document from the frame host. */
 
-import type { Camera, CanvasId, CanvasSummary, FrameId, Point, Rect, TabId } from './types.js'
+import type { AssetName, Camera, CanvasId, CanvasSummary, FrameId, Point, Rect, TabId } from './types.js'
 
 /** The snapshot's canvas part: the tab strip is drawn from it. */
 export interface CanvasSnapshotWire {
@@ -91,6 +91,22 @@ export interface DuplicateWire {
   /** Where the copy goes; absent means beside the source. It keeps the
    *  source's size. */
   at?: Point
+}
+
+/** `POST /canvases/:id/assets`, answered for an image sent as the raw body. */
+export interface AssetWire {
+  asset: AssetName
+}
+
+/** `POST /canvases/:id/image-frames`: an image the user pasted, already stored
+ *  by `AssetWire`, as a new frame. The client mints the id, as for a duplicate,
+ *  and the daemon writes the document that shows the image: the user's path
+ *  still never carries HTML. */
+export interface ImageFrameWire {
+  id: FrameId
+  asset: AssetName
+  title: string
+  rect: Rect
 }
 
 /** `PUT /view`. Persisted in the session's `view.json`; a camera is never

@@ -15,12 +15,15 @@
  *    board, and an undo naming a frame the agent removed is skipped by the
  *    daemon, so the history never needs rewriting. Camera moves are not edits. */
 
-import { placeBeside } from '../../canvas/place.js'
-import type { FrameId, Point } from '../../canvas/types.js'
-import type { CanvasWire, DuplicateWire, FrameWire, LayoutOp } from '../../canvas/wire.js'
+import { GAP, placeBeside } from '../../canvas/place.js'
+import type { AssetName, FrameId, Point, Size } from '../../canvas/types.js'
+import type { CanvasWire, DuplicateWire, FrameWire, ImageFrameWire, LayoutOp } from '../../canvas/wire.js'
 
 /** What one request asks the daemon for. */
-export type BoardEdit = { t: 'ops'; ops: LayoutOp[] } | { t: 'duplicate'; input: DuplicateWire }
+export type BoardEdit =
+  | { t: 'ops'; ops: LayoutOp[] }
+  | { t: 'duplicate'; input: DuplicateWire }
+  | { t: 'image'; input: ImageFrameWire }
 
 export interface EditStep {
   label: string
@@ -86,6 +89,30 @@ export function planDuplicate(
   }
 }
 
+/** Pasted images, already stored, as one step: a row with `GAP` between them,
+ *  centred on `center` (the middle of the view), as a paste lands in Figma. */
+export function planImages(
+  images: readonly { asset: AssetName; title: string; size: Size }[],
+  center: Point,
+  mint: () => FrameId,
+): EditStep & { added: FrameId[] } {
+  const width = images.reduce((sum, image) => sum + image.size.width, 0) + GAP * (images.length - 1)
+  let x = Math.round(center.x - width / 2)
+  const inputs = images.map((image): ImageFrameWire => {
+    const rect = { x, y: Math.round(center.y - image.size.height / 2), ...image.size }
+    x += image.size.width + GAP
+    return { id: mint(), asset: image.asset, title: image.title, rect }
+  })
+  const added = inputs.map((input) => input.id)
+  return {
+    label: added.length > 1 ? `貼上 ${added.length} 張圖片` : '貼上圖片',
+    apply: inputs.map((input) => ({ t: 'image', input })),
+    undo: [{ t: 'remove', ids: added }],
+    redo: [{ t: 'restore', ids: added }],
+    added,
+  }
+}
+
 export function planRemove(ids: ReadonlySet<FrameId>): EditStep {
   const list = [...ids]
   return {
@@ -110,6 +137,8 @@ export function withPending(canvas: CanvasWire, pending: readonly BoardEdit[]): 
       frames.push({ ...source, id: edit.input.id, rect: { ...source.rect, ...edit.input.at } })
       continue
     }
+    // No document to show until the daemon has written one.
+    if (edit.t === 'image') continue
     for (const op of edit.ops) {
       if (op.t === 'move') {
         const at = new Map(op.frames.map((f) => [f.id, f]))

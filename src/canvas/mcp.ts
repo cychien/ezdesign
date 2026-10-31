@@ -158,7 +158,7 @@ export const CANVAS_TOOLS = {
       'Add one frame to an open canvas: a complete, self-contained HTML document (<!doctype html>, its own <head> and styles) rendered in its own iframe at a real viewport width.',
       'Scripts and CDN assets are allowed. No CSS is shared between frames.',
       'width is the viewport width the page is designed for (390 phone, 768 tablet, 1280 desktop; default 1280); height defaults to a common screen for that width.',
-      'Leave position out unless the user asked for a particular arrangement: the frame is then placed where it overlaps nothing, the frames of one turn side by side in the order you add them, in a row under the earlier ones. After creation a frame\'s position is the user\'s, and its size never changes: pick width and height here.',
+      'Leave position out unless the user asked for a particular arrangement: the frame is then placed where it overlaps nothing, the frames of one turn side by side in the order you add them, in a row under the earlier ones. After creation a frame\'s position is the user\'s and its width is fixed; its height can follow its content through update_frame.',
       'Call once per frame, as soon as it is ready: the user watches frames appear.',
     ].join('\n'),
     input: {
@@ -191,31 +191,34 @@ export const CANVAS_TOOLS = {
   }),
   update_frame: tool({
     description: [
-      "Replace a frame's HTML document and/or retitle it.",
+      "Replace a frame's HTML document, retitle it, and/or change its height.",
       'Pass expectedHash - the hash read_canvas, add_frame or your last update_frame returned - so an edit you have not seen is never overwritten: if the file changed since, nothing is written and the error names its current hash.',
       "For a small change you may instead edit the frame's file directly; the user's canvas updates either way.",
-      "A frame's position belongs to the user and its size is fixed when it is added; neither can be changed here.",
+      'Pass height whenever the content needs a taller or shorter frame; frames below it move down to make room. Never remove a frame and add it again to resize it: that loses its place and the annotations made on it.',
+      "A frame's position belongs to the user and its width is the viewport it was designed for; neither can be changed here.",
     ].join('\n'),
     input: {
       canvasId,
       frameId,
       html: z.string().optional().describe('The new complete HTML document.'),
       title: z.string().optional().describe('A new label for the frame.'),
+      height: px('A new viewport height in CSS px, to fit the content.'),
       expectedHash: z
         .string()
         .optional()
         .describe('The hash of the version you are replacing.'),
     },
-    run: (port, args): Outcome<{ frameId: string; file: string; hash: string }> =>
+    run: (port, args): Outcome<FrameListing> =>
       map(
         port.updateFrame({
           canvasId: args.canvasId,
           frameId: args.frameId,
           ...(args.html !== undefined ? { html: args.html } : {}),
           ...(args.title !== undefined ? { title: args.title } : {}),
+          ...(args.height !== undefined ? { height: args.height } : {}),
           ...(args.expectedHash !== undefined ? { expectedHash: args.expectedHash } : {}),
         }),
-        (f) => ({ frameId: f.id, file: f.file, hash: f.hash }),
+        listing,
       ),
   }),
   remove_frame: tool({
@@ -314,7 +317,7 @@ export class CanvasMcp {
         server.registerTool(
           name,
           // Strict, so `x` or `width` on an existing frame is refused rather than
-          // silently ignored: a frame's position is the user's, its size fixed.
+          // silently ignored: a frame's position is the user's, its width fixed.
           { description: spec.description, inputSchema: z.object(spec.input).strict() },
           (args: unknown) => runCanvasTool(this.port, name, args as never),
         )
@@ -357,5 +360,10 @@ export function canvasProblemMessage(problem: CanvasProblem): string {
       return `BAD_NAME: give a non-empty name of at most ${problem.max} characters.`
     case 'BAD_RECT':
       return `BAD_RECT: ${problem.reason}`
+    case 'IMAGE_UNSUPPORTED':
+    case 'IMAGE_TOO_LARGE':
+    case 'IMAGE_EMPTY':
+    case 'ASSET_NOT_FOUND':
+      return `${problem.code}: only the user pastes images onto a canvas.`
   }
 }

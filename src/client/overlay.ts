@@ -1744,7 +1744,11 @@ function onScrollAttempt(e: Event): void {
   // Only while framed - in a plain tab there is no stage to hand them to.
   // By type, not instanceof: an event can cross a realm, a constructor cannot.
   const w = e.type === 'wheel' ? (e as WheelEvent) : null
-  if (w && (w.metaKey || w.ctrlKey) && window.parent !== window) {
+  const zoom = !!w && (w.metaKey || w.ctrlKey)
+  // A canvas frame only takes the wheel while annotating or picking; the board
+  // pans under it then, as it does with no mode on.
+  const boardPan = link.kind === 'relay' && (mode !== 'off' || pick !== null) && !isOwnUi(e.target)
+  if (w && (zoom || boardPan) && window.parent !== window) {
     e.preventDefault()
     const unit = w.deltaMode === 1 ? 16 : w.deltaMode === 2 ? window.innerHeight : 1
     // On a canvas board the modified wheel - a pinch arrives as ctrl+wheel - is a
@@ -1753,7 +1757,7 @@ function onScrollAttempt(e: Event): void {
       type: 'ez:wheel',
       dx: w.deltaX * unit,
       dy: w.deltaY * unit,
-      ...(link.kind === 'relay' ? { zoom: true, at: { x: w.clientX, y: w.clientY } } : {}),
+      ...(zoom && link.kind === 'relay' ? { zoom: true, at: { x: w.clientX, y: w.clientY } } : {}),
     })
     return
   }

@@ -185,8 +185,8 @@ export const GUEST_PROTOCOL = {
       guest: sender.kind,
     }
   }),
-  /** Mod+wheel, and from a canvas guest ctrl+wheel (a pinch): pan or zoom the
-   *  stage or the board. `at` is in the guest's viewport. */
+  /** Mod+wheel, and from a canvas guest any wheel while annotating or picking:
+   *  pan or zoom the stage or the board. `at` is in the guest's viewport. */
   'ez:wheel': up(BOTH, (r) => {
     const at = obj(r.at)
     const x = at ? num(at.x) : null

@@ -33,4 +33,7 @@ the user sent the batch from and which canvases exist.
 - An item whose `anchor.frame` is set was made inside a frame: `anchor.source` is a line of that
   frame's file under `.ezdesign/canvases/`. Change a frame with `update_frame` (pass the
   `expectedHash` you last read) or by editing its file.
-- Never edit `canvas.json` or `layout.json` by hand. Where a frame sits and its size are the user's.
+- When a change makes a frame's content taller or shorter, pass `height` to `update_frame`; the
+  frames below it move down to make room. Never remove a frame and add it again to resize it: that
+  loses its place and the annotations made on it. Its width stays the viewport it was added at.
+- Never edit `canvas.json` or `layout.json` by hand. Where a frame sits is the user's.

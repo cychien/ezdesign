@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { detectSlash, filterCommands } from '../src/client/slash.js'
+import { detectSlash, filterCommands, menuPosition } from '../src/client/slash.js'
 import type { SlashCommand } from '../src/client/slash.js'
 
 test('a slash opens the menu at the start of a word', () => {
@@ -17,6 +17,17 @@ test('a slash inside a word is just a character', () => {
   assert.equal(detectSlash('http://localhost:5173'), null)
   assert.equal(detectSlash('src/client'), null)
   assert.equal(detectSlash('a/b'), null)
+})
+
+test('a slash after clause punctuation opens the menu, after path punctuation it does not', () => {
+  assert.deepEqual(detectSlash('標題放大，/fi'), { start: 5, query: 'fi' })
+  assert.deepEqual(detectSlash('bigger,/file'), { start: 7, query: 'file' })
+  assert.deepEqual(detectSlash('（/el'), { start: 1, query: 'el' })
+  assert.deepEqual(detectSlash('完成。$re', '$'), { start: 3, query: 're' })
+  assert.equal(detectSlash('./src'), null)
+  assert.equal(detectSlash('~/code'), null)
+  assert.equal(detectSlash('user@host:/var'), null)
+  assert.equal(detectSlash('a-/b'), null)
 })
 
 test('the query ends where the command name would', () => {
@@ -63,6 +74,39 @@ test('filtering matches the id, the label or a keyword', () => {
   assert.deepEqual(filterCommands(COMMANDS, 'zzz'), [])
 })
 
+const skill = (id: string, description: string): SlashCommand => ({ id, label: id, keywords: [], description, run: () => {} })
+
+const SKILLS = [
+  skill('architect', 'Plan the system before building it, delivered in several passes.'),
+  skill('create-verification-skill', 'Write a verification skill for a repo.'),
+  skill('everyday-do', 'Run an everyday task.'),
+  skill('guard', 'Hard rules for every agent, enforced by a verifier.'),
+  skill('verify', 'Prove a change works end to end.'),
+]
+
+test('a name match ranks by where the query starts, and prose never joins it', () => {
+  assert.deepEqual(
+    filterCommands(SKILLS, 'ver').map((c) => c.id),
+    ['verify', 'create-verification-skill', 'everyday-do'],
+  )
+})
+
+test('a description is searched by word start once no name or keyword matches', () => {
+  assert.deepEqual(
+    filterCommands(SKILLS, 'end to').map((c) => c.id),
+    ['verify'],
+  )
+  assert.deepEqual(
+    filterCommands(SKILLS, 'verif').map((c) => c.id),
+    ['verify', 'create-verification-skill'],
+  )
+  assert.deepEqual(
+    filterCommands(SKILLS, 'livered').map((c) => c.id),
+    [],
+    'mid-word in prose is not a match',
+  )
+})
+
 test('filtering ignores case and surrounding space', () => {
   assert.deepEqual(
     filterCommands(COMMANDS, ' UPLOAD ').map((c) => c.id),
@@ -105,4 +149,26 @@ test('the same word-boundary rule applies to any trigger', () => {
   assert.equal(detectSlash('cost$5', '$'), null, 'mid-word is not a trigger')
   assert.deepEqual(detectSlash('run $verify', '$'), { start: 4, query: 'verify' })
   assert.equal(detectSlash('$two words', '$'), null, 'a space ends the query')
+})
+
+test('the menu opens under its trigger, or over it when the trigger sits low', () => {
+  const view = { width: 1000, height: 800 }
+  const at = { left: 100, top: 100, bottom: 120 }
+  assert.deepEqual(menuPosition(at, { width: 240, height: 120 }, view, 1), { left: 100, top: 126 })
+  assert.deepEqual(
+    menuPosition({ left: 950, top: 700, bottom: 720 }, { width: 240, height: 120 }, view, 1),
+    { left: 752, top: 574 },
+  )
+})
+
+// In a canvas frame the menu is drawn at the inverse of the board's zoom, so its
+// gap and margins are too: they hold their size on screen.
+test('a scaled menu keeps its gaps in step with its scale', () => {
+  const view = { width: 1000, height: 800 }
+  const at = { left: 100, top: 100, bottom: 120 }
+  assert.deepEqual(menuPosition(at, { width: 120, height: 60 }, view, 0.5), { left: 100, top: 123 })
+  assert.deepEqual(
+    menuPosition({ left: 950, top: 700, bottom: 720 }, { width: 480, height: 240 }, view, 2),
+    { left: 504, top: 448 },
+  )
 })

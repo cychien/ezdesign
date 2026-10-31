@@ -4453,6 +4453,12 @@ body.ez-arranging .ez-frame {
   display: none;
 }
 
+/* A sideways trackpad swipe on a canvas pans it; it must never go back a page. */
+html.ez-on-board,
+html.ez-on-board body {
+  overscroll-behavior-x: none;
+}
+
 .ez-board.ez-space {
   cursor: grab;
 }
@@ -4486,6 +4492,20 @@ body.ez-arranging .ez-frame {
 .ez-board-frame.ez-live,
 .ez-board-frame[aria-selected='true'] {
   outline-color: var(--arrange);
+}
+
+/* In screen pixels over the world, like the heads: a one-pixel edge at any zoom. */
+.ez-board-marquee {
+  position: absolute;
+  left: 0;
+  top: 0;
+  pointer-events: none;
+  border: 1px solid var(--arrange);
+  background: color-mix(in oklab, var(--arrange) 8%, transparent);
+}
+
+.ez-board-marquee[hidden] {
+  display: none;
 }
 
 /* Frame names, in screen pixels over the world: placed by `paintHeads`. */

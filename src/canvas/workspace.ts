@@ -39,10 +39,18 @@ import {
 import { join } from 'node:path'
 import { writeAtomic } from '../fs-atomic.js'
 import type { FrameRef } from '../protocol.js'
-import { type FrameOverlayConfig, checkFrameHtml, frameUrl, renderFrameDocument } from './frame-document.js'
-import { autoPlace, defaultHeightFor, normalizeRect, placeBeside } from './place.js'
+import {
+  ASSETS_DIR,
+  type FrameOverlayConfig,
+  checkFrameHtml,
+  frameUrl,
+  imageFrameHtml,
+  renderFrameDocument,
+} from './frame-document.js'
+import { autoPlace, defaultHeightFor, growDown, normalizeRect, placeBeside } from './place.js'
 import { FrameFileWatcher } from './watch.js'
 import {
+  type AssetName,
   CANVASES_DIR,
   type Canvas,
   type CanvasFrame,
@@ -51,19 +59,30 @@ import {
   type CanvasSummary,
   DEFAULT_FRAME_WIDTH,
   type FrameId,
+  IMAGE_TYPES,
   MAX_CANVAS_NAME,
   MAX_FRAMES_PER_CANVAS,
   MAX_FRAME_TITLE,
+  MAX_IMAGE_BYTES,
   type Outcome,
   type Point,
   type Rect,
   type Size,
   type TabId,
   type ViewStore,
+  asAssetName,
   asCanvasId,
   asFrameId,
+  mimeOfAsset,
 } from './types.js'
-import type { CanvasSnapshotWire, CanvasWire, DuplicateWire, LayoutStepWire, ViewWire } from './wire.js'
+import type {
+  CanvasSnapshotWire,
+  CanvasWire,
+  DuplicateWire,
+  ImageFrameWire,
+  LayoutStepWire,
+  ViewWire,
+} from './wire.js'
 
 /** The tab strip's `+` and the empty start: one name, numbered past those taken. */
 export const UNTITLED = '未命名 canvas'
@@ -82,13 +101,17 @@ export interface UpdateFrameInput {
   frameId: string
   html?: string
   title?: string
+  /** The frame grows or shrinks to its content. Frames below it move down
+   *  with it (`growDown`). */
+  height?: number
   /** The hash the agent last read. Given and stale: `FRAME_CONFLICT`, nothing
    *  written. */
   expectedHash?: string
 }
 
-/** The agent's side: documents and titles. A canvas it creates or reopens
- *  becomes the active tab. No geometry after a frame exists. */
+/** The agent's side: documents, titles and a frame's height. A canvas it
+ *  creates or reopens becomes the active tab. Position and width stay as the
+ *  frame was added. */
 export interface AgentCanvasPort {
   list(): CanvasInventory
   create(name: string): Outcome<Canvas>
@@ -127,6 +150,12 @@ export interface UserCanvasPort {
    *  retried request creates nothing twice. The user's path never carries HTML:
    *  the copy's bytes are read from the source's file. */
   duplicate(canvasId: string, input: DuplicateWire): Outcome<CanvasWire>
+  /** A pasted image's bytes, stored under their hash: the same image twice is
+   *  one file. */
+  addAsset(canvasId: string, mime: string, bytes: Buffer): Outcome<AssetName>
+  /** A stored image as a new frame, with the client's id, idempotent like
+   *  `duplicate`. The daemon writes the document. */
+  addImageFrame(canvasId: string, input: ImageFrameWire): Outcome<CanvasWire>
   setView(view: ViewWire): void
 }
 
@@ -148,6 +177,9 @@ export interface CanvasReader {
    *  `data-ez-source`, relay overlay injected, cached by hash. Null when the
    *  canvas, the frame or its file is gone. */
   frameDocument(canvasId: CanvasId, frameId: FrameId): { html: string; hash: string } | null
+  /** An image a frame shows, as the frame host serves it. Null when the canvas
+   *  or the file is gone. */
+  asset(canvasId: CanvasId, name: AssetName): { path: string; mime: string } | null
 }
 
 export type CanvasChange =
@@ -328,6 +360,8 @@ class Workspace {
       delete: (canvasId) => this.delete(canvasId),
       applyLayoutOps: (canvasId, step) => this.applyLayoutOps(canvasId, step),
       duplicate: (canvasId, input) => this.duplicate(canvasId, input),
+      addAsset: (canvasId, mime, bytes) => this.addAsset(canvasId, mime, bytes),
+      addImageFrame: (canvasId, input) => this.addImageFrame(canvasId, input),
       setView: (view) => this.setView(view),
     }
   }
@@ -352,6 +386,10 @@ class Workspace {
         return held && frame ? { canvas: held.manifest.name, frame: frame.title } : null
       },
       frameDocument: (canvasId, frameId) => this.frameDocument(canvasId, frameId),
+      asset: (canvasId, name) => {
+        const path = join(this.dir(canvasId), ASSETS_DIR, name)
+        return this.canvases.has(canvasId) && existsSync(path) ? { path, mime: mimeOfAsset(name) } : null
+      },
     }
   }
 
@@ -576,15 +614,33 @@ class Workspace {
       return
     }
     const old = this.now() - UNNAMED_FILE_GRACE_MS
-    for (const name of files) {
-      if (named.has(`frames/${name}`)) continue
-      const path = join(framesDir, name)
+    const unlinkOld = (path: string) => {
       try {
         if (statSync(path).mtimeMs < old) unlinkSync(path)
       } catch {
         /* raced with a manual delete */
       }
     }
+    for (const name of files) {
+      if (named.has(`frames/${name}`) || `frames/${name}` === ASSETS_DIR) continue
+      unlinkOld(join(framesDir, name))
+    }
+    const shown = new Set<string>()
+    for (const frame of held.manifest.frames) {
+      try {
+        const html = readFileSync(join(this.dir(held.manifest.id), frame.file), 'utf8')
+        for (const m of html.matchAll(/assets\/([0-9a-f]{12}\.\w+)/g)) shown.add(m[1]!)
+      } catch {
+        /* missing frame file */
+      }
+    }
+    let assets: string[] = []
+    try {
+      assets = readdirSync(join(this.dir(held.manifest.id), ASSETS_DIR))
+    } catch {
+      /* no image pasted here yet */
+    }
+    for (const name of assets) if (!shown.has(name)) unlinkOld(join(this.dir(held.manifest.id), ASSETS_DIR, name))
   }
 
   private frameDocument(canvasId: CanvasId, frameId: FrameId): { html: string; hash: string } | null {
@@ -832,6 +888,49 @@ class Workspace {
     return ok(this.wire(id)!)
   }
 
+  private addAsset(canvasId: string, mime: string, bytes: Buffer): Outcome<AssetName> {
+    const writable = this.writable(canvasId)
+    if (!writable.ok) return writable
+    const ext = IMAGE_TYPES[mime]
+    if (!ext) return { ok: false, problem: { code: 'IMAGE_UNSUPPORTED', mime } }
+    if (!bytes.length) return { ok: false, problem: { code: 'IMAGE_EMPTY' } }
+    if (bytes.length > MAX_IMAGE_BYTES) {
+      return { ok: false, problem: { code: 'IMAGE_TOO_LARGE', bytes: bytes.length, limit: MAX_IMAGE_BYTES } }
+    }
+    const name = `${sha1(bytes)}.${ext}` as AssetName
+    const path = join(this.dir(writable.value.manifest.id), ASSETS_DIR, name)
+    if (!existsSync(path)) {
+      mkdirSync(join(this.dir(writable.value.manifest.id), ASSETS_DIR), { recursive: true })
+      writeAtomic(path, bytes)
+    }
+    return ok(name)
+  }
+
+  private addImageFrame(canvasId: string, input: ImageFrameWire): Outcome<CanvasWire> {
+    const writable = this.writable(canvasId)
+    if (!writable.ok) return writable
+    const held = writable.value
+    const id = held.manifest.id
+    if (held.manifest.frames.some((f) => f.id === input.id)) return ok(this.wire(id)!)
+    const title = cleanName(input.title, MAX_FRAME_TITLE)
+    if (title === null) return { ok: false, problem: { code: 'BAD_NAME', max: MAX_FRAME_TITLE } }
+    if (!asAssetName(input.asset) || !existsSync(join(this.dir(id), ASSETS_DIR, input.asset))) {
+      return { ok: false, problem: { code: 'ASSET_NOT_FOUND', canvasId: id, asset: input.asset } }
+    }
+    if (held.manifest.frames.filter((f) => f.deletedAt === undefined).length >= MAX_FRAMES_PER_CANVAS) {
+      return { ok: false, problem: { code: 'TOO_MANY_FRAMES', limit: MAX_FRAMES_PER_CANVAS } }
+    }
+    const html = imageFrameHtml(title, input.asset)
+    const file = `frames/${input.id}.html`
+    writeAtomic(join(this.dir(id), file), html)
+    held.layout.rects[input.id] = normalizeRect(input.rect)
+    this.writeLayout(held)
+    held.manifest.frames.push({ id: input.id, title, file, hash: sha1(html), createdAt: this.now() })
+    this.writeManifest(held)
+    this.opts.onChange({ kind: 'updated', canvasId: id })
+    return ok(this.wire(id)!)
+  }
+
   // ------------------------------------------------------------ agent edits
 
   private frameOf(held: Held, frame: ManifestFrame): CanvasFrame {
@@ -904,14 +1003,31 @@ class Workspace {
       writeAtomic(path, input.html)
       hash = sha1(input.html)
     }
-    if (hash !== frame.hash || (title !== undefined && title !== frame.title)) {
+    const resized = input.height === undefined ? false : this.resizeFrame(held, frame.id, input.height)
+    const rewritten = hash !== frame.hash || (title !== undefined && title !== frame.title)
+    if (rewritten) {
       frame.hash = hash
       if (title !== undefined) frame.title = title
       this.writeManifest(held)
       this.served.delete(`${held.manifest.id}/${frame.id}`)
-      this.opts.onChange({ kind: 'updated', canvasId: held.manifest.id })
     }
+    if (rewritten || resized) this.opts.onChange({ kind: 'updated', canvasId: held.manifest.id })
     return ok(this.frameOf(held, frame))
+  }
+
+  /** True if anything moved. */
+  private resizeFrame(held: Held, frameId: FrameId, height: number): boolean {
+    const rects = held.layout.rects
+    const rect = rects[frameId] ?? NO_RECT
+    const others = held.manifest.frames
+      .filter((f) => f.deletedAt === undefined && f.id !== frameId)
+      .map((f) => [f.id, rects[f.id] ?? NO_RECT] as const)
+    const grown = growDown(rect, height, others)
+    if (grown.rect.height === rect.height) return false
+    rects[frameId] = grown.rect
+    for (const [id, moved] of grown.moved) rects[id] = moved
+    this.writeLayout(held)
+    return true
   }
 
   private removeFrame(canvasId: string, frameId: string): Outcome<CanvasFrame> {

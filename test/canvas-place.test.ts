@@ -1,6 +1,17 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { GAP, ROW_GAP, ROW_LIMIT, autoPlace, defaultHeightFor, normalizeRect, overlaps, placeBeside } from '../src/canvas/place.js'
+import {
+  GAP,
+  ROW_GAP,
+  ROW_LIMIT,
+  autoPlace,
+  defaultHeightFor,
+  growDown,
+  imageFrameSize,
+  normalizeRect,
+  overlaps,
+  placeBeside,
+} from '../src/canvas/place.js'
 
 const phone = { width: 390, height: 844 }
 const desktop = { width: 1280, height: 820 }
@@ -74,4 +85,31 @@ test('a rect from the wire is whole and inside the size limits', () => {
     height: 12000,
   })
   assert.deepEqual([390, 768, 1280].map(defaultHeightFor), [844, 1024, 800])
+})
+
+test('a pasted image keeps its natural size, scaled down whole to fit, never under the minimum', () => {
+  assert.deepEqual(imageFrameSize({ width: 1600, height: 1200 }), { width: 1600, height: 1200 })
+  assert.deepEqual(imageFrameSize({ width: 7680, height: 4320 }), { width: 3840, height: 2160 })
+  assert.deepEqual(imageFrameSize({ width: 1000, height: 30000 }), { width: 400, height: 12000 })
+  assert.deepEqual(imageFrameSize({ width: 64, height: 32 }), { width: 240, height: 240 })
+  assert.deepEqual(imageFrameSize({ width: 2000, height: 100 }), { width: 2000, height: 240 })
+})
+
+test('a frame that grows pushes down what is under it, and what is under that, by the growth', () => {
+  const rect = { x: 0, y: 0, width: 1280, height: 800 }
+  const others = [
+    ['under', { x: 0, y: 1040, width: 1280, height: 800 }],
+    ['under-under', { x: 1000, y: 2080, width: 1280, height: 800 }],
+    ['beside', { x: 1360, y: 0, width: 1280, height: 800 }],
+    ['elsewhere', { x: 3000, y: 1040, width: 390, height: 844 }],
+  ] as const
+  assert.deepEqual(growDown(rect, 1400, others), {
+    rect: { x: 0, y: 0, width: 1280, height: 1400 },
+    moved: [
+      ['under', { x: 0, y: 1640, width: 1280, height: 800 }],
+      ['under-under', { x: 1000, y: 2680, width: 1280, height: 800 }],
+    ],
+  })
+  assert.deepEqual(growDown(rect, 600, others), { rect: { x: 0, y: 0, width: 1280, height: 600 }, moved: [] }, 'a shrink moves nothing')
+  assert.deepEqual(growDown(rect, 99999, []).rect, { x: 0, y: 0, width: 1280, height: 12000 })
 })
