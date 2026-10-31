@@ -1,0 +1,133 @@
+---
+const PLANS = [
+  { name: 'Starter', price: '$0', blurb: 'For trying things out on your own.', perks: ['3 projects', 'Basic analytics', 'Community support'], cta: 'Get started' },
+  { name: 'Pro', price: '$24', blurb: 'For small teams shipping every week.', perks: ['Unlimited projects', 'Advanced analytics', 'Priority support', 'Custom domains'], cta: 'Start free trial', featured: true },
+  { name: 'Team', price: '$79', blurb: 'For companies that need control.', perks: ['SSO and audit logs', 'Roles and permissions', 'Dedicated manager'], cta: 'Contact sales' },
+]
+---
+
+<div class="lumen">
+  {
+    PLANS.map((plan) => (
+      <div class:list={['plan', { featured: plan.featured }]}>
+        <div class="name">
+          {plan.name}
+          {plan.featured && <span class="tag">Popular</span>}
+        </div>
+        <div class="price">
+          {plan.price}
+          <small>/mo</small>
+        </div>
+        <p>{plan.blurb}</p>
+        <ul>
+          {plan.perks.map((perk) => (
+            <li>{perk}</li>
+          ))}
+        </ul>
+        <div class="go">{plan.cta}</div>
+      </div>
+    ))
+  }
+</div>
+
+<style>
+  .lumen {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 9px;
+    align-items: center;
+    width: 438px;
+    padding: 20px 12px 24px;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    color: #17171c;
+  }
+
+  .plan {
+    padding: 17px 13px 13px;
+    border-radius: 9px;
+    background: #fff;
+    box-shadow: 0 6px 18px -8px rgba(30, 24, 50, 0.22);
+  }
+
+  .featured {
+    padding: 20px 13px 16px;
+    background: #17161c;
+    color: #fff;
+    box-shadow:
+      0 0 0 1px #e8826e,
+      0 14px 30px -8px rgba(124, 92, 255, 0.45);
+  }
+
+  .name {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 7.5px;
+    font-weight: 600;
+  }
+
+  .tag {
+    padding: 1px 5px;
+    border-radius: 999px;
+    background: #3b3363;
+    color: #c7bdff;
+    font-size: 5.5px;
+  }
+
+  .price {
+    margin-top: 7px;
+    font-size: 21px;
+    font-weight: 700;
+    letter-spacing: -0.03em;
+  }
+
+  .price small {
+    margin-left: 1px;
+    font-size: 6.5px;
+    font-weight: 400;
+    letter-spacing: 0;
+    color: #8b8a93;
+  }
+
+  p {
+    margin: 6px 0 0;
+    font-size: 6.5px;
+    line-height: 1.5;
+    color: #77767e;
+  }
+
+  .featured p {
+    color: #a9a8b2;
+  }
+
+  ul {
+    display: grid;
+    gap: 5px;
+    margin: 9px 0 0;
+    padding: 0;
+    list-style: none;
+    font-size: 6.5px;
+  }
+
+  li::before {
+    content: '✓';
+    margin-right: 5px;
+    color: #8b6cf6;
+  }
+
+  .go {
+    display: grid;
+    place-items: center;
+    height: 20px;
+    margin-top: 12px;
+    border-radius: 5px;
+    background: #f1efea;
+    font-size: 6.5px;
+    font-weight: 600;
+  }
+
+  .featured .go {
+    background: linear-gradient(90deg, #8f6cf7, #f2836d);
+    color: #fff;
+  }
+</style>

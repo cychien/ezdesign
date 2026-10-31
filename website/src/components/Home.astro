@@ -1,0 +1,113 @@
+---
+import AdjustUI from './AdjustUI.astro'
+import Demo from './Demo.astro'
+import Faq from './Faq.astro'
+import FinalCta from './FinalCta.astro'
+import Footer from './Footer.astro'
+import Hero from './Hero.astro'
+import Letter from './Letter.astro'
+import MoreWays from './MoreWays.astro'
+import Nav from './Nav.astro'
+import Ruler from './Ruler.astro'
+import Why from './Why.astro'
+import Base from '../layouts/Base.astro'
+import { messages } from '../i18n'
+
+const t = messages(Astro.currentLocale)
+---
+
+<Base title={t.meta.title} description={t.meta.description}>
+  <div class="wrap">
+    <div class="rails top">
+      <Nav />
+      <Hero />
+    </div>
+    <Demo />
+    <main class="rails">
+      <Why />
+      <Ruler />
+      <AdjustUI />
+      <Ruler />
+      <MoreWays />
+      <Ruler />
+      <Faq />
+      <div class="rule" aria-hidden="true"></div>
+    </main>
+    <Letter />
+  </div>
+  <FinalCta />
+  <Footer />
+</Base>
+
+<style>
+  .wrap {
+    padding-bottom: 24px;
+  }
+
+  .rails {
+    position: relative;
+    isolation: isolate;
+    display: block;
+  }
+
+  main.rails {
+    padding-bottom: 72px;
+  }
+
+  .rails::before,
+  .rails::after {
+    content: '';
+    position: absolute;
+    top: 52px;
+    bottom: 0;
+    z-index: 1;
+    width: 1px;
+    background: var(--line);
+    pointer-events: none;
+    -webkit-mask-image: linear-gradient(180deg, transparent, #000 160px, #000 calc(100% - 160px), transparent);
+    mask-image: linear-gradient(180deg, transparent, #000 160px, #000 calc(100% - 160px), transparent);
+  }
+
+  .rails.top {
+    padding-bottom: 44px;
+  }
+
+  .rails.top::before,
+  .rails.top::after {
+    top: 0;
+    -webkit-mask-image: none;
+    mask-image: none;
+  }
+
+  .rule {
+    position: absolute;
+    right: -24px;
+    bottom: 0;
+    left: -24px;
+    height: 1px;
+    background: var(--line);
+    opacity: 0.45;
+  }
+
+  .rails::before {
+    left: -24px;
+  }
+
+  .rails::after {
+    right: -24px;
+  }
+
+  @media (max-width: 1199px) {
+    .rails::before,
+    .rails::after,
+    .rule {
+      display: none;
+    }
+  }
+
+  @media (max-width: 760px) {
+    main.rails {
+      padding-bottom: 32px;
+    }
+  }
+</style>

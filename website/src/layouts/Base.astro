@@ -1,0 +1,46 @@
+---
+import '@fontsource-variable/geist'
+import '@fontsource-variable/geist-mono'
+import '../styles/global.css'
+import { DEFAULT_LOCALE, LOCALE_COOKIE, MESSAGES, isLocale, localeUrls } from '../i18n'
+
+interface Props {
+  title: string
+  description: string
+}
+
+const { title, description } = Astro.props
+const locale = isLocale(Astro.currentLocale) ? Astro.currentLocale : DEFAULT_LOCALE
+const urls = localeUrls(Astro.url.pathname, locale)
+---
+
+<!doctype html>
+<html lang={MESSAGES[locale].lang}>
+  <head>
+    <meta charset="utf-8" />
+    <script is:inline define:vars={{ current: locale, fallback: DEFAULT_LOCALE, urls, cookie: LOCALE_COOKIE }}>
+      const saved = document.cookie.match(new RegExp(`(?:^|; )${cookie}=([^;]*)`))?.[1]
+      const match = (tag) => Object.keys(urls).find((locale) => tag.toLowerCase().split('-')[0] === locale.split('-')[0])
+      const target = saved in urls ? saved : current === fallback ? navigator.languages.map(match).find(Boolean) : undefined
+      if (target && target !== current) location.replace(urls[target] + location.search + location.hash)
+    </script>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    {Object.entries(MESSAGES).map(([code, { lang }]) => <link rel="alternate" hreflang={lang} href={urls[code as keyof typeof urls]} />)}
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta name="twitter:card" content="summary" />
+    <meta name="theme-color" content="#faf9f6" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  </head>
+  <body>
+    <slot />
+    <script>
+      import { fitStages } from '../scripts/fit'
+
+      fitStages()
+    </script>
+  </body>
+</html>

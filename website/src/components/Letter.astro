@@ -1,0 +1,266 @@
+---
+import Mark from './Mark.astro'
+import { messages } from '../i18n'
+import { LINKS } from '../lib/links'
+
+const t = messages(Astro.currentLocale).letter
+---
+
+<div class="band">
+  <section class="letter" aria-labelledby="letter-title" data-letter>
+    <div class="sheet">
+      <div class="stamp" aria-hidden="true"><div class="perf"><div><Mark size={34} />EZDESIGN</div></div></div>
+      <h2 id="letter-title">{t.title}</h2>
+      <div class="ruled" id="letter-body">
+        <p>{t.greeting[0]}<span class="face" aria-hidden="true">J</span><a href={LINKS.author}>Justin</a>{t.greeting[1]}</p>
+        {t.body.map((paragraph) => <p set:html={paragraph} />)}
+        <p>{t.projects[0]}<a href={LINKS.author}>{t.projects[1]}</a>{t.projects[2]}</p>
+      </div>
+      <button class="more" type="button" aria-expanded="false" aria-controls="letter-body" data-more={t.more} data-less={t.less}>
+        <span>{t.more}</span>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"></path></svg>
+      </button>
+    </div>
+  </section>
+</div>
+
+<script>
+  const letter = document.querySelector<HTMLElement>('[data-letter]')!
+  const body = letter.querySelector<HTMLElement>('.ruled')!
+  const more = letter.querySelector<HTMLButtonElement>('.more')!
+  const collapsed = () => parseFloat(getComputedStyle(body).getPropertyValue('--row')) * 8
+
+  more.addEventListener('click', () => {
+    const open = !letter.classList.contains('open')
+    body.style.maxHeight = `${open ? collapsed() : body.scrollHeight}px`
+    void body.offsetHeight
+    letter.classList.toggle('open', open)
+    body.style.maxHeight = `${open ? body.scrollHeight : collapsed()}px`
+    more.setAttribute('aria-expanded', String(open))
+    more.querySelector('span')!.textContent = (open ? more.dataset.less : more.dataset.more)!
+  })
+  body.addEventListener('transitionend', () => {
+    if (letter.classList.contains('open')) body.style.maxHeight = 'none'
+  })
+</script>
+
+<style>
+  .band {
+    position: relative;
+    isolation: isolate;
+    margin: 0 var(--bleed);
+    padding: 72px 0 32px;
+  }
+
+  .band::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    background: linear-gradient(-45deg, rgba(214, 72, 58, 0.1) 12.5%, transparent 0 25%, rgba(45, 90, 166, 0.1) 0 37.5%, transparent 0 50%, rgba(214, 72, 58, 0.1) 0 62.5%, transparent 0 75%, rgba(45, 90, 166, 0.1) 0 87.5%, transparent 0) 50% 0 / 56px 56px;
+    -webkit-mask:
+      radial-gradient(ellipse 62% 56% at 50% 50%, #000 30%, transparent 100%),
+      linear-gradient(180deg, transparent, #000 24%, #000 76%, transparent);
+    -webkit-mask-composite: source-in;
+    mask:
+      radial-gradient(ellipse 62% 56% at 50% 50%, #000 30%, transparent 100%),
+      linear-gradient(180deg, transparent, #000 24%, #000 76%, transparent);
+    mask-composite: intersect;
+  }
+
+  .letter {
+    width: min(820px, 100vw - 32px);
+    margin: 0 auto;
+  }
+
+  .sheet {
+    --row: 32px;
+    position: relative;
+    padding: 76px 80px 72px;
+    border-radius: 3px;
+    background: #fffdf8;
+    box-shadow:
+      0 0 0 1px rgba(60, 40, 20, 0.06),
+      0 1px 2px rgba(60, 40, 20, 0.06),
+      0 24px 48px -24px rgba(60, 40, 20, 0.28);
+  }
+
+  .sheet::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    border-radius: 3px;
+    background: #f6f2e9;
+    box-shadow:
+      0 0 0 1px rgba(60, 40, 20, 0.07),
+      0 16px 32px -20px rgba(60, 40, 20, 0.25);
+    transform: rotate(-1.6deg) translate(-6px, 8px);
+  }
+
+  .stamp {
+    position: absolute;
+    top: 36px;
+    right: 40px;
+    filter: drop-shadow(0 0 0.6px rgba(60, 40, 20, 0.4)) drop-shadow(0 3px 4px rgba(60, 40, 20, 0.14));
+    transform: rotate(4deg);
+  }
+
+  .perf {
+    width: 80px;
+    height: 100px;
+    padding: 5px;
+    background: #fff;
+    -webkit-mask:
+      radial-gradient(circle 3px, transparent 96%, #000) -5px -5px / 10px 10px,
+      linear-gradient(#000, #000) content-box;
+    mask:
+      radial-gradient(circle 3px, transparent 96%, #000) -5px -5px / 10px 10px,
+      linear-gradient(#000, #000) content-box;
+  }
+
+  .perf > div {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    background: #f7e6dc;
+    box-shadow: inset 0 0 0 1px rgba(207, 74, 44, 0.25);
+    font-family: var(--mono);
+    font-size: 8.5px;
+    letter-spacing: 0.08em;
+    color: #b4482a;
+  }
+
+  h2 {
+    margin: 0;
+    font-size: 30px;
+    line-height: 1.2;
+    letter-spacing: -0.04em;
+  }
+
+  .ruled {
+    margin-top: 32px;
+    overflow: hidden;
+    background: repeating-linear-gradient(180deg, transparent 0 calc(var(--row) - 1px), #e9e3d6 calc(var(--row) - 1px) var(--row)) 0 -3px / 100% var(--row);
+    transition: max-height 0.45s cubic-bezier(0.2, 0.7, 0.2, 1);
+  }
+
+  .letter:not(.open) .ruled {
+    max-height: calc(var(--row) * 8);
+    -webkit-mask: linear-gradient(180deg, #000 45%, transparent);
+    mask: linear-gradient(180deg, #000 45%, transparent);
+  }
+
+  p {
+    margin: var(--row) 0 0;
+    font-size: 16px;
+    line-height: var(--row);
+    color: #3d3d3a;
+  }
+
+  p:first-child {
+    margin-top: 0;
+  }
+
+  .ruled :global(b) {
+    font-weight: 600;
+    color: var(--ink);
+  }
+
+  a {
+    font-weight: 500;
+    color: var(--ink);
+    box-shadow: inset 0 -2px 0 var(--line);
+  }
+
+  a:hover {
+    box-shadow: inset 0 -2px 0 var(--mark);
+  }
+
+  .face {
+    display: inline-grid;
+    place-items: center;
+    width: 28px;
+    height: 28px;
+    margin: 0 6px 0 2px;
+    border-radius: 50%;
+    background: linear-gradient(140deg, #f7a160, #e56d41 55%, #cf4a2c);
+    color: #fff;
+    font-size: 14px;
+    font-weight: 600;
+    vertical-align: baseline;
+  }
+
+  .more {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    height: 38px;
+    margin-top: 20px;
+    padding: 0 14px 0 16px;
+    border: 0;
+    border-radius: 999px;
+    background: #fff;
+    box-shadow: 0 0 2px 0 rgb(16 12 12 / 0.32);
+    color: var(--ink);
+    font-size: 14.5px;
+    font-weight: 500;
+    cursor: pointer;
+  }
+
+  .more:hover {
+    box-shadow:
+      0 0 2px 0 rgb(16 12 12 / 0.32),
+      0 1px 2px 0 rgb(16 12 12 / 0.1);
+  }
+
+  .more svg {
+    transition: transform 0.25s;
+  }
+
+  .open .more svg {
+    transform: rotate(180deg);
+  }
+
+  @media (max-width: 760px) {
+    .band {
+      padding-top: 40px;
+    }
+
+    .sheet {
+      padding: 56px 28px 48px;
+    }
+
+    .stamp {
+      top: 20px;
+      right: 18px;
+      scale: 0.7;
+      transform-origin: top right;
+    }
+
+    h2 {
+      max-width: 75%;
+      font-size: 26px;
+    }
+  }
+
+  @media (max-width: 560px) {
+    .letter {
+      width: 100%;
+    }
+
+    .sheet {
+      border-radius: 0;
+      box-shadow:
+        0 0 0 1px rgba(60, 40, 20, 0.06),
+        0 12px 32px -20px rgba(60, 40, 20, 0.28);
+    }
+
+    .sheet::before {
+      display: none;
+    }
+  }
+</style>
