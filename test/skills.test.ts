@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
@@ -18,6 +18,19 @@ function writeSkill(
   mkdirSync(join(base, dir, name), { recursive: true })
   writeFileSync(join(base, dir, name, 'SKILL.md'), body)
 }
+
+test('a skill linked in from elsewhere is found, and a dangling link is not', () => {
+  const home = root()
+  const elsewhere = root()
+  writeSkill(elsewhere, 'writing', 'rewrite')
+  mkdirSync(join(home, '.claude/skills'), { recursive: true })
+  symlinkSync(join(elsewhere, 'writing', 'rewrite'), join(home, '.claude/skills', 'rewrite'))
+  symlinkSync(join(elsewhere, 'gone'), join(home, '.claude/skills', 'gone'))
+  assert.deepEqual(
+    listSkills(root(), home).map((s) => [s.name, s.description, s.source]),
+    [['rewrite', 'rewrite does things.', 'user']],
+  )
+})
 
 test('skills are found in every layout the agent itself resolves', () => {
   const project = root()
