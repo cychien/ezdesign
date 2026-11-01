@@ -1,0 +1,33 @@
+
+> dev
+> turbo run dev
+
+
+Attention:
+Turborepo now collects completely anonymous telemetry regarding usage.
+This information is used to shape the Turborepo roadmap and prioritize features.
+You can learn more, including how to opt-out if you'd not like to participate in this anonymous program, by visiting the following URL:
+https://turborepo.dev/docs/telemetry
+
+• turbo 2.10.12
+
+   • Packages in scope: @repo/eslint-config, @repo/typescript-config, @repo/ui, docs, web
+   • Running dev in 5 packages
+   • Remote caching disabled
+
+web:dev: cache bypass, force executing c6be816617be818a
+docs:dev: cache bypass, force executing 15e6fc6cb774a55a
+web:dev: $ next dev --port 3000
+docs:dev: $ next dev --port 3001
+web:dev: ▲ Next.js 16.3.8 (Turbopack)
+web:dev: - Local:         http://localhost:3000
+web:dev: - Network:       http://192.168.1.20:3000
+web:dev: ✓ Ready in 383ms
+web:dev: ✓ Running next.config.js took 29ms
+docs:dev: ▲ Next.js 16.3.8 (Turbopack)
+docs:dev: - Local:         http://localhost:3001
+docs:dev: - Network:       http://192.168.1.20:3001
+docs:dev: ✓ Ready in 280ms
+docs:dev: ✓ Running next.config.js took 9ms
+docs:dev: 
+web:dev: 

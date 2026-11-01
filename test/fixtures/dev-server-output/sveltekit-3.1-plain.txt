@@ -1,0 +1,12 @@
+
+> sk@0.0.1 dev
+> vite dev
+
+6:13:05 PM [vite] (ssr) connected.
+6:13:05 PM [vite] (client) Forced re-optimization of dependencies
+Port 5173 is in use, trying another one...
+
+  VITE v8.3.5  ready in 494 ms
+
+  ➜  Local:   http://localhost:5174/
+  ➜  Network: use --host to expose
