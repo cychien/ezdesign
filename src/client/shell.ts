@@ -324,11 +324,11 @@ const TICK_ICON = 14
 let snapshot: SnapshotWire | null = null
 /** The canvas tabs and boards, installed on the first snapshot that has any. */
 let canvasUi: CanvasUi | null = null
-/** The app the previews are of: `null` with none attached, `undefined` until the
- *  first snapshot says. The stage mounts on load without waiting for it, since
- *  nearly every review has an app, and is rebuilt only if that guess was wrong
- *  or the app changes under it. */
-let stagedApp: string | null | undefined = undefined
+/** The app the previews are of, `null` with none attached. It starts as the
+ *  daemon's answer when it served this page, so the stage mounts on load without
+ *  waiting for a snapshot, and a frame is never left showing the note it got
+ *  from a proxy that had no app yet. */
+let stagedApp: string | null = (document.currentScript as HTMLScriptElement | null)?.dataset.app || null
 
 let annotateMode: Mode = 'off'
 /** The daemon's stream has been down longer than a restart takes. Every request
@@ -804,6 +804,7 @@ multiBtn.onclick = () => setMulti(!multi)
  *  for a pressed button. */
 const deviceRow = h('div', 'ez-seg')
 deviceRow.append(deviceGroup, multiBtn)
+deviceRow.hidden = stagedApp === null
 
 function paintControls(): void {
   const device = deviceById(deviceId)
@@ -1830,10 +1831,8 @@ function paintStageClasses(): void {
 
 function stageApp(app: string | null): void {
   if (app === stagedApp) return
-  const presumed = stagedApp === undefined
   stagedApp = app
   deviceRow.hidden = app === null || (!!canvasUi && canvasUi.activeTab !== 'app')
-  if (presumed && app !== null) return
   rebuildStage()
 }
 
