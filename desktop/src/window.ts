@@ -46,8 +46,6 @@ export class ProjectWindow {
     this.sidebar.setBackgroundColor(WINDOW_GROUND)
     this.empty = this.makeView()
     this.pane = this.empty
-    this.window.contentView.addChildView(this.sidebar)
-    this.window.contentView.addChildView(this.empty)
     this.layout()
     this.sidebar.webContents.once('did-finish-load', () => this.window.show())
     void this.sidebar.webContents.loadURL(this.pageUrl('sidebar'))
@@ -78,7 +76,6 @@ export class ProjectWindow {
     let entry = this.projects.get(opened.project)
     if (!entry) {
       const view = this.makeView()
-      this.window.contentView.addChildView(view)
       void view.webContents.loadURL(opened.shellUrl)
       entry = { view, origin }
       this.projects.set(opened.project, entry)
@@ -124,16 +121,28 @@ export class ProjectWindow {
   }
 
   private reveal(view: WebContentsView): void {
-    for (const other of [this.empty, ...[...this.projects.values()].map((p) => p.view)]) other.setVisible(other === view)
     this.pane = view
     this.layout()
     this.broadcastLayout()
     view.webContents.focus()
   }
 
+  /** Only what is on screen is attached, not merely hidden: a hidden view's drag
+   *  regions still count, and would take the clicks meant for the view over them. */
+  private mount(): void {
+    const content = this.window.contentView
+    const wanted = this.sidebarOpen ? [this.sidebar, this.pane] : [this.pane]
+    for (const child of [...content.children]) {
+      if (!wanted.includes(child as WebContentsView)) content.removeChildView(child)
+    }
+    wanted.forEach((view, index) => {
+      if (!content.children.includes(view)) content.addChildView(view, index)
+    })
+  }
+
   private layout(): void {
     const { width, height } = this.window.getContentBounds()
-    this.sidebar.setVisible(this.sidebarOpen)
+    this.mount()
     if (this.sidebarOpen) {
       this.sidebar.setBounds({ x: 0, y: 0, width, height })
       this.pane.setBounds({
