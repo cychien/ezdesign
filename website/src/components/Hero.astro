@@ -2,7 +2,7 @@
 import Command from './Command.astro'
 import { messages } from '../i18n'
 import { AGENT_LOGOS } from '../lib/agents'
-import { DOWNLOAD, INSTALL, LINKS } from '../lib/links'
+import { DOWNLOAD, INSTALL } from '../lib/links'
 
 const t = messages(Astro.currentLocale).hero
 ---
@@ -12,16 +12,8 @@ const t = messages(Astro.currentLocale).hero
   <h1 set:html={t.title} />
   <p class="lede" set:html={t.lede} />
   <div class="cta">
-    <span class="download">
-      <a class="btn ink get" href={DOWNLOAD.arm64}>
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M16.37 12.6c-.02-2.3 1.88-3.4 1.96-3.46-1.07-1.56-2.73-1.77-3.32-1.8-1.41-.14-2.76.83-3.48.83-.72 0-1.83-.81-3-.79-1.54.02-2.97.9-3.76 2.28-1.6 2.78-.41 6.9 1.15 9.16.76 1.1 1.67 2.34 2.86 2.3 1.15-.05 1.58-.74 2.97-.74 1.38 0 1.77.74 2.98.72 1.23-.02 2.01-1.12 2.76-2.23.87-1.28 1.23-2.52 1.25-2.58-.03-.01-2.39-.92-2.41-3.64zM14.1 5.86c.63-.77 1.06-1.83.94-2.89-.91.04-2.01.61-2.66 1.37-.58.67-1.1 1.76-.96 2.8 1.02.08 2.05-.52 2.68-1.28z" /></svg>
-        {t.download}
-      </a>
-      <a class="intel" href={DOWNLOAD.x64}>{t.intel}</a>
-      <a class="intel" href={LINKS.macApp}>{t.firstOpen}</a>
-    </span>
     <Command command={INSTALL} />
-    <a class="btn ghost docs" href={LINKS.docs}>{t.docs}</a>
+    <a class="btn ghost docs" href={DOWNLOAD.arm64} data-intel-href={DOWNLOAD.x64}>{t.download}</a>
   </div>
   <div class="perks">
     <span class="perk">
@@ -100,27 +92,6 @@ const t = messages(Astro.currentLocale).hero
     margin-top: 36px;
   }
 
-  .download {
-    display: inline-flex;
-    align-items: center;
-    gap: 12px;
-  }
-
-  .get {
-    height: 52px;
-    padding: 0 20px;
-    font-size: 15px;
-  }
-
-  .intel {
-    font-size: 13px;
-    color: var(--muted);
-  }
-
-  .intel:hover {
-    color: var(--ink);
-  }
-
   .docs {
     height: 52px;
     padding: 0 18px;
@@ -183,3 +154,27 @@ const t = messages(Astro.currentLocale).hero
     }
   }
 </style>
+
+<script>
+  type ArchHints = { getHighEntropyValues(hints: string[]): Promise<{ architecture?: string }> }
+
+  /** Only a browser that says so makes it Intel: Safari calls every Mac Intel,
+   *  and most Macs sold since 2020 are Apple silicon. */
+  async function isIntelMac(): Promise<boolean> {
+    const hints = (navigator as Navigator & { userAgentData?: ArchHints }).userAgentData
+    if (hints) return (await hints.getHighEntropyValues(['architecture'])).architecture === 'x86'
+    const gl = document.createElement('canvas').getContext('webgl')
+    const info = gl?.getExtension('WEBGL_debug_renderer_info')
+    return !!gl && !!info && /intel|amd|radeon/i.test(String(gl.getParameter(info.UNMASKED_RENDERER_WEBGL)))
+  }
+
+  const link = document.querySelector<HTMLAnchorElement>('a[data-intel-href]')
+  if (link && /Macintosh/.test(navigator.userAgent)) {
+    isIntelMac().then(
+      (intel) => {
+        if (intel && link.dataset.intelHref) link.href = link.dataset.intelHref
+      },
+      () => {},
+    )
+  }
+</script>

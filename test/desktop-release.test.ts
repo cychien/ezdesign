@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
-import { DOWNLOAD, LINKS, REPO } from '../website/src/lib/links.js'
+import { DOWNLOAD, REPO } from '../website/src/lib/links.js'
 
 const builder = readFileSync(new URL('../desktop/electron-builder.yml', import.meta.url), 'utf8')
 const field = (name: string) => new RegExp(`^\\s*${name}:\\s*(.+)$`, 'm').exec(builder)?.[1]?.trim()
@@ -42,10 +42,4 @@ test('without a Developer ID the release is ad-hoc signed, without the runtime t
       assert.ok(scripts[name]?.includes(flag), `${name} passes ${flag}`)
     }
   }
-})
-
-test('the site’s first-open link lands on the README’s Mac app section', () => {
-  const readme = readFileSync(new URL('../README.md', import.meta.url), 'utf8')
-  assert.equal(LINKS.macApp, `${REPO}#or-use-the-mac-app`)
-  assert.match(readme, /^### Or use the Mac app$/m)
 })
