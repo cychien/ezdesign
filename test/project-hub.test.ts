@@ -30,6 +30,7 @@ test('the app’s quit disconnects the agents its windows connected, and only th
     sessions: { list: () => sessions, open: async () => ({ ok: false }) as never },
     book: new ProjectBook([], join(mkdtempSync(join(tmpdir(), 'ezdesign-hub-')), 'projects.json')),
     version: '0.0.0',
+    account: () => ({ email: null }),
     defaultAgent: () => 'agent',
     projectRoot: (path) => path,
     restored: async () => {},

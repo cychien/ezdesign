@@ -1,3 +1,5 @@
+import { ACCOUNT_LOGIN_PATH } from '../../src/desktop-wire.js'
+
 export type NavigationVerdict =
   | { kind: 'allow' }
   | { kind: 'home' }
@@ -24,6 +26,8 @@ export function judgeWindowOpen(url: string, known: KnownOrigins): NavigationVer
 }
 
 function judgeElsewhere(target: URL, known: KnownOrigins): NavigationVerdict {
+  const ours = target.origin === known.home || known.isSession(target.origin)
+  if (ours && target.pathname === ACCOUNT_LOGIN_PATH) return { kind: 'external', url: target.href }
   if (target.origin === known.home) return { kind: 'home' }
   if (known.isSession(target.origin)) return { kind: 'deny' }
   return EXTERNAL.has(target.protocol) ? { kind: 'external', url: target.href } : { kind: 'deny' }

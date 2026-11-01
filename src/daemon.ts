@@ -2673,8 +2673,11 @@ export async function daemonMain(version: string, opts: DaemonOptions = {}): Pro
   /** One runtime per project, one project per origin. Assigned below, once the
    *  updater the runtimes share exists. */
   let sessions!: SessionDirectory<SessionRuntime>
+  /** Bound once the project hub exists; the updater may change before then. */
+  let projectsChanged = () => {}
   const broadcastAll = () => {
     for (const s of sessions.list()) s.broadcast()
+    projectsChanged()
   }
 
   let stopping = false
@@ -2707,10 +2710,12 @@ export async function daemonMain(version: string, opts: DaemonOptions = {}): Pro
     sessions: { list: () => sessions.list(), open: (req) => sessions.open(req) },
     book,
     version,
+    account: () => account.snapshot(),
     defaultAgent: () => rememberedLastAgent() ?? AGENT_PROFILES[0]!.command,
     projectRoot,
     restored: () => restored,
   })
+  projectsChanged = () => projects.changed()
 
   const services: RuntimeServices = {
     projects,
@@ -2775,6 +2780,10 @@ export async function daemonMain(version: string, opts: DaemonOptions = {}): Pro
 
   control.use(homePageRouter({ version, distDir, icon: SHELL_ICON }))
   control.use(`${URL_PREFIX}/api`, projectsApiRouter(projects, { version, origin: controlOrigin }))
+  // The app's sidebar signs in for every project, so the control origin carries the account too.
+  control.get(ACCOUNT_CALLBACK_PATH, crossSiteAccountCallback(account))
+  control.use(`${URL_PREFIX}/api/account`, refuseCrossSite(controlOrigin))
+  control.use(`${URL_PREFIX}/api`, accountApiRouter({ account, callbackUrl: () => `${controlOrigin()}${ACCOUNT_CALLBACK_PATH}` }))
 
   // Registered before sessions are restored, so a CLI that finds this daemon
   // straight away is held here until its sessions exist rather than told

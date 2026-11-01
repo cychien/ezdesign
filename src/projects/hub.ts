@@ -1,6 +1,7 @@
 import { statSync } from 'node:fs'
 import { isAbsolute } from 'node:path'
 import type { Initiator } from '../dev-server/index.js'
+import type { AccountWire } from '../account.js'
 import type { DevServerSummaryWire } from '../dev-server/wire.js'
 import type { OpenRequest, OpenResult, ProjectRuntime } from '../session-directory.js'
 import type { ProjectBook } from './book.js'
@@ -28,6 +29,7 @@ export interface ProjectHubDeps<R extends HubRuntime> {
   sessions: HubSessions<R>
   book: ProjectBook
   version: string
+  account(): AccountWire
   defaultAgent(): string
   projectRoot(path: string): string
   restored(): Promise<void>
@@ -50,7 +52,7 @@ export class ProjectHub<R extends HubRuntime> {
         session: runtime ? { devServer: runtime.devServer.summary(), agentWorking: runtime.agentWorking } : null,
       }
     })
-    return { version: this.deps.version, projects }
+    return { version: this.deps.version, projects, account: this.deps.account() }
   }
 
   add(path: string): ProjectWire | { error: string } {

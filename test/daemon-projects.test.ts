@@ -25,6 +25,7 @@ interface ProjectRow {
 interface ProjectList {
   version: string
   projects: ProjectRow[]
+  account: { email: string | null }
 }
 
 const SERVER = `
@@ -117,6 +118,21 @@ test('the list says while a project’s agent is taking a turn', async () => {
   await waitFor(async () => (await working()) === true, 'the turn to show')
   await post(`http://127.0.0.1:${port}/__ezdesign/api/acp/cancel`, {})
   await waitFor(async () => (await working()) === false, 'the stopped turn to show')
+})
+
+test('the control origin signs in for every project, and the list carries the account', async () => {
+  assert.deepEqual((await list()).account, { email: null })
+  const login = await fetch(`${CONTROL}/__ezdesign/api/account/login`, { redirect: 'manual' })
+  assert.equal(login.status, 303)
+  const authorize = new URL(login.headers.get('location')!)
+  assert.equal(authorize.searchParams.get('redirect_uri'), `${CONTROL}/__ezdesign/account/callback`)
+  const callback = await fetch(`${CONTROL}/__ezdesign/account/callback`)
+  assert.equal(callback.status, 400, 'a callback with no login says so')
+  const crossSite = await fetch(`${CONTROL}/__ezdesign/api/account/logout`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', origin: 'https://example.com', 'sec-fetch-site': 'cross-site' },
+  })
+  assert.equal(crossSite.status, 403)
 })
 
 test('only listed projects open', async () => {
