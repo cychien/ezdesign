@@ -31,6 +31,8 @@ export const NO_UPDATE_CHECK_ENV = `${ENV_PREFIX}_NO_UPDATE_CHECK`
 export const DESIGN_HARNESS_ENV = `${ENV_PREFIX}_DESIGN_HARNESS`
 export const API_URL_ENV = `${ENV_PREFIX}_API_URL`
 export const NO_IDLE_STOP_ENV = `${ENV_PREFIX}_NO_IDLE_STOP`
+export const PROJECTS_FILE = join(DATA_DIR, 'projects.json')
+export const HOME_PATH = `${URL_PREFIX}/home`
 
 /** Unset, empty, `0` and `false` are off; anything else is on. */
 export function envFlagOn(raw: string | undefined): boolean {

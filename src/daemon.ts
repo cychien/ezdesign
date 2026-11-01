@@ -33,6 +33,7 @@ import {
   SHELL_RETURN_MS,
   UPDATE_CHECK_TTL_MS,
   URL_PREFIX,
+  HOME_PATH,
   controlPortRange,
   libraryHome,
   libraryDir,
@@ -49,6 +50,10 @@ import { clearGroupRecord, reapOrphanedGroups } from './child-groups.js'
 import { DevServer, type DevServerWire, devServerApiRouter } from './dev-server/index.js'
 import { findExecutable } from './login-env.js'
 import { scrubRunAsNode, selfNodeCommandLine } from './self-node.js'
+import { ProjectBook } from './projects/book.js'
+import { ProjectHub } from './projects/hub.js'
+import { homePageRouter, homeProjectsRouter, projectsApiRouter } from './projects/routes.js'
+import { projectRoot } from './project-root.js'
 import {
   attachmentIds,
   parseBatchView,
@@ -80,6 +85,8 @@ import {
   rememberDesignEffort,
   rememberedDesignEffort,
   rememberedDesignHarness,
+  rememberLastAgent,
+  rememberedLastAgent,
 } from './preferences.js'
 import { readInspireToken } from './credentials.js'
 import type { AttachmentLocator } from './label.js'
@@ -102,6 +109,7 @@ import {
   type AppAttachment,
   type AttachedApp,
   SessionStore,
+  listPersistedSessions,
   listRestorableSessions,
   newId,
   persistedSession,
@@ -255,6 +263,7 @@ interface SnapshotWire {
   designHarness?: boolean
   devServer: DevServerWire
   appTab: boolean
+  project: string
 }
 
 /** One conversation as the picker draws it. The count is what tells two of them
@@ -687,6 +696,7 @@ function configChangeNote(option: SessionConfigOption, value: AcpConfigValue): s
 }
 
 interface RuntimeServices {
+  projects: ProjectHub<SessionRuntime>
   attachOrigin(runtime: SessionRuntime, origin: string): void
   heldElsewhere(runtime: SessionRuntime, origin: string): boolean
 }
@@ -761,7 +771,7 @@ class SessionRuntime implements ProjectRuntime {
     private readonly updater: Updater,
     private readonly library: () => Promise<Library>,
     private readonly account: Account,
-    services: RuntimeServices,
+    private readonly services: RuntimeServices,
   ) {
     this.store = new SessionStore(project)
     this.devServer = new DevServer({
@@ -777,6 +787,7 @@ class SessionRuntime implements ProjectRuntime {
       onChange: () => {
         this.showAppWhenServed()
         this.broadcast()
+        services.projects.changed()
       },
     })
     // Starts detached: which origin this runtime shows is the directory's call,
@@ -908,6 +919,12 @@ class SessionRuntime implements ProjectRuntime {
     this.lastDevServerPhase = phase
   }
 
+  ensureAgent(fallback: string): void {
+    const recorded = this.store.session.agent
+    if (recorded) this.attachAcpAgent(recorded)
+    else if (this.pollWaiters.size === 0) this.attachAcpAgent(fallback)
+  }
+
   resumeAgent(): void {
     const agent = this.store.session.agent
     if (agent) this.restoreAcpAgent(agent)
@@ -991,6 +1008,7 @@ class SessionRuntime implements ProjectRuntime {
       ...(this.canExplore ? { canExplore: true as const } : {}),
       devServer: this.devServer.snapshot(),
       appTab: this.app.kind === 'attached' || this.devServer.offersApp(),
+      project: this.project,
     }
   }
 
@@ -1834,6 +1852,13 @@ class SessionRuntime implements ProjectRuntime {
     api.use(announcementApiRouter())
     api.use(devServerApiRouter(this.devServer))
     api.use(
+      projectsApiRouter(this.services.projects, {
+        current: this.project,
+        version: this.version,
+        origin: () => this.shellOrigin,
+      }),
+    )
+    api.use(
       accountApiRouter({ account: this.account, callbackUrl: () => `${this.shellOrigin}${ACCOUNT_CALLBACK_PATH}` }),
     )
 
@@ -2129,6 +2154,7 @@ class SessionRuntime implements ProjectRuntime {
       if (!this.switchAcpAgent(profile.command)) {
         return res.status(409).json({ error: 'that agent cannot be started right now' })
       }
+      rememberLastAgent(profile.command)
       res.json({ ok: true })
     })
 
@@ -2615,7 +2641,21 @@ export async function daemonMain(version: string, opts: DaemonOptions = {}): Pro
   const library = lazyLibrary(() => openLibrary({ dir: libraryDir(libraryHome()) }))
   const account = new Account({ baseUrl: apiBaseUrl(), onChange: broadcastAll })
 
+  let controlPort = 0
+  const controlOrigin = () => `http://127.0.0.1:${controlPort}`
+  const book = new ProjectBook(listPersistedSessions())
+  const projects = new ProjectHub<SessionRuntime>({
+    sessions: { list: () => sessions.list(), open: (req) => sessions.open(req) },
+    book,
+    version,
+    homeUrl: () => `${controlOrigin()}${HOME_PATH}`,
+    defaultAgent: () => rememberedLastAgent() ?? AGENT_PROFILES[0]!.command,
+    projectRoot,
+    restored: () => restored,
+  })
+
   const services: RuntimeServices = {
+    projects,
     attachOrigin: (runtime, origin) => sessions.attachOrigin(runtime, origin, { userAttached: false, now: Date.now() }),
     heldElsewhere: (runtime, origin) => {
       const holder = sessions.byOrigin(origin)
@@ -2628,6 +2668,7 @@ export async function daemonMain(version: string, opts: DaemonOptions = {}): Pro
     {
       restorable: listRestorableSessions,
       get: persistedSession,
+      used: (project, now) => book.markUsed(project, now),
       migrate: () => {
         const { merged } = migrateLegacySessions()
         if (merged.size) {
@@ -2639,9 +2680,6 @@ export async function daemonMain(version: string, opts: DaemonOptions = {}): Pro
     // eslint-disable-next-line no-console
     (message) => console.error(message),
   )
-
-  let controlPort = 0
-  const controlOrigin = () => `http://127.0.0.1:${controlPort}`
 
   const control = express()
   control.use(express.json())
@@ -2659,6 +2697,10 @@ export async function daemonMain(version: string, opts: DaemonOptions = {}): Pro
       boundAt: String(boundAt),
     })
   })
+
+  control.use(homePageRouter({ version, distDir, icon: SHELL_ICON }))
+  control.use(`${URL_PREFIX}/api`, projectsApiRouter(projects, { version, origin: controlOrigin }))
+  control.use(`${URL_PREFIX}/api`, homeProjectsRouter(projects, { version, origin: controlOrigin }))
 
   // Registered before sessions are restored, so a CLI that finds this daemon
   // straight away is held here until its sessions exist rather than told
@@ -2839,7 +2881,7 @@ export async function daemonMain(version: string, opts: DaemonOptions = {}): Pro
     const idle = new IdleCount(IDLE_STOP_MS / IDLE_CHECK_MS)
     setInterval(() => {
       // Not `some`: every session's answer starts its own count over.
-      const busy = sessions.list().filter((s) => s.takeBusy()).length > 0
+      const busy = [sessions.list().filter((s) => s.takeBusy()).length > 0, projects.takeBusy()].some(Boolean)
       if (idle.observe(busy) && sessions.size > 0) {
         // The one exit after which nothing needs rebuilding: no shell is open.
         sessions.retireIdle()

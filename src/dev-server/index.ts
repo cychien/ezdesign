@@ -17,7 +17,7 @@ import {
 } from './lifecycle.js'
 import { LogRing, ManagedProcess, listenerCwd, originAnswers } from './process.js'
 import { projectRelativePath } from './proposal.js'
-import type { DevCommandChoice, DevCommandWire, DevServerLogWire, DevServerWire } from './wire.js'
+import type { DevCommandChoice, DevCommandWire, DevServerLogWire, DevServerSummaryWire, DevServerWire } from './wire.js'
 
 export type { DevCommandChoice, DevServerLogWire, DevServerWire } from './wire.js'
 export type { Initiator } from './lifecycle.js'
@@ -57,6 +57,11 @@ export class DevServer {
     if ((wire.phase !== 'idle' && wire.phase !== 'stopped') || wire.command) return wire
     const { command } = this.upcoming()
     return command ? { ...wire, command } : wire
+  }
+
+  summary(): DevServerSummaryWire {
+    const wire = toWire(this.machine.state)
+    return 'origin' in wire ? { phase: wire.phase, origin: wire.origin } : { phase: wire.phase }
   }
 
   offersApp(): boolean {
