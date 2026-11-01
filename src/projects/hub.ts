@@ -15,6 +15,7 @@ export interface HubRuntime extends ProjectRuntime {
     readonly managedBy: Initiator | null
   }
   shellUrl(path?: string): string
+  disconnectAgentOf(by: Initiator): boolean
 }
 
 export interface HubSessions<R> {
@@ -82,6 +83,10 @@ export class ProjectHub<R extends HubRuntime> {
     const targets = this.deps.sessions.list().filter((r) => r.devServer.managedBy === by)
     await Promise.all(targets.map((r) => r.devServer.stop()))
     return targets.length
+  }
+
+  disconnectAgentsOf(by: Initiator): number {
+    return this.deps.sessions.list().filter((r) => r.disconnectAgentOf(by)).length
   }
 
   changed(): void {

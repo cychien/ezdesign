@@ -946,6 +946,13 @@ class SessionRuntime implements ProjectRuntime {
     this.broadcast()
   }
 
+  /** The app's quit: what its windows connected goes with them. */
+  disconnectAgentOf(by: Initiator): boolean {
+    if (this.acpBy !== by) return false
+    this.disconnectAgent()
+    return true
+  }
+
   resumeAgent(): void {
     const agent = this.store.session.agent
     if (agent) this.restoreAcpAgent(agent)
@@ -2737,6 +2744,7 @@ export async function daemonMain(version: string, opts: DaemonOptions = {}): Pro
     res.json(opened)
   })
   control.post('/control/desktop/quit', async (_req, res) => {
+    projects.disconnectAgentsOf('desktop')
     res.json({ stopped: await projects.stopManagedBy('desktop') } satisfies DesktopQuitAnswer)
   })
 
