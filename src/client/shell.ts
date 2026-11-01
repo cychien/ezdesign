@@ -1662,7 +1662,7 @@ function paintPage(): void {
     return
   }
   if (stagedApp === null) {
-    target.textContent = '沒有 app'
+    target.textContent = ''
     document.title = 'ezdesign'
     return
   }
