@@ -1,6 +1,7 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "ezdesign-website",
+  "account_id": "1d9f8227c30be47cffd33b6222ff11fc",
   "compatibility_date": "2026-10-23",
   "assets": {
     "directory": "./dist",
