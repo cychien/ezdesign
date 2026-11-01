@@ -32,6 +32,8 @@ export interface DesktopBridge {
   readonly contract: number
   /** Room a page at the window's left edge leaves for the traffic lights. */
   readonly trafficLightRoom: number
+  /** The sidebar page lies under the whole window, as its ground; this much of it is the sidebar. */
+  readonly sidebarWidth: number
   pickFolder(): Promise<string | null>
   /** `''` for a dropped item with no path. */
   pathForFile(file: File): string

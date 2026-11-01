@@ -27,17 +27,20 @@
 
 /* ------------------------------------------------------------------- sidebar */
 
-/* The window's vibrancy shows through. */
+/* The window's ground: the project pane is laid over the rest of it. */
 html:has(.ez-side),
 html:has(.ez-side) body {
-  background: transparent;
+  background: var(--paper-edge);
+  -webkit-app-region: drag;
 }
 
 .ez-side {
   display: flex;
   flex-direction: column;
+  width: var(--sidebar-width);
   height: 100vh;
   user-select: none;
+  -webkit-app-region: no-drag;
 }
 
 .ez-side[data-dragging] .ez-side-list {
