@@ -2,7 +2,7 @@ import { BaseWindow, type IpcMainEvent, type IpcMainInvokeEvent, WebContentsView
 import { DESKTOP_IPC, type DesktopLayout } from '../../src/desktop-wire.js'
 import type { ProjectOpenedWire } from '../../src/projects/wire.js'
 import { type KnownOrigins, type NavigationVerdict, judgeNavigation, judgeWindowOpen } from './navigation.js'
-import { PANE_INSET, PANE_RADIUS, SIDEBAR_WIDTH, TRAFFIC_LIGHTS } from './title-bar.js'
+import { PANE_INSET, PANE_RADIUS, SIDEBAR_WIDTH, TRAFFIC_LIGHTS, WINDOW_GROUND } from './title-bar.js'
 
 export interface ProjectWindowOptions {
   preload: string
@@ -39,13 +39,11 @@ export class ProjectWindow {
       title: 'ezdesign',
       titleBarStyle: 'hiddenInset',
       trafficLightPosition: TRAFFIC_LIGHTS,
-      vibrancy: 'sidebar',
-      visualEffectState: 'followWindow',
-      backgroundColor: '#00000000',
+      backgroundColor: WINDOW_GROUND,
       show: false,
     })
     this.sidebar = this.makeView()
-    this.sidebar.setBackgroundColor('#00000000')
+    this.sidebar.setBackgroundColor(WINDOW_GROUND)
     this.empty = this.makeView()
     this.pane = this.empty
     this.window.contentView.addChildView(this.sidebar)
@@ -137,7 +135,7 @@ export class ProjectWindow {
     const { width, height } = this.window.getContentBounds()
     this.sidebar.setVisible(this.sidebarOpen)
     if (this.sidebarOpen) {
-      this.sidebar.setBounds({ x: 0, y: 0, width: SIDEBAR_WIDTH, height })
+      this.sidebar.setBounds({ x: 0, y: 0, width, height })
       this.pane.setBounds({
         x: SIDEBAR_WIDTH,
         y: PANE_INSET,

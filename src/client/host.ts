@@ -30,6 +30,7 @@ export const host: Host = bridge
 if (bridge) {
   const root = document.documentElement
   root.dataset.host = 'desktop'
+  root.style.setProperty('--sidebar-width', `${bridge.sidebarWidth}px`)
   bridge.onLayout(({ sidebar }) => {
     root.dataset.sidebar = sidebar ? 'open' : 'closed'
     root.style.setProperty('--traffic-light-room', sidebar ? '0px' : `${bridge.trafficLightRoom}px`)
