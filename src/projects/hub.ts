@@ -1,5 +1,6 @@
 import { statSync } from 'node:fs'
 import { isAbsolute } from 'node:path'
+import type { Initiator } from '../dev-server/index.js'
 import type { DevServerSummaryWire } from '../dev-server/wire.js'
 import type { OpenRequest, OpenResult, ProjectRuntime } from '../session-directory.js'
 import type { ProjectBook } from './book.js'
@@ -12,6 +13,7 @@ export interface HubRuntime extends ProjectRuntime {
     readonly external: boolean
   }
   shellUrl(path?: string): string
+  ensureAgent(fallback: string, by: Initiator): void
 }
 
 export interface HubSessions<R> {
@@ -23,6 +25,7 @@ export interface ProjectHubDeps<R extends HubRuntime> {
   sessions: HubSessions<R>
   book: ProjectBook
   version: string
+  defaultAgent(): string
   projectRoot(path: string): string
   restored(): Promise<void>
 }
@@ -59,12 +62,13 @@ export class ProjectHub<R extends HubRuntime> {
     this.changed()
   }
 
-  /** Opens the review only: its dev server and its agent wait for the user to start them. */
-  async open(project: string): Promise<ProjectOpenedWire | OpenRefusal> {
+  /** Opens the review and connects its agent; the dev server waits for the user to start it. */
+  async open(project: string, by: Initiator): Promise<ProjectOpenedWire | OpenRefusal> {
     if (!this.deps.book.isListed(project)) return { ok: false, status: 404, error: 'not a project on the list' }
     await this.deps.restored()
     const opened = await this.deps.sessions.open({ project, reopen: true, now: Date.now() })
     if (!opened.ok) return { ok: false, status: 404, error: 'the review could not be opened' }
+    opened.runtime.ensureAgent(this.deps.defaultAgent(), by)
     this.changed()
     return { project, shellUrl: opened.runtime.shellUrl() }
   }
