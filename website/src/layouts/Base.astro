@@ -12,6 +12,7 @@ interface Props {
 const { title, description } = Astro.props
 const locale = isLocale(Astro.currentLocale) ? Astro.currentLocale : DEFAULT_LOCALE
 const urls = localeUrls(Astro.url.pathname, locale)
+const absolute = (path: string) => new URL(path, Astro.site).href
 ---
 
 <!doctype html>
@@ -27,8 +28,10 @@ const urls = localeUrls(Astro.url.pathname, locale)
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>{title}</title>
     <meta name="description" content={description} />
-    {Object.entries(MESSAGES).map(([code, { lang }]) => <link rel="alternate" hreflang={lang} href={urls[code as keyof typeof urls]} />)}
+    <link rel="canonical" href={absolute(urls[locale])} />
+    {Object.entries(MESSAGES).map(([code, { lang }]) => <link rel="alternate" hreflang={lang} href={absolute(urls[code as keyof typeof urls])} />)}
     <meta property="og:type" content="website" />
+    <meta property="og:url" content={absolute(urls[locale])} />
     <meta property="og:title" content={title} />
     <meta property="og:description" content={description} />
     <meta name="twitter:card" content="summary" />
