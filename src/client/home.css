@@ -105,6 +105,10 @@ html:has(.ez-side) body::after {
   -webkit-app-region: drag;
 }
 
+.ez-side-top > .ez-side-icon {
+  margin-top: 4px;
+}
+
 .ez-side-top button {
   -webkit-app-region: no-drag;
 }
@@ -228,6 +232,19 @@ html:has(.ez-side) body::after {
 
 .ez-side-row:hover .ez-side-actions {
   display: flex;
+}
+
+/* Steady, unlike the review's own badge: a list of projects should not twitch. */
+.ez-side-working {
+  flex-shrink: 0;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: oklch(70% 0.16 70);
+}
+
+.ez-side-row:hover .ez-side-working {
+  visibility: hidden;
 }
 
 /* A long name ends before the actions rather than under them. */
