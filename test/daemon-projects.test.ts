@@ -25,8 +25,6 @@ interface ProjectRow {
 interface ProjectList {
   version: string
   projects: ProjectRow[]
-  home: string
-  current?: string
 }
 
 const SERVER = `
@@ -82,10 +80,7 @@ test('opening starts the dev server and answers with the shell', async () => {
   assert.equal(state.acp?.agent, FAKE_AGENT, 'a first open drives the last agent the user picked')
 
   const sessionApi = `http://127.0.0.1:${port}/__ezdesign/api/projects`
-  const fromShell = await list(sessionApi)
-  assert.equal(fromShell.current, dir)
-  assert.equal((await post(sessionApi, { path: dir })).status, 404, 'the session mount cannot add')
-  assert.equal((await post(`${sessionApi}/hide`, { project: dir })).status, 404, 'nor hide')
+  assert.equal((await fetch(sessionApi, { headers: VERSIONED })).status, 404, 'a review cannot reach other projects')
 
   assert.equal((await post(`${API}/stop`, { project: dir })).status, 200)
   assert.equal((await list()).projects.find((p) => p.project === dir)?.session?.devServer.phase, 'stopped')
@@ -116,5 +111,4 @@ test('the live list carries the version, for a page that has no header to send',
   await reader.cancel()
   const first = JSON.parse(new TextDecoder().decode(value).replace(/^data: /, '')) as ProjectList
   assert.equal(first.version, PKG_VERSION)
-  assert.equal(first.home, `${CONTROL}/__ezdesign/home`)
 })
