@@ -1,23 +1,24 @@
 import { DESKTOP_BRIDGE, type DesktopBridge } from '../desktop-wire.js'
 import type { ProjectOpenedWire } from '../projects/wire.js'
 
-export interface Host {
-  readonly kind: 'browser' | 'desktop'
-  /** Zero in a browser. */
-  readonly trafficLightRoom: number
+interface Navigation {
   showProject(opened: ProjectOpenedWire): void
   showHome(homeUrl: string): void
-  readonly pickFolder: (() => Promise<string | null>) | null
-  readonly pathForFile: ((file: File) => string) | null
 }
+
+export type Host =
+  | ({ readonly kind: 'browser' } & Navigation)
+  | ({
+      readonly kind: 'desktop'
+      readonly trafficLightRoom: number
+      pickFolder(): Promise<string | null>
+      pathForFile(file: File): string
+    } & Navigation)
 
 const browserHost: Host = {
   kind: 'browser',
-  trafficLightRoom: 0,
   showProject: (opened) => location.assign(opened.shellUrl),
   showHome: (homeUrl) => location.assign(homeUrl),
-  pickFolder: null,
-  pathForFile: null,
 }
 
 function desktopHost(bridge: DesktopBridge): Host {
