@@ -63,13 +63,16 @@ test('a folder added by any path inside it lists its project, and hides again', 
   assert.equal((await post(API, { path: 'relative/path' })).status, 400)
 })
 
-test('opening starts the dev server and answers with the shell', async () => {
+test('opening answers with the shell, and leaves the dev server and the agent to the user', async () => {
   const dir = project()
   await post(API, { path: dir })
   const opened = (await (await post(`${API}/open`, { project: dir, host: 'browser' })).json()) as { project: string; shellUrl: string }
   assert.equal(opened.project, dir)
   const port = Number(new URL(opened.shellUrl).port)
-  const running = await waitFor(async () => {
+  assert.equal((await list()).projects.find((p) => p.project === dir)?.session?.devServer.phase, 'idle')
+
+  await post(`http://127.0.0.1:${port}/__ezdesign/api/dev-server/start`, { host: 'browser' })
+  await waitFor(async () => {
     const row = (await list()).projects.find((p) => p.project === dir)
     return row?.session?.devServer.phase === 'running' ? row : null
   }, 'the dev server to run')

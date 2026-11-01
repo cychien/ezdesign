@@ -106,16 +106,25 @@ test('app quit stops the dev servers the app started, and only those', async () 
   const fromBrowser = project()
   const opened = (await (await desktop('open', { path: fromApp })).json()) as { project: string; shellUrl: string }
   assert.equal(opened.project, fromApp, 'a folder from the Dock is added and opened')
+  assert.equal(await phase(fromApp), 'idle', 'opening starts nothing')
   await fetch(`http://127.0.0.1:${daemon.port}/__ezdesign/api/projects`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'x-ezdesign-version': PKG_VERSION },
     body: JSON.stringify({ path: fromBrowser }),
   })
-  await fetch(`http://127.0.0.1:${daemon.port}/__ezdesign/api/projects/open`, {
+  const other = await fetch(`http://127.0.0.1:${daemon.port}/__ezdesign/api/projects/open`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'x-ezdesign-version': PKG_VERSION },
     body: JSON.stringify({ project: fromBrowser, host: 'browser' }),
   })
+  const start = (shellUrl: string, host: string) =>
+    fetch(new URL('/__ezdesign/api/dev-server/start', shellUrl), {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ host }),
+    })
+  await start(opened.shellUrl, 'desktop')
+  await start(((await other.json()) as { shellUrl: string }).shellUrl, 'browser')
   await waitFor(async () => (await phase(fromApp)) === 'running' && (await phase(fromBrowser)) === 'running', 'both servers to run')
 
   assert.deepEqual(await (await desktop('quit', {})).json(), { stopped: 1 })
