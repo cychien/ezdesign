@@ -41,7 +41,7 @@ async function launch(): Promise<void> {
 async function openFolder(path: string): Promise<void> {
   if (!daemon || !projectWindow) return void pendingOpens.push(path)
   try {
-    projectWindow.showProject(await daemon.control.open(path))
+    void projectWindow.showProject(await daemon.control.open(path))
   } catch (error) {
     void dialog.showMessageBox({ type: 'warning', message: `沒辦法開啟 ${path}`, detail: (error as Error).message })
   }

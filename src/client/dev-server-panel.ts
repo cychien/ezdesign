@@ -211,7 +211,7 @@ export function installDevServerPanel(api: string): DevServerPanel {
         case 'stopped':
           title.textContent = s.phase === 'idle' ? '啟動 dev server' : 'Dev server 已停止'
           if (command) {
-            body.push(h('p', 'ez-devserver-text', '啟動 dev server，在實際 App 上進行設計。'), commandBlock(command))
+            body.push(commandBlock(command))
             start('啟動')
             edit()
           } else {
