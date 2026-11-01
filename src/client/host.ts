@@ -31,6 +31,8 @@ if (bridge) {
   const root = document.documentElement
   root.dataset.host = 'desktop'
   root.style.setProperty('--sidebar-width', `${bridge.sidebarWidth}px`)
+  root.style.setProperty('--pane-inset', `${bridge.paneInset}px`)
+  root.style.setProperty('--pane-radius', `${bridge.paneRadius}px`)
   bridge.onLayout(({ sidebar }) => {
     root.dataset.sidebar = sidebar ? 'open' : 'closed'
     root.style.setProperty('--traffic-light-room', sidebar ? '0px' : `${bridge.trafficLightRoom}px`)
