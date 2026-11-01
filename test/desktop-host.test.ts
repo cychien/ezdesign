@@ -122,3 +122,12 @@ test('app quit stops the dev servers the app started, and only those', async () 
   assert.equal(await phase(fromApp), 'stopped')
   assert.equal(await phase(fromBrowser), 'running', "a browser shell's server survives the app")
 })
+
+test('app quit leaves an agent the CLI connected', async () => {
+  const dir = project()
+  const opened = await world.openSession(daemon.port, { project: dir, agent: FAKE_AGENT })
+  await waitFor(async () => ((await world.state(opened.port)) as { acp?: { state: string } }).acp?.state === 'idle', 'the agent to connect')
+  assert.equal((await desktop('quit', {})).status, 200)
+  const state = (await world.state(opened.port)) as { acp?: { agent: string } }
+  assert.equal(state.acp?.agent, FAKE_AGENT)
+})

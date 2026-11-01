@@ -6,5 +6,5 @@ export const SIDEBAR_WIDTH = 248
 /** The project pane's inset from the window's edges while the sidebar is open. */
 export const PANE_INSET = 8
 export const PANE_RADIUS = 10
-/** Before the sidebar page paints: the shell's --paper-edge, which that page draws. */
-export const WINDOW_GROUND = '#e9e6dd'
+/** Before the sidebar page paints: the `--side-ground` that page draws. */
+export const WINDOW_GROUND = '#e3dfd4'
