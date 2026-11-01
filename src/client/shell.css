@@ -5905,6 +5905,11 @@ html.ez-on-board body {
   margin-left: -1px;
 }
 
+/* In the app the sign-in is the sidebar's, shared by every project. */
+[data-host='desktop'] .ez-account {
+  display: none;
+}
+
 [data-host='desktop'] .ez-tabs-bar button,
 [data-host='desktop'] .ez-tabs-bar [role='tab'],
 [data-host='desktop'] .ez-tabs-bar .ez-menu {

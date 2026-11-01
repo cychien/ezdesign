@@ -19,6 +19,10 @@ export interface DesktopQuitAnswer {
 
 export const DESKTOP_BRIDGE = 'ezdesignDesktop'
 
+/** Opened from a daemon page, on any of its origins, it goes to the user's
+ *  browser: signing in is a web page, and its callback reaches the daemon there. */
+export const ACCOUNT_LOGIN_PATH = '/__ezdesign/api/account/login'
+
 /** What the window shows: whether the project sidebar is open, and which
  *  project fills the rest. */
 export interface DesktopLayout {

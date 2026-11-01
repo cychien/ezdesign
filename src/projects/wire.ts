@@ -1,3 +1,4 @@
+import type { AccountWire } from '../account.js'
 import type { DevServerSummaryWire } from '../dev-server/wire.js'
 
 export interface ProjectWire {
@@ -16,6 +17,8 @@ export interface ProjectWire {
 export interface ProjectListWire {
   version: string
   projects: ProjectWire[]
+  /** The daemon's one sign-in, which every project shares. */
+  account: AccountWire
 }
 
 export interface ProjectOpenedWire {

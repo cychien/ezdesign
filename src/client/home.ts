@@ -1,4 +1,14 @@
-import { Cancel01Icon, Folder01Icon, FolderAddIcon, PlusSignIcon, SidebarLeftIcon, StopIcon } from '@hugeicons/core-free-icons'
+import {
+  Cancel01Icon,
+  Folder01Icon,
+  FolderAddIcon,
+  Logout01Icon,
+  PlusSignIcon,
+  SidebarLeftIcon,
+  StopIcon,
+  UserCircleIcon,
+} from '@hugeicons/core-free-icons'
+import type { AccountWire } from '../account.js'
 import { brandLockupSvg, brandMarkSvg } from '../brand.js'
 import type { ProjectListWire, ProjectWire } from '../projects/wire.js'
 import { type Host, host } from './host.js'
@@ -106,7 +116,8 @@ function bootSidebar(root: HTMLElement, desktop: DesktopHost, api: string, versi
   rows.dataset.testid = HOME_TEST_IDS.list
   const errorLine = h('p', 'ez-side-error')
   errorLine.setAttribute('role', 'alert')
-  side.append(top, section, rows, errorLine)
+  const account = accountFooter(api)
+  side.append(top, section, rows, errorLine, account.el)
   root.replaceChildren(side, h('div', 'ez-side-grip'))
 
   function open(go: () => Promise<void>): void {
@@ -189,8 +200,64 @@ function bootSidebar(root: HTMLElement, desktop: DesktopHost, api: string, versi
       if (before && !project.session?.agentWorking && project.project !== shown) unseen.add(project.project)
     }
     list = next
+    account.paint(next.account)
     paint()
     if (!performance.getEntriesByName(LIST_SHOWN_MARK).length) performance.mark(LIST_SHOWN_MARK)
   })
   paint()
+}
+
+/** The one sign-in every project shares, so it lives with the list rather than in a review. */
+function accountFooter(api: string): { el: HTMLElement; paint(account: AccountWire): void } {
+  const el = h('div', 'ez-side-account')
+  const button = h('button', 'ez-side-open ez-side-account-btn')
+  button.type = 'button'
+  const menu = h('div', 'ez-menu')
+  menu.setAttribute('role', 'menu')
+  const who = h('div', 'ez-account-who')
+  const signOut = h('button', 'ez-menu-item')
+  signOut.type = 'button'
+  signOut.setAttribute('role', 'menuitem')
+  signOut.append(icon(Logout01Icon as IconNode, 14), h('span', 'ez-menu-name', '登出'))
+  menu.append(who, signOut)
+  el.append(menu, button)
+
+  let email: string | null | undefined
+  const setOpen = (open: boolean) => {
+    el.toggleAttribute('data-open', open && !!email)
+    if (email) button.setAttribute('aria-expanded', String(el.hasAttribute('data-open')))
+  }
+  button.onclick = () => (email ? setOpen(!el.hasAttribute('data-open')) : void window.open(`${api}/account/login`, '_blank'))
+  signOut.onclick = () => {
+    setOpen(false)
+    void fetch(`${api}/account/logout`, { method: 'POST', headers: { 'content-type': 'application/json' } })
+  }
+  document.addEventListener('click', (e) => {
+    if (e.target instanceof Node && !el.contains(e.target)) setOpen(false)
+  })
+  el.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape' || !el.hasAttribute('data-open')) return
+    setOpen(false)
+    button.focus()
+  })
+
+  return {
+    el,
+    paint(account) {
+      if (account.email === email) return
+      email = account.email
+      setOpen(false)
+      if (email) {
+        button.setAttribute('aria-haspopup', 'menu')
+        button.title = email
+        button.replaceChildren(h('span', 'ez-avatar', email.charAt(0).toUpperCase()), h('span', 'ez-side-name', email))
+        who.replaceChildren(h('span', 'ez-account-label', '已登入'), h('span', 'ez-account-email', email))
+      } else {
+        button.removeAttribute('aria-haspopup')
+        button.removeAttribute('aria-expanded')
+        button.title = '登入 ezdesign'
+        button.replaceChildren(icon(UserCircleIcon as IconNode, 15), h('span', 'ez-side-name', '登入'))
+      }
+    },
+  }
 }
