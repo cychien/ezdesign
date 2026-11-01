@@ -68,7 +68,7 @@ function emptyPane(desktop: DesktopHost, api: string, version: string): HTMLElem
   const error = h('p', 'ez-empty-error')
   const add = h('button', 'ez-home-add-go ez-home-pick')
   add.type = 'button'
-  add.append(icon(FolderAddIcon as IconNode, 16), h('span', undefined, '加入資料夾…'))
+  add.append(icon(FolderAddIcon as IconNode, 16), h('span', undefined, '加入新專案'))
   add.onclick = () =>
     void desktop.pickFolder().then((path) => path && addAndOpen(client, path).catch((e: Error) => (error.textContent = e.message)))
   page.append(
@@ -95,7 +95,7 @@ function bootSidebar(root: HTMLElement, desktop: DesktopHost, api: string, versi
   top.append(collapse)
 
   const section = h('div', 'ez-side-section')
-  const add = iconButton(PlusSignIcon as IconNode, '加入資料夾…（⌘O）')
+  const add = iconButton(PlusSignIcon as IconNode, '加入新專案（⌘O）')
   add.dataset.testid = HOME_TEST_IDS.add
   add.onclick = () => void desktop.pickFolder().then((path) => path && open(() => addAndOpen(client, path)))
   section.append(h('span', 'ez-side-label', '專案'), add)
