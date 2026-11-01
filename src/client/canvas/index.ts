@@ -57,7 +57,7 @@ export interface ShellPorts {
 
 /** The snapshot fields this module reads. */
 export interface CanvasShellSnapshot {
-  app?: string
+  appTab: boolean
   canvas?: CanvasSnapshotWire
   state: OverlaySnapshot['state']
   /** Forwarded to each canvas guest as they are, filtered by `anchor.frame`. */
@@ -283,7 +283,7 @@ export function installCanvas(ports: ShellPorts): CanvasUi {
 
   function paintStrip(): void {
     if (!snapshot?.canvas) return
-    strip.paint(tabsModel(snapshot.app, snapshot.canvas))
+    strip.paint(tabsModel(snapshot.appTab, snapshot.canvas))
   }
 
   function activeBoard(): BoardView | null {
@@ -331,7 +331,7 @@ export function installCanvas(ports: ShellPorts): CanvasUi {
     render(s) {
       snapshot = s
       if (!s.canvas) return
-      const model = tabsModel(s.app, s.canvas)
+      const model = tabsModel(s.appTab, s.canvas)
       strip.paint(model)
       for (const [id, b] of boards) {
         const summary = s.canvas.canvases.find((c) => c.id === id)

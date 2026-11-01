@@ -82,15 +82,14 @@ export class SessionDirectory<R extends ProjectRuntime> {
       if (runtime.endedByUser && !req.reopen) return { ok: false, reason: 'ended-by-user' }
       runtime.reopen()
     }
-    if (req.origin) {
-      const holder = this.byOrigin(req.origin)
-      if (holder && holder !== runtime) holder.detachApp()
-      runtime.attachApp(
-        { kind: 'attached', origin: req.origin, attachedAt: req.now },
-        { userAttached: true },
-      )
-    }
+    if (req.origin) this.attachOrigin(runtime, req.origin, { userAttached: true, now: req.now })
     return { ok: true, runtime }
+  }
+
+  attachOrigin(runtime: R, origin: string, opts: { userAttached: boolean; now: number }): void {
+    const holder = this.byOrigin(origin)
+    if (holder && holder !== runtime) holder.detachApp()
+    runtime.attachApp({ kind: 'attached', origin, attachedAt: opts.now }, { userAttached: opts.userAttached })
   }
 
   /** `GET /control/sessions/find?project=`: the live session, or the persisted

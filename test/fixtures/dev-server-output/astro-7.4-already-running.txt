@@ -1,0 +1,2 @@
+[2m$ astro dev[22m
+{"message":"Dev server already running at http://localhost:4420 (pid 59578)\n  Stop:   astro dev stop\n  Status: astro dev status\n  Logs:   astro dev logs","label":"SKIP_FORMAT","level":"info"}

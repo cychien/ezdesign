@@ -1,0 +1,1 @@
+{ "name": "several-scripts", "scripts": { "dev:web": "vite", "dev:api": "tsx watch src/server.ts" } }

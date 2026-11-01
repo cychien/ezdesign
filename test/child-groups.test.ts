@@ -7,8 +7,8 @@ import { test } from 'node:test'
 
 process.env.EZDESIGN_DATA_DIR = mkdtempSync(join(tmpdir(), 'ezdesign-agents-'))
 
-const { clearAgentRecord, killGroup, reapOrphanedAgents, trackAgent, untrackAgent } = await import(
-  '../src/agent-children.js'
+const { clearGroupRecord, killGroup, reapOrphanedGroups, trackGroup, untrackGroup } = await import(
+  '../src/child-groups.js'
 )
 const { DATA_DIR } = await import('../src/constants.js')
 const FILE = join(DATA_DIR, 'agent-children.json')
@@ -82,8 +82,8 @@ test('killing an agent takes the processes below it too', async () => {
 })
 
 test('a tracked agent is written down and forgotten again', () => {
-  clearAgentRecord()
-  trackAgent(4242, 'npx -y some-agent')
+  clearGroupRecord()
+  trackGroup(4242, 'npx -y some-agent')
   const written = JSON.parse(readFileSync(FILE, 'utf8')) as {
     daemonPid: number
     children: { pid: number; command: string }[]
@@ -91,7 +91,7 @@ test('a tracked agent is written down and forgotten again', () => {
   assert.equal(written.daemonPid, process.pid)
   assert.deepEqual(written.children, [{ pid: 4242, command: 'npx -y some-agent' }])
 
-  untrackAgent(4242)
+  untrackGroup(4242)
   assert.deepEqual(
     (JSON.parse(readFileSync(FILE, 'utf8')) as { children: unknown[] }).children,
     [],
@@ -99,9 +99,9 @@ test('a tracked agent is written down and forgotten again', () => {
 })
 
 test('a clean shutdown leaves no note behind', () => {
-  trackAgent(4243, 'npx -y some-agent')
+  trackGroup(4243, 'npx -y some-agent')
   assert.equal(existsSync(FILE), true)
-  clearAgentRecord()
+  clearGroupRecord()
   assert.equal(existsSync(FILE), false)
 })
 
@@ -112,7 +112,7 @@ test('a clean shutdown leaves no note behind', () => {
 test('a pid now running something else is left alone', async () => {
   const bystander = spawnAgentLike()
   await settle()
-  clearAgentRecord()
+  clearGroupRecord()
   writeFileSync(
     FILE,
     JSON.stringify({
@@ -121,7 +121,7 @@ test('a pid now running something else is left alone', async () => {
     }),
   )
 
-  assert.equal(reapOrphanedAgents(), 0, 'nothing was confirmed, so nothing was killed')
+  assert.equal(reapOrphanedGroups(), 0, 'nothing was confirmed, so nothing was killed')
   await settle()
   assert.equal(alive(bystander.pid), true, 'the bystander must survive')
   killGroup(bystander.pid)
@@ -131,14 +131,14 @@ test('an agent left by a dead daemon is reaped, whole', async () => {
   const orphan = spawnAgentLike()
   await settle()
   const below = orphan.descendants()
-  clearAgentRecord()
+  clearGroupRecord()
   writeFileSync(
     FILE,
     // A daemon pid that cannot be running: the note has no owner left.
     JSON.stringify({ daemonPid: 999999, children: [{ pid: orphan.pid, command: orphan.command }] }),
   )
 
-  assert.equal(reapOrphanedAgents(), 1)
+  assert.equal(reapOrphanedGroups(), 1)
   await settle()
   assert.equal(alive(orphan.pid), false)
   assert.deepEqual(below.filter(alive), [], 'the tail below it goes too')
@@ -148,7 +148,7 @@ test('an agent left by a dead daemon is reaped, whole', async () => {
 test('agents belonging to a live daemon are not touched', async () => {
   const inUse = spawnAgentLike()
   await settle()
-  clearAgentRecord()
+  clearGroupRecord()
   writeFileSync(
     FILE,
     // This test process stands in for a daemon that is very much running - but
@@ -159,13 +159,13 @@ test('agents belonging to a live daemon are not touched', async () => {
     }),
   )
 
-  assert.equal(reapOrphanedAgents(), 0)
+  assert.equal(reapOrphanedGroups(), 0)
   await settle()
   assert.equal(alive(inUse.pid), true)
   killGroup(inUse.pid)
 })
 
 test('a missing note is not an error', () => {
-  clearAgentRecord()
-  assert.equal(reapOrphanedAgents(), 0)
+  clearGroupRecord()
+  assert.equal(reapOrphanedGroups(), 0)
 })

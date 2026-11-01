@@ -6,6 +6,7 @@ import { ALLOWED_ORIGINS, HOST_NAME } from '../capture-wire.js'
 import type { CaptureInstallProblem } from '../capture-setup-wire.js'
 import { DATA_DIR, installedExtensionDir, libraryDir, nativeHostDir } from '../constants.js'
 import { writeAtomic } from '../fs-atomic.js'
+import { RUN_AS_NODE, SELF_NODE } from '../self-node.js'
 import { compareVersions } from '../update-check.js'
 import { type HostTarget, hostTargets } from './browsers.js'
 import { currentGeneration, installExtension } from './extension-files.js'
@@ -49,11 +50,17 @@ export function chooseHostNode(current: NodeCandidate, recorded: NodeCandidate |
 }
 
 /** Chrome starts it with no shell profile and often no PATH, so it names node absolutely. */
-export function hostWrapperScript(options: { node: string; host: string; dataDir: string }): string {
+export function hostWrapperScript(options: {
+  node: string
+  host: string
+  dataDir: string
+  nodeEnv?: Readonly<Record<string, string>>
+}): string {
   const q = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`
+  const env = Object.entries(options.nodeEnv ?? {}).map(([k, v]) => `${k}=${q(v)} `).join('')
   return [
     '#!/bin/sh',
-    `EZDESIGN_DATA_DIR=${q(options.dataDir)} exec ${q(options.node)} ${q(options.host)} "$@"`,
+    `${env}EZDESIGN_DATA_DIR=${q(options.dataDir)} exec ${q(options.node)} ${q(options.host)} "$@"`,
     '',
   ].join('\n')
 }
@@ -113,7 +120,8 @@ function resolvePlacement(options: { dataDir?: string; home?: string; platform?:
 
 function probeNode(path: string): NodeCandidate {
   if (path === process.execPath) return { path, version: process.version }
-  const run = spawnSync(path, ['-p', 'process.version'], { encoding: 'utf8', timeout: 10_000, env: {} })
+  // The flag is inert for a real node and keeps a recorded app binary from opening a window.
+  const run = spawnSync(path, ['-p', 'process.version'], { encoding: 'utf8', timeout: 10_000, env: { [RUN_AS_NODE]: '1' } })
   const version = run.status === 0 ? run.stdout.trim() : ''
   return { path, version: /^v\d+\.\d+\.\d+/.test(version) ? version : null }
 }
@@ -143,7 +151,8 @@ export async function installCapture(options: InstallOptions): Promise<InstallRe
   mkdirSync(at.hostDir, { recursive: true })
   const host = join(at.hostDir, HOST_BUNDLE)
   writeAtomic(host, readFileSync(bundle))
-  writeAtomic(at.wrapper, hostWrapperScript({ node: choice.node.path, host, dataDir: at.dataDir }), 0o755)
+  const nodeEnv = choice.node.path === SELF_NODE.execPath ? SELF_NODE.env : {}
+  writeAtomic(at.wrapper, hostWrapperScript({ node: choice.node.path, host, dataDir: at.dataDir, nodeEnv }), 0o755)
   const extensionGeneration = installExtension(join(options.distDir, 'extension'), at.extensionDir)
   const manifest = `${JSON.stringify(hostManifest(at.wrapper, ALLOWED_ORIGINS), null, 2)}\n`
   for (const target of targets) {

@@ -1,0 +1,1 @@
+{ "name": "pnpm-start", "scripts": { "start": "next start", "build": "next build" } }

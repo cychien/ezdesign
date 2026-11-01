@@ -1,0 +1,1 @@
+{"message":"Dev server running at http://localhost:5496 (pid 31423)\n  Stop:   astro dev stop\n  Status: astro dev status\n  Logs:   astro dev logs","label":"SKIP_FORMAT","level":"info"}

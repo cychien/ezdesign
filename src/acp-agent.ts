@@ -38,7 +38,7 @@ import {
 } from './acp-ask.js'
 import { type AcpConfigValue, configValues } from './acp-config.js'
 import { limitFrom, mergeLimit } from './usage-limit.js'
-import { killGroup, killTrackedAgents, trackAgent, untrackAgent } from './agent-children.js'
+import { killGroup, trackGroup, untrackGroup } from './child-groups.js'
 import { type AttachedSession, SessionRouter } from './acp-session.js'
 
 export type AcpState = 'starting' | 'idle' | 'working' | 'exited'
@@ -196,11 +196,6 @@ function trimTitle(title: string, cwd: string): string {
   return title.replaceAll(`${cwd}/`, '')
 }
 
-/** Every live agent, killed when the daemon goes down whichever way it can be
- *  seen to go down - an orphaned agent would keep burning the user's quota. The
- *  ways it cannot be seen to go down are `agent-children.ts`'s problem. */
-process.on('exit', () => killTrackedAgents())
-
 export class AcpAgent {
   private child: ChildProcess
   private ctx: ClientContext | null = null
@@ -268,7 +263,7 @@ export class AcpAgent {
       stdio: ['pipe', 'pipe', 'pipe'],
       env: { ...process.env, ...opts.env },
     })
-    if (this.child.pid) trackAgent(this.child.pid, opts.command)
+    if (this.child.pid) trackGroup(this.child.pid, opts.command)
     this.child.stderr?.on('data', (chunk: Buffer) => {
       this.stderrTail = [...this.stderrTail, chunk.toString()].slice(-20)
     })
@@ -678,12 +673,12 @@ export class AcpAgent {
     killGroup(pid, 'SIGTERM')
     setTimeout(() => {
       killGroup(pid)
-      untrackAgent(pid)
+      untrackGroup(pid)
     }, 3000).unref()
   }
 
   private untrack(): void {
-    if (this.child.pid !== undefined) untrackAgent(this.child.pid)
+    if (this.child.pid !== undefined) untrackGroup(this.child.pid)
   }
 
   private fail(message: string): void {

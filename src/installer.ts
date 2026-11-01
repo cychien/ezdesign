@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process'
 import { existsSync, mkdirSync, readdirSync, realpathSync, rmSync } from 'node:fs'
 import { dirname, join, resolve, sep } from 'node:path'
 import { APP_NAME, NPM_PACKAGE, VERSIONS_DIR } from './constants.js'
+import { SELF_NODE, selfNodeEnv } from './self-node.js'
 import { shellQuote } from './shell-quote.js'
 
 /** npm's entry point, run with this very node rather than whatever `npm` on
@@ -35,10 +36,10 @@ function run(
   label: string,
   command: string,
   args: string[],
-  opts: { shell?: boolean } = {},
+  opts: { shell?: boolean; env?: NodeJS.ProcessEnv } = {},
 ): Promise<{ stdout: string; stderr: string }> {
   return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { stdio: ['ignore', 'pipe', 'pipe'], shell: opts.shell })
+    const child = spawn(command, args, { stdio: ['ignore', 'pipe', 'pipe'], shell: opts.shell, env: opts.env })
     let stdout = ''
     let stderr = ''
     child.stdout.on('data', (c: Buffer) => (stdout += c))
@@ -79,7 +80,9 @@ async function verifyInstall(pkgRoot: string, version: string): Promise<boolean>
   const cliEntry = join(pkgRoot, 'dist', 'cli.mjs')
   if (!existsSync(cliEntry)) return false
   try {
-    const { stdout } = await run(`${APP_NAME} --version`, process.execPath, [cliEntry, '--version'])
+    const { stdout } = await run(`${APP_NAME} --version`, SELF_NODE.execPath, [cliEntry, '--version'], {
+      env: selfNodeEnv(),
+    })
     return stdout.trim() === version
   } catch {
     return false

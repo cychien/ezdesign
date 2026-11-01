@@ -2,6 +2,7 @@ import { type ChildProcess, spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { mkdirSync, openSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { DAEMON_LOG, DATA_DIR, REGISTRY_FILE } from './constants.js'
+import { type NodeRuntime, SELF_NODE, selfNodeEnv } from './self-node.js'
 
 export interface DaemonInfo {
   port: number
@@ -111,21 +112,33 @@ async function stopDaemon(daemon: { port: number; pid: number }): Promise<void> 
   }
 }
 
+export interface DaemonLaunch {
+  cliEntry: string
+  runtime?: NodeRuntime
+  env?: Readonly<Record<string, string>>
+}
+
 /** Start a daemon from `cliEntry` and let go of it: detached, logging to the
  *  shared daemon log, outliving whoever launched it. */
-export function launchDaemon(cliEntry: string, args: string[] = []): ChildProcess {
+export function launchDaemon(
+  cliEntry: string,
+  args: string[] = [],
+  launch: Omit<DaemonLaunch, 'cliEntry'> = {},
+): ChildProcess {
   mkdirSync(DATA_DIR, { recursive: true })
   const log = openSync(DAEMON_LOG, 'a')
-  const child = spawn(process.execPath, [cliEntry, '__daemon', ...args], {
+  const runtime = launch.runtime ?? SELF_NODE
+  const child = spawn(runtime.execPath, [cliEntry, '__daemon', ...args], {
     detached: true,
     stdio: ['ignore', log, log],
+    env: selfNodeEnv({ ...process.env, ...launch.env }, runtime),
   })
   child.unref()
   return child
 }
 
-async function spawnDaemon(cliEntry: string): Promise<RunningDaemon> {
-  launchDaemon(cliEntry)
+async function spawnDaemon(launch: DaemonLaunch): Promise<RunningDaemon> {
+  launchDaemon(launch.cliEntry, [], launch)
   const deadline = Date.now() + 8000
   while (Date.now() < deadline) {
     await new Promise((r) => setTimeout(r, 150))
@@ -143,7 +156,7 @@ async function spawnDaemon(cliEntry: string): Promise<RunningDaemon> {
  *  control range, which `daemonMain` does without looking at versions. */
 export async function ensureDaemon(cliEntry: string, version: string): Promise<RunningDaemon> {
   for (let attempt = 0; attempt < 2; attempt++) {
-    const running = (await findRunningDaemon()) ?? (await spawnDaemon(cliEntry))
+    const running = (await findRunningDaemon()) ?? (await spawnDaemon({ cliEntry }))
     if (running.version === version) return running
     await stopDaemon(running)
   }

@@ -1,19 +1,3 @@
-/** Agent processes, killed whole and killed even when this daemon is not around
- *  to do it.
- *
- *  Two problems, and they compound. An ACP agent is started through a shell, so
- *  what this daemon holds is `sh -c "npx ..."` and the agent itself is somewhere
- *  below it - signalling the child alone leaves that tail running. And a daemon
- *  killed outright, by `kill -9` or the OOM killer, runs no exit handler at all,
- *  so nothing signals anything.
- *
- *  So: every agent is spawned into its own process group and killed by group,
- *  which takes the whole tree; and the groups are written down, so the next
- *  daemon to start can finish what a killed one could not. That second part
- *  matters most exactly when it is hardest to notice - an agent orphaned by the
- *  OOM killer goes on holding the memory that caused it, and goes on holding a
- *  login that costs the user money. */
-
 import { execFileSync } from 'node:child_process'
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -30,6 +14,8 @@ interface Record_ {
 
 /** Live groups, by leader pid, with the command each was started with. */
 const live = new Map<number, string>()
+
+process.on('exit', () => killTrackedGroups())
 
 function read(): Record_ | null {
   try {
@@ -68,7 +54,7 @@ function running(pid: number): boolean {
  *  something else - and this kills process *groups*, which makes that worse than
  *  usual. The command line is what settles it: a recycled pid running something
  *  else does not match, and is left alone. */
-function isStillTheAgent(pid: number, command: string): boolean {
+function isStillTheProcess(pid: number, command: string): boolean {
   try {
     const actual = execFileSync('ps', ['-o', 'command=', '-p', String(pid)], {
       encoding: 'utf8',
@@ -97,28 +83,30 @@ export function killGroup(pid: number, signal: NodeJS.Signals = 'SIGKILL'): void
   }
 }
 
-export function trackAgent(pid: number, command: string): void {
+/** `command` is what `ps` will show for the leader, which is how a later reap
+ *  tells it from a recycled pid. */
+export function trackGroup(pid: number, command: string): void {
   live.set(pid, command)
   write()
 }
 
-export function untrackAgent(pid: number): void {
+export function untrackGroup(pid: number): void {
   if (live.delete(pid)) write()
 }
 
 /** Kill every group this daemon still holds. For its own exit. */
-export function killTrackedAgents(): void {
+export function killTrackedGroups(): void {
   for (const pid of live.keys()) killGroup(pid)
 }
 
 /**
- * Kill agents a previous daemon left behind, and take ownership of the note.
+ * Kill groups a previous daemon left behind, and take ownership of the note.
  *
  * Skipped entirely while the daemon named in the note is still alive: it owns
- * those agents and is presumably using them. Only a note whose owner is gone
+ * those groups and is presumably using them. Only a note whose owner is gone
  * describes orphans.
  */
-export function reapOrphanedAgents(): number {
+export function reapOrphanedGroups(): number {
   const record = read()
   if (!record) {
     write()
@@ -127,7 +115,7 @@ export function reapOrphanedAgents(): number {
   if (record.daemonPid !== process.pid && running(record.daemonPid)) return 0
   let killed = 0
   for (const { pid, command } of record.children ?? []) {
-    if (pid === process.pid || !isStillTheAgent(pid, command)) continue
+    if (pid === process.pid || !isStillTheProcess(pid, command)) continue
     killGroup(pid)
     killed++
   }
@@ -136,7 +124,7 @@ export function reapOrphanedAgents(): number {
 }
 
 /** For a daemon shutting down cleanly: the note describes nothing any more. */
-export function clearAgentRecord(): void {
+export function clearGroupRecord(): void {
   live.clear()
   try {
     rmSync(FILE, { force: true })

@@ -83,11 +83,11 @@ test('tabs: the App first while attached, open canvases by age, a stale active t
     createdAt,
   })
   const canvases = [c('b', 2), c('a', 1), c('c', 3, true)]
-  const model = tabsModel('http://localhost:5173', { canvases, activeTab: 'c'.repeat(12) as CanvasId, agentHasTools: false })
+  const model = tabsModel(true, { canvases, activeTab: 'c'.repeat(12) as CanvasId, agentHasTools: false })
   assert.deepEqual(model.tabs.map((t) => t.label), ['App', 'a', 'b'])
   assert.equal(model.active, 'app')
   assert.deepEqual(model.all.map((x) => x.name), ['c', 'b', 'a'])
-  const noApp = tabsModel(undefined, { canvases, activeTab: 'b'.repeat(12) as CanvasId, agentHasTools: false })
+  const noApp = tabsModel(false, { canvases, activeTab: 'b'.repeat(12) as CanvasId, agentHasTools: false })
   assert.deepEqual(noApp.tabs.map((t) => [t.label, t.closable]), [
     ['a', true],
     ['b', true],

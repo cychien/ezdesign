@@ -45,6 +45,8 @@ import { LIBRARY_TEST_IDS } from './library/names.js'
 import { chooseLibraryAttachments } from './library/picker.js'
 import { videoDigests } from './video-digest/runner.js'
 import type { DigestFailure } from '../protocol.js'
+import type { DevServerWire } from '../dev-server/wire.js'
+import { installDevServerPanel } from './dev-server-panel.js'
 import {
   type CanvasEventWire,
   type CanvasSnapshotWire,
@@ -204,6 +206,8 @@ interface SnapshotWire {
   canExplore?: true
   designHarness?: boolean
   designEffort?: DesignEffort
+  devServer: DevServerWire
+  appTab: boolean
 }
 
 interface ChatWire {
@@ -836,8 +840,10 @@ function paintAnnotateMode(): void {
   canvasUi?.setAnnotating(annotateMode)
 }
 
+const devServerPanel = installDevServerPanel(API)
+
 const sideHead = h('div', 'ez-side-head')
-sideHead.append(headRow, target, deviceRow, annotateGroup)
+sideHead.append(headRow, target, devServerPanel.strip, deviceRow, annotateGroup)
 
 /** Session-wide state, over every view: the sidebar may be folded away or under the library. */
 const statusPill = h('div', 'ez-status')
@@ -994,7 +1000,7 @@ const stage = h('div', 'ez-stage')
  *  wider than the stage overflows in the one direction the stage can scroll to
  *  reach, instead of being centred half-way out of view. */
 const grid = h('div', 'ez-grid')
-stage.append(grid)
+stage.append(devServerPanel.card, grid)
 
 /** The variant strip: what the agent produced, across the bottom of the stage.
  *
@@ -3369,6 +3375,7 @@ function canvasPorts(): Parameters<typeof installCanvas>[0] {
     api,
     onTabShown: (tab) => {
       deviceRow.hidden = stagedApp === null || tab !== 'app'
+      paintDevServer()
       if (tab === 'app') paintFrames()
       paintPage()
       paintPickPill()
@@ -4469,6 +4476,11 @@ function paintAnnotateAvailability(): void {
   for (const { btn } of annotateBtns) btn.disabled = off
 }
 
+function paintDevServer(): void {
+  if (!snapshot) return
+  devServerPanel.update(snapshot.devServer, { shown: stagedApp !== null, onAppTab: canvasUi?.activeTab === 'app' })
+}
+
 function render(): void {
   if (!snapshot) return
   const s = snapshot
@@ -4476,6 +4488,7 @@ function render(): void {
   stageApp(s.app ?? null)
   canvasUi ??= installCanvas(canvasPorts())
   canvasUi.render(s)
+  paintDevServer()
   paintPage()
 
   const ended = s.state === 'ended'
