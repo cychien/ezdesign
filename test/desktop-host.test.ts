@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, test } from 'node:test'
-import { DaemonWorld, FAKE_AGENT, PKG_VERSION, waitFor } from './helpers/daemon.js'
+import { DaemonWorld, FAKE_AGENT, PKG_VERSION, sessionKey, waitFor } from './helpers/daemon.js'
 
 const world = await DaemonWorld.create()
 writeFileSync(join(world.dataDir, 'preferences.json'), JSON.stringify({ lastAgent: FAKE_AGENT }))
@@ -130,4 +130,30 @@ test('app quit leaves an agent the CLI connected', async () => {
   assert.equal((await desktop('quit', {})).status, 200)
   const state = (await world.state(opened.port)) as { acp?: { agent: string } }
   assert.equal(state.acp?.agent, FAKE_AGENT)
+})
+
+// Last: it replaces the daemon.
+test('app quit disconnects the agent its window connected, even after a daemon restart', async () => {
+  const dir = project()
+  const opened = await world.openSession(daemon.port, { project: dir, agent: FAKE_AGENT })
+  const idle = async (port: number) =>
+    waitFor(async () => ((await world.state(port)) as { acp?: { state: string } }).acp?.state === 'idle', 'the agent to connect')
+  await idle(opened.port)
+  const file = join(world.dataDir, 'sessions', sessionKey(dir), 'session.json')
+  await world.stopDaemon(daemon.port)
+  writeFileSync(file, JSON.stringify({ ...JSON.parse(readFileSync(file, 'utf8')), agentBy: 'desktop' }))
+
+  world.spawnDaemon()
+  const next = await world.liveDaemon()
+  const found = await world.control(next.port, `/control/sessions/find?project=${encodeURIComponent(dir)}`)
+  const { port } = (await found.json()) as { port: number }
+  await idle(port)
+  const quit = await fetch(`http://127.0.0.1:${next.port}/control/desktop/quit`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-ezdesign-desktop': '1' },
+    body: '{}',
+  })
+  assert.equal(quit.status, 200)
+  assert.equal(((await world.state(port)) as { acp?: unknown }).acp, undefined)
+  assert.equal((JSON.parse(readFileSync(file, 'utf8')) as { agent?: string }).agent, undefined, 'and stays disconnected')
 })

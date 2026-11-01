@@ -112,6 +112,7 @@ test('a disconnected agent stays disconnected through a restart, until a shell c
     state: string
   }
   assert.deepEqual([persisted.state, persisted.agent], ['active', undefined])
+  assert.equal('agentBy' in persisted, false)
 
   await world.stopDaemon(live.port)
   world.spawnDaemon()
