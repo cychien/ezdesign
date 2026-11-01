@@ -222,3 +222,24 @@
   margin-top: 36px;
   max-width: 520px;
 }
+
+.ez-home-dot {
+  flex-shrink: 0;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--ink-ghost);
+}
+
+[data-phase='running'] > .ez-home-dot {
+  background: oklch(68% 0.16 150);
+}
+
+[data-phase='starting'] > .ez-home-dot {
+  background: oklch(78% 0.14 80);
+}
+
+[data-phase='crashed'] > .ez-home-dot,
+[data-phase='blocked'] > .ez-home-dot {
+  background: oklch(60% 0.18 25);
+}

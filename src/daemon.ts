@@ -33,7 +33,6 @@ import {
   SHELL_RETURN_MS,
   UPDATE_CHECK_TTL_MS,
   URL_PREFIX,
-  HOME_PATH,
   controlPortRange,
   libraryHome,
   libraryDir,
@@ -52,7 +51,7 @@ import { findExecutable } from './login-env.js'
 import { scrubRunAsNode, selfNodeCommandLine } from './self-node.js'
 import { ProjectBook } from './projects/book.js'
 import { ProjectHub } from './projects/hub.js'
-import { homePageRouter, homeProjectsRouter, projectsApiRouter } from './projects/routes.js'
+import { homePageRouter, projectsApiRouter } from './projects/routes.js'
 import { projectRoot } from './project-root.js'
 import {
   attachmentIds,
@@ -1852,13 +1851,6 @@ class SessionRuntime implements ProjectRuntime {
     api.use(announcementApiRouter())
     api.use(devServerApiRouter(this.devServer))
     api.use(
-      projectsApiRouter(this.services.projects, {
-        current: this.project,
-        version: this.version,
-        origin: () => this.shellOrigin,
-      }),
-    )
-    api.use(
       accountApiRouter({ account: this.account, callbackUrl: () => `${this.shellOrigin}${ACCOUNT_CALLBACK_PATH}` }),
     )
 
@@ -2656,7 +2648,6 @@ export async function daemonMain(version: string, opts: DaemonOptions = {}): Pro
     sessions: { list: () => sessions.list(), open: (req) => sessions.open(req) },
     book,
     version,
-    homeUrl: () => `${controlOrigin()}${HOME_PATH}`,
     defaultAgent: () => rememberedLastAgent() ?? AGENT_PROFILES[0]!.command,
     projectRoot,
     restored: () => restored,
@@ -2708,7 +2699,6 @@ export async function daemonMain(version: string, opts: DaemonOptions = {}): Pro
 
   control.use(homePageRouter({ version, distDir, icon: SHELL_ICON }))
   control.use(`${URL_PREFIX}/api`, projectsApiRouter(projects, { version, origin: controlOrigin }))
-  control.use(`${URL_PREFIX}/api`, homeProjectsRouter(projects, { version, origin: controlOrigin }))
 
   // Registered before sessions are restored, so a CLI that finds this daemon
   // straight away is held here until its sessions exist rather than told

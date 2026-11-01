@@ -26,7 +26,6 @@ export interface ProjectHubDeps<R extends HubRuntime> {
   sessions: HubSessions<R>
   book: ProjectBook
   version: string
-  homeUrl(): string
   defaultAgent(): string
   projectRoot(path: string): string
   restored(): Promise<void>
@@ -40,13 +39,13 @@ export class ProjectHub<R extends HubRuntime> {
 
   constructor(private readonly deps: ProjectHubDeps<R>) {}
 
-  list(current?: string): ProjectListWire {
+  list(): ProjectListWire {
     const runtimes = new Map(this.deps.sessions.list().map((r) => [r.project, r]))
     const projects: ProjectWire[] = this.deps.book.list().map((row) => {
       const runtime = runtimes.get(row.project)
       return { ...row, session: runtime ? { devServer: runtime.devServer.summary() } : null }
     })
-    return { version: this.deps.version, projects, home: this.deps.homeUrl(), ...(current ? { current } : {}) }
+    return { version: this.deps.version, projects }
   }
 
   add(path: string): ProjectWire | { error: string } {
