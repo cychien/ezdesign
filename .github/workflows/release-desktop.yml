@@ -31,6 +31,18 @@ jobs:
       - name: Pick signing
         id: signing
         run: echo "developer-id=${{ secrets.MAC_CERT_P12_BASE64 != '' }}" >> "$GITHUB_OUTPUT"
+      # Opened before the build: electron-builder uploads its files at once, and
+      # left to open the release itself, the uploads race to create it and all
+      # but one fail. A version already released stops the run here.
+      - name: Open a draft release
+        id: release
+        run: |
+          version=$(node -p "require('./desktop/package.json').version")
+          echo "tag=desktop-v$version" >> "$GITHUB_OUTPUT"
+          gh release create "desktop-v$version" --draft --target "$GITHUB_SHA" --title "ezdesign $version" \
+            --notes "ezdesign for Mac $version: ezdesign-arm64.dmg for Apple silicon, ezdesign-x64.dmg for Intel. Opening it the first time: https://github.com/cychien/ezdesign#or-use-the-mac-app"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Write the notarization key
         if: steps.signing.outputs.developer-id == 'true'
         run: echo "$APPLE_API_KEY_P8" > "$RUNNER_TEMP/notary.p8"
@@ -52,3 +64,16 @@ jobs:
         run: pnpm --filter @cychien/ezdesign-desktop run release:adhoc
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # The site's download links and every app's update check read the latest
+      # release, so it is published only whole.
+      - name: Publish the release
+        run: |
+          gh release view "$TAG" --json assets --jq '.assets[].name' > "$RUNNER_TEMP/assets"
+          for name in ezdesign-arm64.dmg ezdesign-x64.dmg latest-mac.yml; do
+            grep -qx "$name" "$RUNNER_TEMP/assets" || { echo "missing $name"; exit 1; }
+          done
+          [ "$(grep -c -- '-mac\.zip$' "$RUNNER_TEMP/assets")" = 2 ] || { echo "missing a zip"; exit 1; }
+          gh release edit "$TAG" --draft=false --latest
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.release.outputs.tag }}

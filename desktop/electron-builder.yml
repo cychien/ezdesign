@@ -38,5 +38,6 @@ publish:
   provider: github
   owner: cychien
   repo: ezdesign
-  releaseType: release
+  # The workflow opens the draft first and publishes it once every file is in.
+  releaseType: draft
   tagNamePrefix: desktop-v
