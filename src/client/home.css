@@ -251,6 +251,7 @@ html:has(.ez-side) body {
 
 .ez-empty-lead {
   max-width: 340px;
+  text-wrap: balance;
   margin: 6px 0 20px;
   font-size: 13.5px;
   line-height: 1.55;
