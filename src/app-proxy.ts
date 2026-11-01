@@ -33,14 +33,17 @@ export const UNREACHABLE_HEADER = 'x-ezdesign-unreachable'
  *  once the server is back, so restarting it is all the user has to do. */
 const unreachable = (origin: string) => `<!doctype html><meta charset="utf-8"><title>連不上 App</title>
 <style>
-  body { margin: 0; background: #f9f8f5;
-    color: #1c1b19; font: 13.5px/1.55 -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans TC', sans-serif; }
+  /* The shell's dev-server prompt, in its tokens' values: this page is served without the shell's CSS. */
+  body { margin: 0; background: #faf9f6;
+    color: #171717; font: 13.5px/1.55 -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans TC', sans-serif; }
   main { display: grid; width: min(520px, calc(100% - 48px)); margin: max(48px, 12vh) auto 48px; }
-  h1 { margin: 0; font-size: 16px; font-weight: 600; }
-  p { margin: 6px 0 18px; color: #6d6a63; }
+  h1 { margin: 0; font-size: 16px; font-weight: 600; line-height: 1.4; }
+  p { margin: 6px 0 18px; color: #676767; }
   code { font: 12.5px ui-monospace, SFMono-Regular, Menlo, monospace; }
-  button { justify-self: start; height: 32px; padding: 0 14px; border: none; border-radius: 8px; background: #1c1b19;
-    color: #fff; font: inherit; font-weight: 600; cursor: pointer; }
+  button { justify-self: start; height: 32px; padding: 0 14px; border: 1px solid #171717; border-radius: 7px;
+    background: #171717; color: #fff; box-shadow: inset 0 1px 0 0 rgb(255 255 255 / 0.14);
+    font: 600 13px -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans TC', sans-serif; cursor: pointer; }
+  button:hover { opacity: 0.88; }
 </style>
 <main>
 <h1>連不上 App</h1>
