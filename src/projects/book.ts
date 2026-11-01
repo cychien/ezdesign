@@ -64,21 +64,22 @@ export class ProjectBook {
 const isHidden = (entry: BookEntry) =>
   entry.hiddenAt !== undefined && entry.hiddenAt >= Math.max(entry.usedAt ?? 0, entry.addedAt ?? 0)
 
+const byName = new Intl.Collator('en', { sensitivity: 'base', numeric: true })
+
+/** By name, so a row stays put however often its project is opened. */
 export function mergeProjects(
   entries: ReadonlyMap<string, BookEntry>,
   sessions: ReadonlyMap<string, { createdAt: number }>,
   exists: (project: string) => boolean,
 ): ListedProject[] {
-  const rows: (ListedProject & { order: number })[] = []
+  const rows: ListedProject[] = []
   for (const project of new Set([...entries.keys(), ...sessions.keys()])) {
     const entry = entries.get(project) ?? {}
     if (isHidden(entry)) continue
     const usedAt = entry.usedAt ?? entry.addedAt ?? sessions.get(project)?.createdAt ?? null
-    rows.push({ project, name: basename(project), usedAt, exists: exists(project), order: usedAt ?? 0 })
+    rows.push({ project, name: basename(project), usedAt, exists: exists(project) })
   }
-  return rows
-    .sort((a, b) => b.order - a.order || a.project.localeCompare(b.project))
-    .map(({ order: _, ...row }) => row)
+  return rows.sort((a, b) => byName.compare(a.name, b.name) || byName.compare(a.project, b.project))
 }
 
 function readBook(file: string): Map<string, BookEntry> {
