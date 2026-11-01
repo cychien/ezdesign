@@ -151,6 +151,7 @@ test('CV-p2-origin-handoff: another project taking the origin leaves the first i
   assert.equal(held.conversation.filter((e) => e.role === 'user').length, 1)
   const shell = await fetch(`http://127.0.0.1:${p.port}/__ezdesign/shell`)
   assert.equal(shell.status, 200)
+  assert.match(await shell.text(), /data-app=""/, 'a shell served with no app mounts no preview')
   const root = await fetch(`http://127.0.0.1:${p.port}/`, { headers: { accept: 'text/html' } })
   assert.equal(root.status, 404)
   assert.doesNotMatch(await root.text(), /the shared app/)
@@ -166,6 +167,8 @@ test('CV-p2-origin-handoff: another project taking the origin leaves the first i
   assert.equal(preview.status, 200)
   assert.match(await preview.text(), /No dev server is attached/)
   assert.equal((await state(world, q.port)).app, app.origin)
+  const shellWithApp = await (await fetch(`http://127.0.0.1:${q.port}/__ezdesign/shell`)).text()
+  assert.ok(shellWithApp.includes(`data-app="${app.origin}"`), 'the shell knows its app before any snapshot')
   sse.destroy()
 })
 
