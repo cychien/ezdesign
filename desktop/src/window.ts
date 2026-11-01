@@ -2,7 +2,7 @@ import { BaseWindow, type IpcMainEvent, type IpcMainInvokeEvent, WebContentsView
 import { DESKTOP_IPC, type DesktopLayout } from '../../src/desktop-wire.js'
 import type { ProjectOpenedWire } from '../../src/projects/wire.js'
 import { type KnownOrigins, type NavigationVerdict, judgeNavigation, judgeWindowOpen } from './navigation.js'
-import { PANE_INSET, PANE_RADIUS, SIDEBAR_WIDTH, TRAFFIC_LIGHTS, WINDOW_GROUND } from './title-bar.js'
+import { FIRST_LOAD_WAIT_MS, PANE_GROUND, PANE_INSET, PANE_RADIUS, SIDEBAR_WIDTH, TRAFFIC_LIGHTS, WINDOW_GROUND } from './title-bar.js'
 
 export interface ProjectWindowOptions {
   preload: string
@@ -26,6 +26,8 @@ export class ProjectWindow {
   private readonly projects = new Map<string, ProjectView>()
   private pane: WebContentsView
   private shownProject: string | null = null
+  /** The project last asked for: a slower load finishing later does not take the pane back. */
+  private wantedProject: string | null = null
   private sidebarOpen = true
   private homeUrl: string
 
@@ -55,7 +57,7 @@ export class ProjectWindow {
     ipcMain.handle(DESKTOP_IPC.pickFolder, (event) => (this.fromDaemonPageTopFrame(event) ? this.pickFolder() : null))
     ipcMain.handle(DESKTOP_IPC.layoutNow, () => this.currentLayout())
     ipcMain.on(DESKTOP_IPC.showProject, (event, opened: ProjectOpenedWire) => {
-      if (this.fromDaemonPageTopFrame(event) && isSessionUrl(opened?.shellUrl)) this.showProject(opened)
+      if (this.fromDaemonPageTopFrame(event) && isSessionUrl(opened?.shellUrl)) void this.showProject(opened)
     })
     ipcMain.on(DESKTOP_IPC.toggleSidebar, (event) => {
       if (this.fromDaemonPageTopFrame(event)) this.toggleSidebar()
@@ -71,18 +73,24 @@ export class ProjectWindow {
     this.window.on('closed', listener)
   }
 
-  showProject(opened: ProjectOpenedWire): void {
+  /** A project opened for the first time stays off screen until its page has
+   *  loaded, so the pane goes from one painted page to the next. */
+  async showProject(opened: ProjectOpenedWire): Promise<void> {
+    this.wantedProject = opened.project
     const origin = new URL(opened.shellUrl).origin
     let entry = this.projects.get(opened.project)
+    let loading: Promise<void> | null = null
     if (!entry) {
-      const view = this.makeView()
-      void view.webContents.loadURL(opened.shellUrl)
-      entry = { view, origin }
+      entry = { view: this.makeView(), origin }
       this.projects.set(opened.project, entry)
+      loading = loaded(entry.view)
+      void entry.view.webContents.loadURL(opened.shellUrl)
     } else if (entry.origin !== origin) {
       entry.origin = origin
       void entry.view.webContents.loadURL(opened.shellUrl)
     }
+    if (loading) await Promise.race([loading, new Promise((r) => setTimeout(r, FIRST_LOAD_WAIT_MS))])
+    if (this.wantedProject !== opened.project) return
     this.shownProject = opened.project
     this.reveal(entry.view)
   }
@@ -180,6 +188,7 @@ export class ProjectWindow {
     const view = new WebContentsView({
       webPreferences: { preload: this.opts.preload, sandbox: true, contextIsolation: true, nodeIntegration: false },
     })
+    view.setBackgroundColor(PANE_GROUND)
     const contents = view.webContents
     contents.on('will-navigate', (event) => {
       this.apply(judgeNavigation(contents.getURL(), event.url, this.known()), () => event.preventDefault())
@@ -207,4 +216,11 @@ export class ProjectWindow {
 function isSessionUrl(url: unknown): url is string {
   const parsed = typeof url === 'string' ? URL.parse(url) : null
   return !!parsed && parsed.protocol === 'http:' && parsed.hostname === '127.0.0.1'
+}
+
+function loaded(view: WebContentsView): Promise<void> {
+  return new Promise((resolve) => {
+    view.webContents.once('did-finish-load', () => resolve())
+    view.webContents.once('did-fail-load', () => resolve())
+  })
 }

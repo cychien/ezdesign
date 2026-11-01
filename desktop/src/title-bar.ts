@@ -8,3 +8,7 @@ export const PANE_INSET = 8
 export const PANE_RADIUS = 10
 /** Before the sidebar page paints: the `--side-ground` that page draws. */
 export const WINDOW_GROUND = '#ebe9e2'
+/** Before a pane's page paints: the shell's --paper. */
+export const PANE_GROUND = '#faf9f6'
+/** How long a project just opened may take to load before it is shown anyway. */
+export const FIRST_LOAD_WAIT_MS = 1500
