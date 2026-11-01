@@ -169,9 +169,24 @@ html:has(.ez-side) body::after {
   background: oklch(0% 0 0 / 0.045);
 }
 
+/* The current row darkens without widening: SF's grade axis for Latin, and for
+   CJK, full-width at any weight, a semibold face. Later faces are tried first. */
+@font-face {
+  font-family: 'ez-cjk-semibold';
+  src: local('PingFangSC-Semibold');
+  unicode-range: U+2E80-9FFF, U+F900-FAFF, U+FE30-FE4F, U+FF00-FFEF;
+}
+
+@font-face {
+  font-family: 'ez-cjk-semibold';
+  src: local('PingFangTC-Semibold');
+  unicode-range: U+2E80-9FFF, U+F900-FAFF, U+FE30-FE4F, U+FF00-FFEF;
+}
+
 .ez-side-row[data-current] .ez-side-open {
   background: oklch(0% 0 0 / 0.085);
-  font-weight: 600;
+  font-family: -apple-system, BlinkMacSystemFont, 'ez-cjk-semibold', sans-serif;
+  font-variation-settings: 'GRAD' 600;
 }
 
 .ez-side-row[data-current] .ez-side-open > svg {
