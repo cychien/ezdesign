@@ -125,6 +125,11 @@ function bootSidebar(root: HTMLElement, desktop: DesktopHost, api: string, versi
     pick.title = project.exists ? project.project : `${project.project}（資料夾不見了）`
     pick.disabled = !project.exists
     pick.append(icon(Folder01Icon as IconNode, 15), h('span', 'ez-side-name', project.name))
+    if (project.session?.agentWorking) {
+      const working = h('span', 'ez-side-working')
+      working.title = 'Agent 工作中'
+      pick.append(working)
+    }
     pick.onclick = () => open(() => client.go(project.project))
     item.append(pick)
 
