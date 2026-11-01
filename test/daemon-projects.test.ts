@@ -20,7 +20,7 @@ interface ProjectRow {
   name: string
   usedAt: number | null
   exists: boolean
-  session: { devServer: { phase: string; origin?: string } } | null
+  session: { devServer: { phase: string; origin?: string }; agentWorking: boolean } | null
 }
 interface ProjectList {
   version: string
@@ -102,6 +102,21 @@ test('a project whose agent the user disconnected opens without one, until they 
   assert.equal(await agent(), undefined)
   assert.equal(await open(), port)
   assert.equal(await agent(), undefined, 'reopening respects the disconnect')
+})
+
+test('the list says while a project’s agent is taking a turn', async () => {
+  const dir = project()
+  await post(API, { path: dir })
+  const { shellUrl } = (await (await post(`${API}/open`, { project: dir, host: 'browser' })).json()) as { shellUrl: string }
+  const port = Number(new URL(shellUrl).port)
+  await waitFor(async () => ((await world.state(port)) as { acp?: { state: string } }).acp?.state === 'idle', 'the agent to connect')
+  const working = async () => (await list()).projects.find((p) => p.project === dir)?.session?.agentWorking
+  assert.equal(await working(), false)
+
+  await world.postFeedback(port, 'SLOW')
+  await waitFor(async () => (await working()) === true, 'the turn to show')
+  await post(`http://127.0.0.1:${port}/__ezdesign/api/acp/cancel`, {})
+  await waitFor(async () => (await working()) === false, 'the stopped turn to show')
 })
 
 test('only listed projects open', async () => {

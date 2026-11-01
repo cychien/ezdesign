@@ -1064,7 +1064,18 @@ class SessionRuntime implements ProjectRuntime {
   broadcast(): void {
     const data = `data: ${JSON.stringify(this.snapshot())}\n\n`
     for (const res of this.sseClients) res.write(data)
+    if (this.agentWorking !== this.listedAgentWorking) {
+      this.listedAgentWorking = this.agentWorking
+      this.services.projects.changed()
+    }
   }
+
+  get agentWorking(): boolean {
+    return this.agentBusy || !!this.acp?.snapshot().cancelling
+  }
+
+  /** What the project list last heard, so it hears of a turn only as it starts and ends. */
+  private listedAgentWorking = false
 
   /** The workspace wrote, or a frame's file was found changed. Shell clients get
    *  the one canvas that changed as a named event - the snapshot never carries
