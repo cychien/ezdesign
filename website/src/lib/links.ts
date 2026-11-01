@@ -4,6 +4,7 @@ export const LINKS = {
   github: REPO,
   docs: `${REPO}#readme`,
   releases: `${REPO}/releases`,
+  macApp: `${REPO}#or-use-the-mac-app`,
   issues: `${REPO}/issues`,
   skill: `${REPO}/tree/main/skills/ezdesign`,
   npm: 'https://www.npmjs.com/package/@cychien/ezdesign',
@@ -13,7 +14,6 @@ export const LINKS = {
 export const DOWNLOAD = {
   arm64: `${REPO}/releases/latest/download/ezdesign-arm64.dmg`,
   x64: `${REPO}/releases/latest/download/ezdesign-x64.dmg`,
-  firstOpen: `${REPO}#or-use-the-mac-app`,
 }
 
 export const INSTALL = 'npx -y @cychien/ezdesign@latest'
