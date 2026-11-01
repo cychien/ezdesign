@@ -1467,11 +1467,6 @@ body.ez-arranging .ez-frame {
 .ez-devserver-card {
   width: min(520px, calc(100% - 48px));
   margin: max(48px, 12vh) auto 48px;
-  padding: 22px 24px;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  background: var(--panel);
-  box-shadow: 0 1px 3px oklch(0% 0 0 / 0.05);
   font-size: 13.5px;
   line-height: 1.55;
 }
@@ -1517,6 +1512,7 @@ body.ez-arranging .ez-frame {
 
 .ez-devserver-line {
   font-size: 13px;
+  font-weight: 600;
   color: var(--foreground);
   word-break: break-all;
 }
