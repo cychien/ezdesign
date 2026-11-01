@@ -203,8 +203,8 @@ export function installDevServerPanel(api: string): DevServerPanel {
     const command = 'command' in s ? s.command : undefined
 
     if (editing && s.phase !== 'starting' && s.phase !== 'needs-command') {
-      title.textContent = 'Dev server 的啟動指令'
-      body.push(h('p', 'ez-devserver-text', '指令會在專案資料夾裡用 shell 執行，之後每次都用它啟動。'), commandForm(command, true))
+      title.textContent = 'dev server 的啟動指令'
+      body.push(commandForm(command, true))
     } else {
       switch (s.phase) {
         case 'idle':
@@ -217,7 +217,6 @@ export function installDevServerPanel(api: string): DevServerPanel {
           } else {
             title.textContent = '正在偵測啟動指令'
             body.push(h('p', 'ez-devserver-asking', 'agent 偵測中…'))
-            edit('自己輸入指令')
           }
           break
         case 'starting': {
@@ -235,11 +234,11 @@ export function installDevServerPanel(api: string): DevServerPanel {
           if (offer?.state === 'asking' && !editing) {
             title.textContent = '正在偵測啟動指令'
             body.push(proposalNote(offer))
-            edit('自己輸入指令')
             break
           }
           title.textContent = '需要一個啟動指令'
           if (offer?.state === 'proposed' && !editing) {
+            title.textContent = '啟動 dev server'
             body.push(proposalBlock(offer))
             const run = button('ez-devserver-go', '執行', PlayIcon as IconNode)
             run.disabled = busy

@@ -74,7 +74,7 @@ function emptyPane(desktop: DesktopHost, api: string, version: string): HTMLElem
   page.append(
     mark,
     h('h1', 'ez-empty-title', '選一個專案開始設計'),
-    h('p', 'ez-empty-lead', '從左邊選一個專案，或加入一個新的資料夾。'),
+    h('p', 'ez-empty-lead', '從左邊選專案，或加入新專案'),
     add,
     error,
   )
