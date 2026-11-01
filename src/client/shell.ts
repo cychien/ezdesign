@@ -848,7 +848,7 @@ function paintAnnotateMode(): void {
 const devServerPanel = installDevServerPanel(API)
 
 const sideHead = h('div', 'ez-side-head')
-sideHead.append(headRow, target, devServerPanel.strip, deviceRow, annotateGroup)
+sideHead.append(headRow, target, deviceRow, annotateGroup)
 
 /** Session-wide state, over every view: the sidebar may be folded away or under the library. */
 const statusPill = h('div', 'ez-status')
