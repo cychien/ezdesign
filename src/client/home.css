@@ -31,25 +31,6 @@
   margin-top: 24px;
 }
 
-.ez-home-input {
-  flex: 1;
-  min-width: 0;
-  height: 36px;
-  padding: 0 12px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--panel);
-  color: var(--foreground);
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 13px;
-}
-
-.ez-home-input:focus-visible {
-  outline: none;
-  border-color: var(--ring);
-  box-shadow: 0 0 0 3px var(--ring-halo);
-}
-
 .ez-home-add-go {
   height: 36px;
   padding: 0 16px;

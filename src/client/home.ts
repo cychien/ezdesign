@@ -57,6 +57,7 @@ function appOnlyNote(): HTMLElement {
 
 export function bootHome(root: HTMLElement, api: string, version: string): void {
   if (host.kind !== 'desktop') return void root.replaceChildren(appOnlyNote())
+  const desktop = host
   const client = projectsClient(api, version)
   let list: ProjectListWire | null = null
   let opening: string | null = null
@@ -73,44 +74,13 @@ export function bootHome(root: HTMLElement, api: string, version: string): void 
   const title = h('h1', 'ez-home-title', '專案')
   const lead = h('p', 'ez-home-lead', '選一個專案開始設計，ezdesign 會幫你把它的 dev server 跑起來。')
 
-  const form = h('form', 'ez-home-add')
-  form.dataset.testid = HOME_TEST_IDS.add
-  const input = h('input', 'ez-home-input')
-  input.name = 'path'
-  input.placeholder = '/Users/you/code/my-app'
-  input.spellcheck = false
-  input.autocomplete = 'off'
-  input.setAttribute('aria-label', '專案資料夾的完整路徑')
-  const add = h('button', 'ez-home-add-go', '加入專案')
-  add.type = 'submit'
-  form.append(input, add)
-  form.onsubmit = (e) => {
-    e.preventDefault()
-    const path = input.value.trim()
-    if (!path) return input.focus()
-    add.disabled = true
-    client.add(path).then(
-      () => {
-        input.value = ''
-        error = null
-        paint()
-      },
-      (e: Error) => {
-        error = e.message
-        paint()
-      },
-    ).finally(() => (add.disabled = false))
-  }
-
-  const pickFolder = host.pickFolder
-  if (pickFolder) {
-    const pick = h('button', 'ez-home-add-go ez-home-pick')
-    pick.type = 'button'
-    pick.append(icon(FolderAddIcon as IconNode, 16), h('span', undefined, '加入資料夾…'))
-    pick.onclick = () => void pickFolder().then((path) => path && addAndOpen(path))
-    form.replaceChildren(pick, h('span', 'ez-home-hint', '或把專案資料夾拖進這個視窗'))
-    form.onsubmit = (e) => e.preventDefault()
-  }
+  const add = h('div', 'ez-home-add')
+  add.dataset.testid = HOME_TEST_IDS.add
+  const pick = h('button', 'ez-home-add-go ez-home-pick')
+  pick.type = 'button'
+  pick.append(icon(FolderAddIcon as IconNode, 16), h('span', undefined, '加入資料夾…'))
+  pick.onclick = () => void desktop.pickFolder().then((path) => path && addAndOpen(path))
+  add.append(pick, h('span', 'ez-home-hint', '或把專案資料夾拖進這個視窗'))
 
   function addAndOpen(path: string): void {
     client.add(path).then(
@@ -122,30 +92,27 @@ export function bootHome(root: HTMLElement, api: string, version: string): void 
     )
   }
 
-  const pathForFile = host.pathForFile
-  if (pathForFile) {
-    document.addEventListener('dragover', (e) => {
-      e.preventDefault()
-      page.toggleAttribute('data-dragging', true)
-    })
-    document.addEventListener('dragleave', (e) => {
-      if (!e.relatedTarget) page.toggleAttribute('data-dragging', false)
-    })
-    document.addEventListener('drop', (e) => {
-      e.preventDefault()
-      page.toggleAttribute('data-dragging', false)
-      const file = e.dataTransfer?.files[0]
-      const path = file ? pathForFile(file) : ''
-      if (path) addAndOpen(path)
-    })
-  }
+  document.addEventListener('dragover', (e) => {
+    e.preventDefault()
+    page.toggleAttribute('data-dragging', true)
+  })
+  document.addEventListener('dragleave', (e) => {
+    if (!e.relatedTarget) page.toggleAttribute('data-dragging', false)
+  })
+  document.addEventListener('drop', (e) => {
+    e.preventDefault()
+    page.toggleAttribute('data-dragging', false)
+    const file = e.dataTransfer?.files[0]
+    const path = file ? desktop.pathForFile(file) : ''
+    if (path) addAndOpen(path)
+  })
 
   const errorLine = h('p', 'ez-home-error')
   errorLine.setAttribute('role', 'alert')
   const rows = h('ul', 'ez-home-list')
   rows.dataset.testid = HOME_TEST_IDS.list
   rows.setAttribute('aria-label', '專案')
-  page.append(head, title, lead, form, errorLine, rows)
+  page.append(head, title, lead, add, errorLine, rows)
   root.replaceChildren(page)
 
   function openProject(project: string): void {
@@ -215,13 +182,7 @@ export function bootHome(root: HTMLElement, api: string, version: string): void 
       const empty = h('li', 'ez-home-empty')
       empty.append(
         h('strong', undefined, '還沒有專案'),
-        h(
-          'span',
-          undefined,
-          host.pickFolder
-            ? '按「加入資料夾…」或把專案資料夾拖進這個視窗。'
-            : '在上面貼上專案資料夾的路徑，或在專案資料夾裡執行 npx -y @cychien/ezdesign。',
-        ),
+        h('span', undefined, '按「加入資料夾…」或把專案資料夾拖進這個視窗。'),
       )
       rows.replaceChildren(empty)
       return
