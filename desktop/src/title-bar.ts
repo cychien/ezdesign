@@ -7,4 +7,4 @@ export const SIDEBAR_WIDTH = 248
 export const PANE_INSET = 8
 export const PANE_RADIUS = 10
 /** Before the sidebar page paints: the `--side-ground` that page draws. */
-export const WINDOW_GROUND = '#e3dfd4'
+export const WINDOW_GROUND = '#ebe9e2'
