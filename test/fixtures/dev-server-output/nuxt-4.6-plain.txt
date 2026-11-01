@@ -1,0 +1,22 @@
+
+> dev
+> nuxt dev
+
+● Starting Nuxt...
+● Nuxt 4.6.3 (with Nitro 2.13.5, Vite 8.3.5 and Vue 3.5.44)
+
+  ➜ Local:    http://localhost:3000/
+  ➜ Network:  use --host to expose
+
+● Setting up modules
+  ➜ DevTools: press Shift + Option + D in the browser (v3.4.4)
+
+● Preparing app
+● Generating types
+● Bundling app
+✔ Vite client built in 17ms
+✔ Vite server built in 9ms
+● Building server
+[nitro] ✔ Nuxt Nitro server built in 353ms
+◆ Ready in 883ms  → http://localhost:3000/
+  config 74ms · modules 64ms · app 140ms · types 110ms · bundle 79ms · server 416ms
