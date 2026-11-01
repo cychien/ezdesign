@@ -227,8 +227,8 @@ export function installDevServerPanel(api: string, opts: { openCanvas(): void })
             start('啟動')
             edit()
           } else {
-            body.push(h('p', 'ez-devserver-text', 'ezdesign 判斷不出啟動指令，會請 agent 看看這個專案，你確認之後才會執行。'))
-            start('啟動')
+            title.textContent = '正在偵測啟動指令'
+            body.push(h('p', 'ez-devserver-asking', '正在找出這個專案的啟動指令…'))
             edit('自己輸入指令')
           }
           break
@@ -243,9 +243,15 @@ export function installDevServerPanel(api: string, opts: { openCanvas(): void })
           break
         }
         case 'needs-command': {
+          const offer = s.proposal
+          if (offer?.state === 'asking' && !editing) {
+            title.textContent = '正在偵測啟動指令'
+            body.push(proposalNote(offer))
+            edit('自己輸入指令')
+            break
+          }
           title.textContent = '需要一個啟動指令'
           body.push(h('p', 'ez-devserver-text', REASON[s.reason]))
-          const offer = s.proposal
           if (offer?.state === 'proposed' && !editing) {
             body.push(proposalBlock(offer))
             const run = button('ez-devserver-go', '執行', PlayIcon as IconNode)
@@ -314,8 +320,15 @@ export function installDevServerPanel(api: string, opts: { openCanvas(): void })
 
   let lastPage = { shown: false, onAppTab: false }
 
+  /** The rules found no command: ask the agent at once rather than wait for a click. */
+  let detecting = false
+
   function paint(s: DevServerWire, page: { shown: boolean; onAppTab: boolean }): void {
     const showCard = page.onAppTab && !page.shown
+    if (showCard && s.phase === 'idle' && !s.command && !detecting) {
+      detecting = true
+      void post('start')
+    }
     card.hidden = !showCard
     log.feedCard(showCard && s.phase === 'starting')
     const key = JSON.stringify([s, showCard, editing, busy, error])
