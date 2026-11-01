@@ -17,6 +17,7 @@ test("the website's download links name the DMGs the build makes, under the newe
 
 test("the app's release tags never take the npm package's", () => {
   assert.equal(field('tagNamePrefix'), 'desktop-v')
+  assert.equal(field('releaseType'), 'draft', 'the workflow publishes it once every file is in')
 })
 
 test('the daemon can still run on the app binary, and nothing else widens what it runs', () => {
