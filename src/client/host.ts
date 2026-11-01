@@ -1,43 +1,37 @@
-import { DESKTOP_BRIDGE, type DesktopBridge } from '../desktop-wire.js'
+import { DESKTOP_BRIDGE, type DesktopBridge, type DesktopLayout } from '../desktop-wire.js'
 import type { ProjectOpenedWire } from '../projects/wire.js'
 
-interface Navigation {
-  showProject(opened: ProjectOpenedWire): void
-  showHome(homeUrl: string): void
-}
-
 export type Host =
-  | ({ readonly kind: 'browser' } & Navigation)
-  | ({
+  | { readonly kind: 'browser'; showProject(opened: ProjectOpenedWire): void }
+  | {
       readonly kind: 'desktop'
-      readonly trafficLightRoom: number
+      showProject(opened: ProjectOpenedWire): void
       pickFolder(): Promise<string | null>
       pathForFile(file: File): string
-    } & Navigation)
+      toggleSidebar(): void
+      onLayout(listener: (layout: DesktopLayout) => void): void
+    }
 
-const browserHost: Host = {
-  kind: 'browser',
-  showProject: (opened) => location.assign(opened.shellUrl),
-  showHome: (homeUrl) => location.assign(homeUrl),
-}
+const bridge = (window as unknown as Record<string, DesktopBridge | undefined>)[DESKTOP_BRIDGE]
 
-function desktopHost(bridge: DesktopBridge): Host {
-  return {
-    kind: 'desktop',
-    trafficLightRoom: bridge.trafficLightRoom,
-    showProject: (opened) => bridge.showProject(opened),
-    showHome: () => bridge.showHome(),
-    pickFolder: () => bridge.pickFolder(),
-    pathForFile: (file) => bridge.pathForFile(file),
-  }
-}
+export const host: Host = bridge
+  ? {
+      kind: 'desktop',
+      showProject: (opened) => bridge.showProject(opened),
+      pickFolder: () => bridge.pickFolder(),
+      pathForFile: (file) => bridge.pathForFile(file),
+      toggleSidebar: () => bridge.toggleSidebar(),
+      onLayout: (listener) => bridge.onLayout(listener),
+    }
+  : { kind: 'browser', showProject: (opened) => location.assign(opened.shellUrl) }
 
-export const host: Host = (() => {
-  const bridge = (window as unknown as Record<string, DesktopBridge | undefined>)[DESKTOP_BRIDGE]
-  return bridge ? desktopHost(bridge) : browserHost
-})()
-
-if (host.kind === 'desktop') {
-  document.documentElement.dataset.host = 'desktop'
-  document.documentElement.style.setProperty('--traffic-light-room', `${host.trafficLightRoom}px`)
+/** A page at the window's left edge, with the sidebar closed, sits under the
+ *  traffic lights; the title bar is also what drags the window. */
+if (bridge) {
+  const root = document.documentElement
+  root.dataset.host = 'desktop'
+  bridge.onLayout(({ sidebar }) => {
+    root.dataset.sidebar = sidebar ? 'open' : 'closed'
+    root.style.setProperty('--traffic-light-room', sidebar ? '0px' : `${bridge.trafficLightRoom}px`)
+  })
 }
