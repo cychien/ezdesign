@@ -1,6 +1,7 @@
 import { Cancel01Icon, Folder01Icon, StopIcon } from '@hugeicons/core-free-icons'
 import { brandLockupSvg } from '../brand.js'
 import type { ProjectListWire, ProjectWire } from '../projects/wire.js'
+import { host } from './host.js'
 import { type IconNode, icon } from './icon.js'
 import { devServerStatus, projectsClient } from './projects.js'
 
@@ -37,7 +38,23 @@ function ago(at: number, now: number): string {
   return ''
 }
 
+function appOnlyNote(): HTMLElement {
+  const page = h('main', 'ez-home')
+  const head = h('header', 'ez-home-head')
+  const brand = h('div', 'ez-logo')
+  brand.setAttribute('role', 'img')
+  brand.setAttribute('aria-label', 'ezdesign')
+  brand.innerHTML = brandLockupSvg()
+  head.append(brand)
+  page.append(
+    head,
+    h('p', 'ez-home-lead ez-home-app-only', '專案列表在 ezdesign 的 Mac app 裡使用。要 review 一個專案，請在它的資料夾裡執行 npx -y @cychien/ezdesign。'),
+  )
+  return page
+}
+
 export function bootHome(root: HTMLElement, api: string, version: string): void {
+  if (host.kind !== 'desktop') return void root.replaceChildren(appOnlyNote())
   const client = projectsClient(api, version)
   let list: ProjectListWire | null = null
   let opening: string | null = null
