@@ -41,3 +41,11 @@ test('window.open never opens a window of ours', () => {
   assert.deepEqual(judgeWindowOpen('http://127.0.0.1:52000/', known), { kind: 'deny' })
   assert.deepEqual(judgeWindowOpen('file:///Users', known), { kind: 'deny' })
 })
+
+test('signing in goes to the system browser, from the home origin or a project’s', () => {
+  for (const origin of ['http://127.0.0.1:4400', 'http://127.0.0.1:51000']) {
+    const url = `${origin}/__ezdesign/api/account/login`
+    assert.deepEqual(judgeWindowOpen(url, known), { kind: 'external', url })
+  }
+  assert.deepEqual(judgeWindowOpen('http://127.0.0.1:52000/__ezdesign/api/account/logout', known), { kind: 'deny' })
+})

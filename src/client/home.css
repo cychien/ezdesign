@@ -260,6 +260,46 @@ html:has(.ez-side) body::after {
   padding-right: 59px;
 }
 
+/* The shared sign-in, at the foot of the list. Its menu opens upward. */
+.ez-side-account {
+  position: relative;
+  flex-shrink: 0;
+  padding: 4px 8px 10px;
+}
+
+.ez-side-account-btn {
+  cursor: pointer;
+}
+
+.ez-side-account-btn:hover {
+  background: oklch(0% 0 0 / 0.045);
+}
+
+.ez-side-account-btn > svg {
+  flex-shrink: 0;
+  color: var(--muted-foreground);
+}
+
+.ez-side-account .ez-avatar {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  font-size: 10px;
+}
+
+.ez-side-account .ez-menu {
+  top: auto;
+  bottom: calc(100% - 2px);
+  left: 8px;
+  right: 8px;
+  min-width: 0;
+  width: auto;
+}
+
+.ez-side-account[data-open] .ez-menu {
+  display: flex;
+}
+
 .ez-side-empty {
   padding: 8px 8px 0;
   font-size: 12.5px;
