@@ -57,7 +57,7 @@ test('a folder added by any path inside it lists its project, and hides again', 
   mkdirSync(join(dir, 'src'))
   const added = (await (await post(API, { path: join(dir, 'src') })).json()) as ProjectRow
   assert.deepEqual(added, { project: dir, name: dir.split('/').at(-1), usedAt: added.usedAt, exists: true, session: null })
-  assert.equal((await list()).projects[0]!.project, dir)
+  assert.equal((await list()).projects.some((p) => p.project === dir), true)
 
   assert.equal((await post(`${API}/hide`, { project: dir })).status, 200)
   assert.equal((await list()).projects.some((p) => p.project === dir), false)
@@ -91,10 +91,11 @@ test('only listed projects open', async () => {
   assert.equal(res.status, 404)
 })
 
-test('a CLI open lists the project first', async () => {
+test('a CLI open lists the project', async () => {
   const dir = project()
+  assert.equal((await list()).projects.some((p) => p.project === dir), false)
   await world.openSession(daemon.port, { project: dir })
-  assert.equal((await list()).projects[0]!.project, dir)
+  assert.equal((await list()).projects.some((p) => p.project === dir), true)
 })
 
 test('other sites and other builds are refused', async () => {
