@@ -953,6 +953,12 @@ export class SessionStore implements ViewStore {
     this.patchSession({ agent: command })
   }
 
+  /** A restore brings back only an agent still connected when the daemon stopped. */
+  clearAgent(): void {
+    const { agent: _agent, ...rest } = this.session
+    this.writeJson('session.json', rest)
+  }
+
   /** Remember one of the user's agent-config picks - the model, and anything else
    *  the agent offers - so the next session opens on it. */
   setAgentConfig(configId: string, value: AcpConfigValue): void {

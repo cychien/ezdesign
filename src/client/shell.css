@@ -2305,6 +2305,11 @@ body.ez-arranging .ez-frame {
   --brand-nudge: 1px;
 }
 
+/* Nothing is sent on until an agent is connected, so the way to connect one is not quiet. */
+.ez-agent-pill[data-offline] {
+  color: var(--foreground);
+}
+
 /* The chevron, and only it - matched as a direct child so the brand mark, which
    is an svg inside a span of its own, keeps its own treatment.
 

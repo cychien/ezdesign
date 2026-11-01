@@ -21,7 +21,7 @@ import type { DevCommandChoice, DevCommandWire, DevServerLogWire, DevServerSumma
 
 export type { DevCommandChoice, DevServerLogWire, DevServerWire } from './wire.js'
 export type { Initiator } from './lifecycle.js'
-export { devServerApiRouter } from './routes.js'
+export { devServerApiRouter, initiator } from './routes.js'
 
 export interface DevServerDeps {
   project: string

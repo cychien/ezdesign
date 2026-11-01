@@ -1,7 +1,7 @@
 import { type Request, Router } from 'express'
 import type { DevServer, Initiator } from './index.js'
 
-function initiator(req: Request): Initiator {
+export function initiator(req: Request): Initiator {
   return (req.body as { host?: unknown } | undefined)?.host === 'desktop' ? 'desktop' : 'browser'
 }
 

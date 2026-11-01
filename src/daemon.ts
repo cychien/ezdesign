@@ -46,7 +46,7 @@ import type { AcpSnapshot } from './acp-agent.js'
 import { type AcpConfigValue, configLabel, configValueName } from './acp-config.js'
 import { AGENT_PROFILES, type AgentProfile, agentBrandFor, agentProfileFor, launchCommand } from './agents.js'
 import { clearGroupRecord, reapOrphanedGroups } from './child-groups.js'
-import { DevServer, type DevServerWire, devServerApiRouter } from './dev-server/index.js'
+import { DevServer, type DevServerWire, type Initiator, devServerApiRouter, initiator } from './dev-server/index.js'
 import { findExecutable } from './login-env.js'
 import { scrubRunAsNode, selfNodeCommandLine } from './self-node.js'
 import { ProjectBook } from './projects/book.js'
@@ -85,7 +85,6 @@ import {
   rememberedDesignEffort,
   rememberedDesignHarness,
   rememberLastAgent,
-  rememberedLastAgent,
 } from './preferences.js'
 import { readInspireToken } from './credentials.js'
 import type { AttachmentLocator } from './label.js'
@@ -761,6 +760,8 @@ class SessionRuntime implements ProjectRuntime {
   private agentProgress: string | null = null
   /** SPIKE: the ACP-driven agent, when this session owns one. */
   private acp: AcpAgent | null = null
+  /** Who connected `acp` from a shell, so the app's quit disconnects only its own. */
+  private acpBy: Initiator | null = null
   /** Since the last idle check. Born touched: a session just opened is in use. */
   private touched = true
 
@@ -918,10 +919,28 @@ class SessionRuntime implements ProjectRuntime {
     this.lastDevServerPhase = phase
   }
 
-  ensureAgent(fallback: string): void {
-    const recorded = this.store.session.agent
-    if (recorded) this.attachAcpAgent(recorded)
-    else if (this.pollWaiters.size === 0) this.attachAcpAgent(fallback)
+  /** A shell's pick. The chat carries on when this agent can resume it; otherwise,
+   *  as with a switch, a new chat begins. */
+  connectAgent(command: string, by: Initiator): boolean {
+    const live = !!this.acp && this.acp.snapshot().state !== 'exited'
+    const resumes = !live && (this.store.currentChat.agent ?? command) === command
+    if (!(resumes ? this.attachAcpAgent(command) : this.switchAcpAgent(command))) return false
+    this.acpBy = by
+    this.broadcast()
+    return true
+  }
+
+  /** Until a shell connects one again: a restore does not bring it back. */
+  disconnectAgent(): void {
+    this.acp?.stop()
+    this.acp = null
+    this.acpBy = null
+    this.agentBusy = false
+    this.activeBatch = null
+    this.activeSkills = []
+    this.agentProgress = null
+    this.store.clearAgent()
+    this.broadcast()
   }
 
   resumeAgent(): void {
@@ -2140,13 +2159,18 @@ class SessionRuntime implements ProjectRuntime {
       const profile = AGENT_PROFILES.find((p) => p.id === id)
       // By id, never by a command from the wire: this starts a process.
       if (!profile) return res.status(400).json({ error: 'unknown agent' })
-      if (!this.acp) {
-        return res.status(409).json({ error: 'this review is not driving an agent' })
+      if (!this.acp && this.pollWaiters.size > 0) {
+        return res.status(409).json({ error: 'another agent is driving this review' })
       }
-      if (!this.switchAcpAgent(profile.command)) {
+      if (!this.connectAgent(profile.command, initiator(req))) {
         return res.status(409).json({ error: 'that agent cannot be started right now' })
       }
       rememberLastAgent(profile.command)
+      res.json({ ok: true })
+    })
+
+    api.post('/acp/disconnect', (_req, res) => {
+      this.disconnectAgent()
       res.json({ ok: true })
     })
 
@@ -2648,7 +2672,6 @@ export async function daemonMain(version: string, opts: DaemonOptions = {}): Pro
     sessions: { list: () => sessions.list(), open: (req) => sessions.open(req) },
     book,
     version,
-    defaultAgent: () => rememberedLastAgent() ?? AGENT_PROFILES[0]!.command,
     projectRoot,
     restored: () => restored,
   })
