@@ -14,6 +14,29 @@ extraResources:
     to: ezdesign/node_modules
 mac:
   category: public.app-category.developer-tools
-  identity: null
   target:
-    - target: dir
+    - target: dmg
+      arch: [arm64, x64]
+    # What electron-updater downloads.
+    - target: zip
+      arch: [arm64, x64]
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+  notarize: true
+dmg:
+  artifactName: ezdesign-${arch}.dmg
+electronFuses:
+  runAsNode: true
+  enableCookieEncryption: true
+  enableNodeOptionsEnvironmentVariable: false
+  enableNodeCliInspectArguments: false
+  enableEmbeddedAsarIntegrityValidation: true
+  onlyLoadAppFromAsar: true
+publish:
+  provider: github
+  owner: cychien
+  repo: ezdesign
+  releaseType: release
+  tagNamePrefix: desktop-v

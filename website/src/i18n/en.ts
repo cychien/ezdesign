@@ -27,6 +27,8 @@ export const en = {
     title: 'The best way to design <br />with AI agents',
     lede: 'ezdesign is the design tool for your AI agent. Click anything in your app and it <b>edits the exact line of code</b>. Build <b>your own design library</b> from any site with the Chrome extension. And <b>customize your design workflow and guidelines</b>.',
     docs: 'Read the docs →',
+    download: 'Download for Mac',
+    intel: 'Intel Mac',
     worksWith: 'Works with',
     noKey: 'No API key, uses your local agent',
   },

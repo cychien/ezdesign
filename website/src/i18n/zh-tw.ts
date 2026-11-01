@@ -28,6 +28,8 @@ export const zhTw: Messages = {
     title: '與 AI agent 協作設計的<br />最好工具',
     lede: 'ezdesign 讓 agent 成為真正的設計幫手。在 app 上點一下想改的地方，它就能<b>直接改到對應的那行程式碼</b>。裝上 Chrome 擴充功能，逛到喜歡的設計就能<b>收進自己的靈感庫</b>，也能<b>照你的習慣調整設計流程和規範</b>。',
     docs: '看文件 →',
+    download: '下載 Mac 版',
+    intel: 'Intel 版',
     worksWith: '支援',
     noKey: '不用 API key，直接用你電腦上的 agent',
   },

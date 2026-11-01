@@ -1,16 +1,36 @@
-import { Menu, type MenuItemConstructorOptions } from 'electron'
+import { Menu, type MenuItemConstructorOptions, app } from 'electron'
 
 export interface MenuActions {
   showHome(): void
   addFolder(): void
   reload(): void
   toggleDevTools(): void
+  checkForUpdates(): void
+  restartToUpdate(): void
+  downloadedUpdateVersion: string | null
 }
 
 /** The Edit roles are what make copy and paste work in the shell's composer. */
 export function installMenu(actions: MenuActions): void {
   const template: MenuItemConstructorOptions[] = [
-    { role: 'appMenu' },
+    {
+      label: app.name,
+      submenu: [
+        { role: 'about' },
+        { label: 'Check for Updates…', click: () => actions.checkForUpdates() },
+        ...(actions.downloadedUpdateVersion
+          ? [{ label: `Restart to Update to ${actions.downloadedUpdateVersion}`, click: () => actions.restartToUpdate() }]
+          : []),
+        { type: 'separator' },
+        { role: 'services' },
+        { type: 'separator' },
+        { role: 'hide' },
+        { role: 'hideOthers' },
+        { role: 'unhide' },
+        { type: 'separator' },
+        { role: 'quit' },
+      ],
+    },
     {
       label: 'File',
       submenu: [

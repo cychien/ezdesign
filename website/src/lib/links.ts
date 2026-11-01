@@ -10,6 +10,11 @@ export const LINKS = {
   author: 'https://github.com/cychien',
 }
 
+export const DOWNLOAD = {
+  arm64: `${REPO}/releases/latest/download/ezdesign-arm64.dmg`,
+  x64: `${REPO}/releases/latest/download/ezdesign-x64.dmg`,
+}
+
 export const INSTALL = 'npx -y @cychien/ezdesign@latest'
 export const INSTALL_WITH_URL = `${INSTALL} http://localhost:5173`
 export const SKILL_INSTALL = 'npx skills add cychien/ezdesign --skill ezdesign'

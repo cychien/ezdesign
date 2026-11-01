@@ -20,6 +20,10 @@ export const EXTENSION_ICONS = [
   { size: 128, art: 96 },
 ].map((icon) => ({ ...icon, path: `src/extension/icons/icon-${icon.size}.png` }))
 
+/** Apple's macOS icon grid: an 824 px squircle on a 1024 canvas.
+ *  electron-builder makes the .icns from build/icon.png by convention. */
+export const DESKTOP_ICON = { size: 1024, path: 'desktop/build/icon.png' }
+
 export const SOURCE_KEY = 'ezdesign:source'
 
 export function lockupSource({ fill }) {
@@ -31,10 +35,21 @@ function iconPage({ size, art }) {
   return `<!doctype html><html><body style="margin:0;background:transparent"><div style="width:${art}px;height:${art}px;margin:${inset}px">${brandMarkSvg()}</div></body></html>`
 }
 
+const ICON_GRID = { canvas: 1024, tile: 824, radius: 185, mark: 460 }
+
+export function desktopIconPage() {
+  const { canvas, tile, radius, mark } = ICON_GRID
+  const tileAt = (canvas - tile) / 2
+  const markAt = (tile - mark) / 2
+  return `<!doctype html><html><body style="margin:0;background:transparent"><div style="position:absolute;left:${tileAt}px;top:${tileAt}px;width:${tile}px;height:${tile}px;border-radius:${radius}px;background:linear-gradient(#fdfcf9,#f2f0e9);box-shadow:inset 0 0 0 2px rgba(0,0,0,0.06)"><div style="position:absolute;left:${markAt}px;top:${markAt}px;width:${mark}px;height:${mark}px">${brandMarkSvg()}</div></div></body></html>`
+}
+
 /** What a raster was made from, so a stale copy can be caught without re-rendering it. */
 export function iconSourceHash(icon) {
   return createHash('sha256').update(iconPage(icon)).digest('hex')
 }
+
+export const desktopIconSourceHash = () => createHash('sha256').update(desktopIconPage()).digest('hex')
 
 export function readPngText(bytes, keyword) {
   for (let at = 8; at < bytes.length; ) {
@@ -111,5 +126,6 @@ if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   for (const icon of EXTENSION_ICONS) {
     writeFileSync(icon.path, withPngText(renderPng(iconPage(icon), icon.size), SOURCE_KEY, iconSourceHash(icon)))
   }
+  writeFileSync(DESKTOP_ICON.path, withPngText(renderPng(desktopIconPage(), DESKTOP_ICON.size), SOURCE_KEY, desktopIconSourceHash()))
   console.log('brand assets ok')
 }

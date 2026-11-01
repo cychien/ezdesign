@@ -13,6 +13,8 @@ await Promise.all([
     target: 'node24',
     bundle: true,
     external: ['electron'],
+    // electron-updater is CommonJS and calls require() at runtime.
+    banner: { js: "import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);" },
     define: { __EZDESIGN_PACKAGE_VERSION__: JSON.stringify(version) },
   }),
   build({
