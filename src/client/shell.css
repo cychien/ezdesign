@@ -1513,7 +1513,7 @@ body.ez-arranging .ez-frame {
 .ez-devserver-line {
   font-size: 13px;
   /* Chromium has no ui-monospace: Menlo renders, in regular and bold only, so a medium is drawn. */
-  -webkit-text-stroke: 0.2px currentColor;
+  -webkit-text-stroke: 0.3px currentColor;
   color: var(--foreground);
   word-break: break-all;
 }
