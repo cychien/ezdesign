@@ -35,6 +35,16 @@ html:has(.ez-side) {
 html:has(.ez-side),
 html:has(.ez-side) body {
   background: var(--side-ground);
+}
+
+/* The gap above the pane drags the window. Nothing under the pane may: Electron
+   takes a covered view's drag regions too, and they would swallow the pane's clicks. */
+.ez-side-grip {
+  position: fixed;
+  top: 0;
+  left: var(--sidebar-width);
+  right: 0;
+  height: var(--pane-inset);
   -webkit-app-region: drag;
 }
 
@@ -76,7 +86,6 @@ html:has(.ez-side) body::after {
   width: var(--sidebar-width);
   height: 100vh;
   user-select: none;
-  -webkit-app-region: no-drag;
 }
 
 .ez-side[data-dragging] .ez-side-list {

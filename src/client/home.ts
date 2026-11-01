@@ -105,7 +105,7 @@ function bootSidebar(root: HTMLElement, desktop: DesktopHost, api: string, versi
   const errorLine = h('p', 'ez-side-error')
   errorLine.setAttribute('role', 'alert')
   side.append(top, section, rows, errorLine)
-  root.replaceChildren(side)
+  root.replaceChildren(side, h('div', 'ez-side-grip'))
 
   function open(go: () => Promise<void>): void {
     error = null
