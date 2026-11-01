@@ -85,7 +85,6 @@ function bootSidebar(root: HTMLElement, desktop: DesktopHost, api: string, versi
   const client = projectsClient(api, version)
   let list: ProjectListWire | null = null
   let shown: string | null = null
-  let opening: string | null = null
   let error: string | null = null
 
   const side = h('nav', 'ez-side')
@@ -108,16 +107,12 @@ function bootSidebar(root: HTMLElement, desktop: DesktopHost, api: string, versi
   side.append(top, section, rows, errorLine)
   root.replaceChildren(side)
 
-  function open(go: () => Promise<void>, project?: string): void {
-    opening = project ?? null
+  function open(go: () => Promise<void>): void {
     error = null
     paint()
     go()
       .catch((e: Error) => (error = e.message))
-      .finally(() => {
-        opening = null
-        paint()
-      })
+      .finally(paint)
   }
 
   function row(project: ProjectWire): HTMLElement {
@@ -130,16 +125,11 @@ function bootSidebar(root: HTMLElement, desktop: DesktopHost, api: string, versi
     pick.title = project.exists ? project.project : `${project.project}（資料夾不見了）`
     pick.disabled = !project.exists
     pick.append(icon(Folder01Icon as IconNode, 15), h('span', 'ez-side-name', project.name))
-    const status = devServerStatus(project)
-    const dot = h('span', 'ez-side-dot')
-    const phase = opening === project.project ? 'starting' : status?.phase
-    if (phase) dot.dataset.phase = phase
-    dot.title = opening === project.project ? '開啟中…' : (status?.text ?? '')
-    pick.append(dot)
-    pick.onclick = () => open(() => client.go(project.project), project.project)
+    pick.onclick = () => open(() => client.go(project.project))
     item.append(pick)
 
     const actions = h('span', 'ez-side-actions')
+    const status = devServerStatus(project)
     if (status && (status.phase === 'running' || status.phase === 'starting')) {
       const stop = iconButton(StopIcon as IconNode, `停止 ${project.name} 的 dev server`)
       stop.onclick = () => void client.stop(project.project).catch((e: Error) => ((error = e.message), paint()))
