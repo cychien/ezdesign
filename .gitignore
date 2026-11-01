@@ -7,3 +7,4 @@ PLAN.md
 docs/*
 !docs/brand.md
 !docs/brand/
+.ezdesign/
