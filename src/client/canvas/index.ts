@@ -92,7 +92,6 @@ export interface CanvasUi {
   /** Show the tab a guest lives on: the App for an App preview, its canvas for
    *  a canvas frame. How `/element` brings the user back to the composer. */
   focusGuest(guestId: string): void
-  openCanvas(): void
 }
 
 /** A canvas frame's keys reach the shell only as `ez:key`, which may not send,
@@ -424,12 +423,6 @@ export function installCanvas(ports: ShellPorts): CanvasUi {
       const canvas = /^canvas:([0-9a-f]{12})\//.exec(guestId)?.[1]
       const tab = canvas ? asCanvasId(canvas) : 'app'
       if (tab && tab !== shown) select(tab)
-    },
-
-    openCanvas() {
-      const first = snapshot?.canvas ? tabsModel(snapshot.appTab, snapshot.canvas).tabs.find((t) => t.id !== 'app') : undefined
-      if (first) select(first.id)
-      else void request({ do: 'create' })
     },
 
     frameTitle(ref) {
