@@ -9,15 +9,12 @@ import type { HubRuntime, ProjectHub } from './hub.js'
 export interface ProjectsRouterOptions {
   version: string
   origin(): string
-  /** The project whose session mounts this router; absent on the home page. */
-  current?: string
 }
 
 const field = (req: Request, name: string): unknown => (req.body as Record<string, unknown> | undefined)?.[name]
 
 export function projectsApiRouter<R extends HubRuntime>(hub: ProjectHub<R>, opts: ProjectsRouterOptions): Router {
   const router = Router()
-  const { current } = opts
   router.use('/projects', refuseCrossSite(opts.origin))
 
   // Before the version gate: an EventSource sends no header, so the page reads
@@ -25,7 +22,7 @@ export function projectsApiRouter<R extends HubRuntime>(hub: ProjectHub<R>, opts
   router.get('/projects/events', (req, res) => {
     res.set({ 'content-type': 'text/event-stream', 'cache-control': 'no-store', connection: 'keep-alive' })
     res.flushHeaders()
-    const push = () => res.write(`data: ${JSON.stringify(hub.list(current))}\n\n`)
+    const push = () => res.write(`data: ${JSON.stringify(hub.list())}\n\n`)
     push()
     const unsubscribe = hub.subscribe(push)
     req.on('close', unsubscribe)
@@ -34,7 +31,7 @@ export function projectsApiRouter<R extends HubRuntime>(hub: ProjectHub<R>, opts
   router.use('/projects', versionGate(opts.version))
 
   router.get('/projects', (_req, res) => {
-    res.set('cache-control', 'no-store').json(hub.list(current))
+    res.set('cache-control', 'no-store').json(hub.list())
   })
 
   router.post('/projects/open', async (req, res) => {
@@ -52,14 +49,6 @@ export function projectsApiRouter<R extends HubRuntime>(hub: ProjectHub<R>, opts
     res.json({ ok: true })
   })
 
-  return router
-}
-
-/** Adding and hiding widen what the daemon will run, so only the home page's
- *  origin has them: a project's proxied app shares its session's origin. */
-export function homeProjectsRouter<R extends HubRuntime>(hub: ProjectHub<R>, opts: Omit<ProjectsRouterOptions, 'current'>): Router {
-  const router = Router()
-  router.use('/projects', refuseCrossSite(opts.origin), versionGate(opts.version))
   router.post('/projects', (req, res) => {
     const path = field(req, 'path')
     if (typeof path !== 'string') return void res.status(400).json({ error: 'path required' })
@@ -67,12 +56,14 @@ export function homeProjectsRouter<R extends HubRuntime>(hub: ProjectHub<R>, opt
     if ('error' in added) return void res.status(400).json(added)
     res.json(added)
   })
+
   router.post('/projects/hide', (req, res) => {
     const project = field(req, 'project')
     if (typeof project !== 'string') return void res.status(400).json({ error: 'project required' })
     hub.hide(project)
     res.json({ ok: true })
   })
+
   return router
 }
 

@@ -12,8 +12,6 @@ export interface ProjectWire {
 export interface ProjectListWire {
   version: string
   projects: ProjectWire[]
-  home: string
-  current?: string
 }
 
 export interface ProjectOpenedWire {

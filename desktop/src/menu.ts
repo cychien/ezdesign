@@ -1,7 +1,7 @@
 import { Menu, type MenuItemConstructorOptions, app } from 'electron'
 
 export interface MenuActions {
-  showHome(): void
+  toggleSidebar(): void
   addFolder(): void
   reload(): void
   toggleDevTools(): void
@@ -34,8 +34,7 @@ export function installMenu(actions: MenuActions): void {
     {
       label: 'File',
       submenu: [
-        { label: 'Open Project…', accelerator: 'CmdOrCtrl+O', click: () => actions.showHome() },
-        { label: 'Add Folder…', accelerator: 'Shift+CmdOrCtrl+O', click: () => actions.addFolder() },
+        { label: 'Add Folder…', accelerator: 'CmdOrCtrl+O', click: () => actions.addFolder() },
         { type: 'separator' },
         { role: 'close' },
       ],
@@ -44,6 +43,8 @@ export function installMenu(actions: MenuActions): void {
     {
       label: 'View',
       submenu: [
+        { label: 'Toggle Sidebar', accelerator: 'Ctrl+Cmd+S', click: () => actions.toggleSidebar() },
+        { type: 'separator' },
         { label: 'Reload', accelerator: 'CmdOrCtrl+R', click: () => actions.reload() },
         { label: 'Toggle Developer Tools', accelerator: 'Alt+CmdOrCtrl+I', click: () => actions.toggleDevTools() },
         { type: 'separator' },

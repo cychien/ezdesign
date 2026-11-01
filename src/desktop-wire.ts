@@ -19,18 +19,32 @@ export interface DesktopQuitAnswer {
 
 export const DESKTOP_BRIDGE = 'ezdesignDesktop'
 
+/** What the window shows: whether the project sidebar is open, and which
+ *  project fills the rest. */
+export interface DesktopLayout {
+  sidebar: boolean
+  shown: string | null
+}
+
+/** At `window[DESKTOP_BRIDGE]` in daemon pages inside the app; read only by
+ *  `client/host.ts`. */
 export interface DesktopBridge {
   readonly contract: number
+  /** Room a page at the window's left edge leaves for the traffic lights. */
   readonly trafficLightRoom: number
   pickFolder(): Promise<string | null>
   /** `''` for a dropped item with no path. */
   pathForFile(file: File): string
   showProject(opened: ProjectOpenedWire): void
-  showHome(): void
+  toggleSidebar(): void
+  /** Called now and on every change. */
+  onLayout(listener: (layout: DesktopLayout) => void): void
 }
 
 export const DESKTOP_IPC = {
   pickFolder: 'ezdesign:pick-folder',
   showProject: 'ezdesign:show-project',
-  showHome: 'ezdesign:show-home',
+  toggleSidebar: 'ezdesign:toggle-sidebar',
+  layout: 'ezdesign:layout',
+  layoutNow: 'ezdesign:layout-now',
 } as const
