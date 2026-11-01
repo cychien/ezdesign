@@ -1,9 +1,4 @@
-import {
-  ArrowReloadHorizontalIcon,
-  ComputerTerminal01Icon,
-  PlayIcon,
-  StopIcon,
-} from '@hugeicons/core-free-icons'
+import { PlayIcon, StopIcon } from '@hugeicons/core-free-icons'
 import { agentProfileFor } from '../agents.js'
 import type { DevCommandWire, DevServerLogWire, DevServerWire, InstallPart, ProposalWire, UndecidedReason } from '../dev-server/wire.js'
 import { host } from './host.js'
@@ -11,13 +6,11 @@ import { type IconNode, icon } from './icon.js'
 
 export const DEV_SERVER_TEST_IDS = {
   card: 'ez-devserver-card',
-  strip: 'ez-devserver-strip',
   log: 'ez-devserver-log',
 } as const
 
 export interface DevServerPanel {
   readonly card: HTMLElement
-  readonly strip: HTMLElement
   update(state: DevServerWire, page: { shown: boolean; onAppTab: boolean }): void
 }
 
@@ -51,15 +44,6 @@ function button(className: string, label: string, glyph?: IconNode): HTMLButtonE
   return b
 }
 
-function iconButton(glyph: IconNode, label: string): HTMLButtonElement {
-  const b = h('button', 'ez-devserver-icon')
-  b.type = 'button'
-  b.title = label
-  b.setAttribute('aria-label', label)
-  b.append(icon(glyph, 14))
-  return b
-}
-
 function installLine(parts: readonly InstallPart[]): HTMLElement {
   const span = h('span')
   for (const part of parts) span.append('command' in part ? h('code', 'ez-devserver-inline', part.command) : part.text)
@@ -80,9 +64,6 @@ export function installDevServerPanel(api: string, opts: { openCanvas(): void })
   card.dataset.testid = DEV_SERVER_TEST_IDS.card
   card.setAttribute('aria-live', 'polite')
   card.hidden = true
-  const strip = h('div', 'ez-devserver-strip')
-  strip.dataset.testid = DEV_SERVER_TEST_IDS.strip
-  strip.hidden = true
 
   let state: DevServerWire | null = null
   let drawnFor = ''
@@ -331,61 +312,20 @@ export function installDevServerPanel(api: string, opts: { openCanvas(): void })
     if (error) card.append(h('p', 'ez-devserver-error', error))
   }
 
-  function paintStrip(s: DevServerWire): void {
-    const dot = h('span', 'ez-devserver-dot')
-    dot.dataset.phase = s.phase
-    const parts: HTMLElement[] = [dot]
-    if (s.phase === 'external') {
-      parts.push(h('span', 'ez-devserver-name', '你自己啟動的 dev server'))
-      strip.replaceChildren(...parts)
-      return
-    }
-    const command = 'command' in s ? s.command : undefined
-    const name = h('code', 'ez-devserver-name', command?.line ?? 'dev server')
-    name.title = s.phase === 'starting' ? '重新啟動中' : (command?.line ?? '')
-    parts.push(name)
-    if (s.phase === 'running' && s.origins.length > 1) {
-      const pick = h('select', 'ez-devserver-origin')
-      pick.setAttribute('aria-label', '要顯示的網址')
-      for (const origin of s.origins) {
-        const option = h('option', undefined, origin.replace(/^https?:\/\//, ''))
-        option.value = origin
-        option.selected = origin === s.origin
-        pick.append(option)
-      }
-      pick.onchange = () => void post('origin', { origin: pick.value })
-      parts.push(pick)
-    }
-    const showLog = iconButton(ComputerTerminal01Icon as IconNode, 'Dev server 的 log')
-    showLog.onclick = () => openLogDialog(log)
-    const restart = iconButton(ArrowReloadHorizontalIcon as IconNode, '重新啟動 dev server')
-    restart.disabled = busy || s.phase === 'starting'
-    restart.onclick = () => void post('restart')
-    const stop = iconButton(StopIcon as IconNode, '停止 dev server')
-    stop.disabled = busy
-    stop.onclick = () => void post('stop')
-    parts.push(showLog, restart, stop)
-    strip.replaceChildren(...parts)
-  }
-
   let lastPage = { shown: false, onAppTab: false }
 
   function paint(s: DevServerWire, page: { shown: boolean; onAppTab: boolean }): void {
     const showCard = page.onAppTab && !page.shown
-    const showStrip = page.onAppTab && page.shown && (s.phase === 'running' || s.phase === 'external' || s.phase === 'starting')
     card.hidden = !showCard
-    strip.hidden = !showStrip
     log.feedCard(showCard && s.phase === 'starting')
-    const key = JSON.stringify([s, showCard, showStrip, editing, busy, error])
+    const key = JSON.stringify([s, showCard, editing, busy, error])
     if (key === drawnFor) return
     drawnFor = key
     if (showCard) paintCard(s)
-    if (showStrip) paintStrip(s)
   }
 
   return {
     card,
-    strip,
     update(next, page) {
       if (next.phase === 'starting' && state?.phase !== 'starting') log.reset()
       state = next
@@ -411,11 +351,6 @@ class LogFeed {
     void this.fetch()
   }
 
-  detach(pre: HTMLElement): void {
-    for (const view of this.views) if (view.pre === pre) this.views.delete(view)
-    this.schedule()
-  }
-
   reset(): void {
     this.last = { lines: [], dropped: 0 }
   }
@@ -427,7 +362,7 @@ class LogFeed {
   }
 
   private schedule(): void {
-    const needed = this.wanted || [...this.views].some((v) => v.pre.closest('dialog[open]'))
+    const needed = this.wanted
     if (needed && this.timer === null) {
       this.timer = window.setInterval(() => void this.fetch(), LOG_POLL_MS)
     } else if (!needed && this.timer !== null) {
@@ -455,37 +390,4 @@ class LogFeed {
     pre.textContent = text
     if (pinned) pre.scrollTop = pre.scrollHeight
   }
-}
-
-function openLogDialog(log: LogFeed): void {
-  const dialog = h('dialog', 'ez-dialog ez-devserver-dialog')
-  const head = h('div', 'ez-devserver-dialog-head')
-  const title = h('h2', 'ez-dialog-title', 'Dev server 的 log')
-  title.id = 'ez-devserver-log-title'
-  const close = h('button', 'ez-dialog-cancel', '關閉')
-  close.type = 'button'
-  head.append(title, close)
-  const pre = h('pre', 'ez-devserver-log ez-devserver-log-full')
-  pre.dataset.testid = DEV_SERVER_TEST_IDS.log
-  pre.tabIndex = 0
-  dialog.append(head, pre)
-  dialog.setAttribute('aria-labelledby', title.id)
-  document.body.append(dialog)
-  const done = () => {
-    dialog.close()
-    dialog.remove()
-    log.detach(pre)
-  }
-  close.onclick = done
-  dialog.addEventListener('cancel', (e) => {
-    e.preventDefault()
-    done()
-  })
-  dialog.addEventListener('click', (e) => {
-    if (e.target === dialog) done()
-  })
-  dialog.addEventListener('keydown', (e) => e.stopPropagation())
-  dialog.showModal()
-  close.focus()
-  log.into(pre, Infinity)
 }

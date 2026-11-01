@@ -37,7 +37,7 @@ export function projectsApiRouter<R extends HubRuntime>(hub: ProjectHub<R>, opts
   router.post('/projects/open', async (req, res) => {
     const project = field(req, 'project')
     if (typeof project !== 'string') return void res.status(400).json({ error: 'project required' })
-    const opened = await hub.open(project)
+    const opened = await hub.open(project, field(req, 'host') === 'desktop' ? 'desktop' : 'browser')
     if ('ok' in opened) return void res.status(opened.status).json({ error: opened.error })
     res.json(opened)
   })
