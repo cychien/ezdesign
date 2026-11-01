@@ -235,7 +235,7 @@ html:has(.ez-side) body::after {
 }
 
 /* Steady, unlike the review's own badge: a list of projects should not twitch. */
-.ez-side-working {
+.ez-side-agent {
   flex-shrink: 0;
   width: 6px;
   height: 6px;
@@ -243,7 +243,11 @@ html:has(.ez-side) body::after {
   background: oklch(70% 0.16 70);
 }
 
-.ez-side-row:hover .ez-side-working {
+.ez-side-agent[data-state='done'] {
+  background: oklch(62% 0.15 150);
+}
+
+.ez-side-row:hover .ez-side-agent {
   visibility: hidden;
 }
 
