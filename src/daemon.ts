@@ -2742,7 +2742,7 @@ export async function daemonMain(version: string, opts: DaemonOptions = {}): Pro
     if (typeof path !== 'string') return res.status(400).json({ error: 'path required' })
     const added = projects.add(path)
     if ('error' in added) return res.status(400).json(added)
-    const opened = await projects.open(added.project, 'desktop')
+    const opened = await projects.open(added.project)
     if ('ok' in opened) return res.status(opened.status).json({ error: opened.error })
     res.json(opened)
   })
