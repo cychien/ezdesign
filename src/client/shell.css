@@ -2305,6 +2305,11 @@ body.ez-arranging .ez-frame {
   --brand-nudge: 1px;
 }
 
+/* Nothing is sent on until an agent is connected, so the way to connect one is not quiet. */
+.ez-agent-pill[data-offline] {
+  color: var(--foreground);
+}
+
 /* The chevron, and only it - matched as a direct child so the brand mark, which
    is an svg inside a span of its own, keeps its own treatment.
 
@@ -4319,7 +4324,6 @@ body.ez-arranging .ez-frame {
 .ez-tabs-bar {
   display: flex;
   align-items: center;
-  gap: 8px;
   height: 42px;
   flex-shrink: 0;
   padding: 0 10px 0 0;
@@ -4457,6 +4461,7 @@ body.ez-arranging .ez-frame {
   display: flex;
   align-items: center;
   flex-shrink: 0;
+  margin-left: 8px;
 }
 
 .ez-tab-new,
@@ -5846,4 +5851,51 @@ html.ez-on-board body {
   .ez-library-detail {
     animation-name: ez-fade-in;
   }
+}
+
+/* In the app the tab bar is the title bar: it drags the window, and with the
+   sidebar collapsed it leaves the traffic lights their corner. */
+[data-host='desktop'] .ez-tabs-bar {
+  padding-left: var(--traffic-light-room);
+  -webkit-app-region: drag;
+}
+
+/* With the sidebar open the pane's own edge is the first tab's left line. */
+[data-host='desktop'][data-sidebar='open'] .ez-tab:first-child {
+  margin-left: -1px;
+}
+
+/* In the app the sign-in is the sidebar's, shared by every project. */
+[data-host='desktop'] .ez-account {
+  display: none;
+}
+
+[data-host='desktop'] .ez-tabs-bar button,
+[data-host='desktop'] .ez-tabs-bar [role='tab'],
+[data-host='desktop'] .ez-tabs-bar .ez-menu {
+  -webkit-app-region: no-drag;
+}
+
+.ez-sidebar-toggle {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  margin: 0 6px 0 -4px;
+  border: none;
+  border-radius: 7px;
+  background: none;
+  color: var(--muted-foreground);
+  cursor: pointer;
+}
+
+.ez-sidebar-toggle:hover {
+  background: var(--muted);
+  color: var(--foreground);
+}
+
+[data-sidebar='closed'] .ez-sidebar-toggle {
+  display: inline-flex;
 }

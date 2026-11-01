@@ -17,11 +17,11 @@ import {
 } from './lifecycle.js'
 import { LogRing, ManagedProcess, listenerCwd, originAnswers } from './process.js'
 import { projectRelativePath } from './proposal.js'
-import type { DevCommandChoice, DevCommandWire, DevServerLogWire, DevServerWire } from './wire.js'
+import type { DevCommandChoice, DevCommandWire, DevServerLogWire, DevServerSummaryWire, DevServerWire } from './wire.js'
 
 export type { DevCommandChoice, DevServerLogWire, DevServerWire } from './wire.js'
 export type { Initiator } from './lifecycle.js'
-export { devServerApiRouter } from './routes.js'
+export { devServerApiRouter, initiator } from './routes.js'
 
 export interface DevServerDeps {
   project: string
@@ -30,6 +30,7 @@ export interface DevServerDeps {
   heldElsewhere(origin: string): boolean
   attach(origin: string): void
   detachLeavingRecord(origin: string): void
+  environmentReady(): Promise<unknown>
   onChange(): void
 }
 
@@ -59,6 +60,11 @@ export class DevServer {
     return command ? { ...wire, command } : wire
   }
 
+  summary(): DevServerSummaryWire {
+    const wire = toWire(this.machine.state)
+    return 'origin' in wire ? { phase: wire.phase, origin: wire.origin } : { phase: wire.phase }
+  }
+
   offersApp(): boolean {
     return this.machine.state.phase !== 'idle' || this.upcoming().runnable
   }
@@ -76,6 +82,11 @@ export class DevServer {
 
   restart(by: Initiator): void {
     this.dispatch({ type: 'restart', now: Date.now(), by })
+  }
+
+  get managedBy(): Initiator | null {
+    const state = this.machine.state
+    return state.phase === 'starting' || state.phase === 'running' || state.phase === 'stopping' ? state.run.by : null
   }
 
   get external(): boolean {
@@ -218,6 +229,7 @@ export class DevServer {
   }
 
   private async resolve(): Promise<Resolution> {
+    await this.deps.environmentReady()
     const recorded = this.deps.userAttachedOrigin()
     if (recorded && !this.deps.heldElsewhere(recorded) && (await originAnswers(recorded))) {
       const cwd = await listenerCwd(recorded)

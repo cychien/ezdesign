@@ -1,6 +1,9 @@
 allowBuilds:
+  electron: true
+  electron-winstaller: false
   esbuild: false
   workerd: false
 
 packages:
+  - desktop
   - website

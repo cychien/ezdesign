@@ -218,11 +218,14 @@ test('a video without frames tells the agent why, and a pending one is never pro
   assert.equal(toAgentAttachment({ ...video, video: { state: 'pending' } }, FILES).video, undefined)
 })
 
-test('dist/video-digest.js is a build target and in the daemon\'s asset list, as every client target is', () => {
+test('dist/video-digest.js is a build target and in the daemon\'s asset lists, as every client target is', () => {
   const build = readFileSync(new URL('../scripts/build.mjs', import.meta.url), 'utf8')
   const daemon = readFileSync(new URL('../src/daemon.ts', import.meta.url), 'utf8')
   const targets = [...build.matchAll(/outfile: 'dist\/([\w-]+\.(?:js|css))'/g)].map((m) => m[1]!)
-  const served = /for \(const file of \[([^\]]+)\]\)/.exec(daemon)![1]!.match(/'([^']+)'/g)!.map((s) => s.slice(1, -1))
+  const home = readFileSync(new URL('../src/projects/routes.ts', import.meta.url), 'utf8')
+  const servedBy = (source: string) =>
+    /for \(const file of \[([^\]]+)\]\)/.exec(source)![1]!.match(/'([^']+)'/g)!.map((s) => s.slice(1, -1))
+  const served = [...servedBy(daemon), ...servedBy(home)]
   assert.ok(targets.includes('video-digest.js'))
   for (const file of served) assert.ok(targets.includes(file), `${file} is served but never built`)
   for (const file of targets.filter((t) => !t.endsWith('.mjs'))) assert.ok(served.includes(file), `${file} is built but never served`)

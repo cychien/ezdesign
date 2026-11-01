@@ -20,6 +20,7 @@ import { ATTACHMENT_GRACE_MS, SESSIONS_DIR } from './constants.js'
 import type { AcpConfigValue } from './acp-config.js'
 import type { Camera, CanvasId, ShellView, TabId, ViewStore } from './canvas/types.js'
 import type { Said } from './history.js'
+import type { Initiator } from './dev-server/index.js'
 import { rememberDesignHarness } from './preferences.js'
 import type {
   Anchor,
@@ -204,6 +205,10 @@ export interface PersistedSession {
    *  daemon - though it does lose the agent's context, which is what the shell
    *  is told. */
   agent?: string
+  /** Which host's shell connected `agent`, so the app's quit still knows its own after a restore. */
+  agentBy?: Initiator
+  /** The user disconnected the agent here: opening the project does not connect one again. */
+  agentDeclined?: boolean
   /** The agent-config picks the user made - model, effort, mode - keyed by the
    *  agent's own config ids. Re-asserted on every session this agent opens, so a
    *  `/new` or a daemon restart does not quietly hand the review back to the
@@ -953,6 +958,21 @@ export class SessionStore implements ViewStore {
     this.patchSession({ agent: command })
   }
 
+  setAgentBy(by: Initiator): void {
+    const { agentDeclined: _agentDeclined, ...rest } = this.session
+    this.writeJson('session.json', { ...rest, agentBy: by })
+  }
+
+  declineAgent(): void {
+    this.patchSession({ agentDeclined: true })
+  }
+
+  /** A restore brings back only an agent still connected when the daemon stopped. */
+  clearAgent(): void {
+    const { agent: _agent, agentBy: _agentBy, ...rest } = this.session
+    this.writeJson('session.json', rest)
+  }
+
   /** Remember one of the user's agent-config picks - the model, and anything else
    *  the agent offers - so the next session opens on it. */
   setAgentConfig(configId: string, value: AcpConfigValue): void {
@@ -964,7 +984,7 @@ export class SessionStore implements ViewStore {
    *  The picks go with it - they described that agent's options, and the next one
    *  need not have them. */
   end(by: SessionEndedBy): void {
-    const { agent: _agent, agentConfig: _agentConfig, ...rest } = this.session
+    const { agent: _agent, agentBy: _agentBy, agentDeclined: _agentDeclined, agentConfig: _agentConfig, ...rest } = this.session
     this.writeJson('session.json', { ...rest, state: 'ended', endedBy: by })
   }
 

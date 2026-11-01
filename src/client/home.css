@@ -1,0 +1,391 @@
+@import './shell.css';
+
+/* --------------------------------------------------------------- browser note */
+
+.ez-home {
+  width: min(720px, calc(100% - 48px));
+  margin: 0 auto;
+  padding: 40px 0 64px;
+}
+
+.ez-home-head {
+  display: flex;
+  align-items: center;
+  height: 24px;
+}
+
+.ez-home-lead {
+  margin: 6px 0 0;
+  font-size: 14px;
+  color: var(--muted-foreground);
+}
+
+.ez-home-app-only {
+  margin-top: 36px;
+  max-width: 520px;
+}
+
+/* ------------------------------------------------------------------- sidebar */
+
+/* The window's ground: the project pane is laid over the rest of it. */
+html:has(.ez-side) {
+  --side-ground: #ebe9e2;
+}
+
+html:has(.ez-side),
+html:has(.ez-side) body {
+  background: var(--side-ground);
+}
+
+/* The gap above the pane drags the window. Nothing under the pane may: Electron
+   takes a covered view's drag regions too, and they would swallow the pane's clicks. */
+.ez-side-grip {
+  position: fixed;
+  top: 0;
+  left: var(--sidebar-width);
+  right: 0;
+  height: var(--pane-inset);
+  -webkit-app-region: drag;
+}
+
+html:has(.ez-side) body {
+  isolation: isolate;
+}
+
+/* Grain: an opaque tile, centred on mid grey in sRGB, so the overlay leaves the ground's tone where it is. */
+html:has(.ez-side) body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='g' x='0' y='0' width='100%25' height='100%25' color-interpolation-filters='sRGB'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='.33 .33 .33 0 0 .33 .33 .33 0 0 .33 .33 .33 0 0 0 0 0 0 1'/%3E%3CfeComponentTransfer%3E%3CfeFuncR type='linear' slope='1.6' intercept='-0.3'/%3E%3CfeFuncG type='linear' slope='1.6' intercept='-0.3'/%3E%3CfeFuncB type='linear' slope='1.6' intercept='-0.3'/%3E%3C/feComponentTransfer%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23g)'/%3E%3C/svg%3E") 0 0 / 200px 200px repeat;
+  opacity: 0.7;
+  mix-blend-mode: overlay;
+  pointer-events: none;
+}
+
+/* The project pane is a separate view laid over this page, so its shadow is drawn here, under the grain.
+   The inset ring lies under the pane's edge, so its rounded corners blend into the ring, not the ground. */
+html:has(.ez-side) body::after {
+  content: '';
+  position: fixed;
+  inset: var(--pane-inset) var(--pane-inset) var(--pane-inset) var(--sidebar-width);
+  z-index: -2;
+  border-radius: var(--pane-radius);
+  box-shadow:
+    inset 0 0 0 1px oklch(0% 0 0 / 0.07),
+    0 0 0 1px oklch(0% 0 0 / 0.07),
+    0 1px 2px oklch(0% 0 0 / 0.05),
+    0 4px 16px oklch(0% 0 0 / 0.05);
+  pointer-events: none;
+}
+
+.ez-side {
+  display: flex;
+  flex-direction: column;
+  width: var(--sidebar-width);
+  height: 100vh;
+  user-select: none;
+}
+
+.ez-side[data-dragging] .ez-side-list {
+  outline: 2px dashed var(--ink-ghost);
+  outline-offset: -2px;
+  border-radius: 9px;
+}
+
+/* The title bar: the traffic lights sit on its left, and it drags the window. */
+.ez-side-top {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-shrink: 0;
+  height: 42px;
+  padding: 0 10px;
+  -webkit-app-region: drag;
+}
+
+.ez-side-top > .ez-side-icon {
+  margin-top: 4px;
+}
+
+.ez-side-top button {
+  -webkit-app-region: no-drag;
+}
+
+.ez-side-section {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px 4px 16px;
+}
+
+.ez-side-label {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--muted-foreground);
+}
+
+.ez-side-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--muted-foreground);
+  cursor: pointer;
+}
+
+.ez-side-icon:hover {
+  background: oklch(0% 0 0 / 0.06);
+  color: var(--foreground);
+}
+
+.ez-side-list {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin: 0;
+  padding: 2px 8px 12px;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.ez-side-row {
+  position: relative;
+}
+
+.ez-side-open {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 30px;
+  padding: 0 10px 0 8px;
+  border: none;
+  border-radius: 7px;
+  background: none;
+  color: var(--foreground);
+  font-family: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: default;
+}
+
+.ez-side-open > svg {
+  flex-shrink: 0;
+  color: var(--muted-foreground);
+}
+
+.ez-side-row:hover .ez-side-open {
+  background: oklch(0% 0 0 / 0.045);
+}
+
+/* The current row darkens without widening: SF's grade axis for Latin, and for
+   CJK, full-width at any weight, a semibold face. Later faces are tried first. */
+@font-face {
+  font-family: 'ez-cjk-semibold';
+  src: local('PingFangSC-Semibold');
+  unicode-range: U+2E80-9FFF, U+F900-FAFF, U+FE30-FE4F, U+FF00-FFEF;
+}
+
+@font-face {
+  font-family: 'ez-cjk-semibold';
+  src: local('PingFangTC-Semibold');
+  unicode-range: U+2E80-9FFF, U+F900-FAFF, U+FE30-FE4F, U+FF00-FFEF;
+}
+
+.ez-side-row[data-current] .ez-side-open {
+  background: oklch(0% 0 0 / 0.085);
+  font-family: -apple-system, BlinkMacSystemFont, 'ez-cjk-semibold', sans-serif;
+  font-variation-settings: 'GRAD' 600;
+}
+
+.ez-side-row[data-current] .ez-side-open > svg {
+  color: var(--foreground);
+}
+
+.ez-side-row[data-missing] .ez-side-open {
+  color: var(--ink-faint);
+}
+
+.ez-side-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ez-side-actions {
+  position: absolute;
+  top: 2px;
+  right: 3px;
+  display: none;
+  gap: 1px;
+}
+
+.ez-side-row:hover .ez-side-actions {
+  display: flex;
+}
+
+/* Steady, unlike the review's own badge: a list of projects should not twitch. */
+.ez-side-agent {
+  flex-shrink: 0;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: oklch(70% 0.16 70);
+}
+
+.ez-side-agent[data-state='done'] {
+  background: oklch(62% 0.15 150);
+}
+
+.ez-side-row:hover .ez-side-agent {
+  visibility: hidden;
+}
+
+/* A long name ends before the actions rather than under them. */
+.ez-side-row:hover .ez-side-open {
+  padding-right: 32px;
+}
+
+.ez-side-row:hover:has(.ez-side-actions > :nth-child(2)) .ez-side-open {
+  padding-right: 59px;
+}
+
+/* The shared sign-in, at the foot of the list. Its menu opens upward. */
+.ez-side-account {
+  position: relative;
+  flex-shrink: 0;
+  padding: 4px 8px 10px;
+}
+
+.ez-side-account-btn {
+  cursor: pointer;
+}
+
+.ez-side-account-btn:hover {
+  background: oklch(0% 0 0 / 0.045);
+}
+
+.ez-side-account-btn > svg {
+  flex-shrink: 0;
+  color: var(--muted-foreground);
+}
+
+.ez-side-account .ez-avatar {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  font-size: 10px;
+}
+
+.ez-side-account .ez-menu {
+  top: auto;
+  bottom: calc(100% - 2px);
+  left: 8px;
+  right: 8px;
+  min-width: 0;
+  width: auto;
+}
+
+.ez-side-account[data-open] .ez-menu {
+  display: flex;
+}
+
+.ez-side-empty {
+  padding: 8px 8px 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--muted-foreground);
+}
+
+.ez-side-error {
+  margin: 0;
+  padding: 8px 16px 12px;
+  font-size: 12px;
+  color: oklch(45% 0.15 25);
+}
+
+.ez-side-error[hidden] {
+  display: none;
+}
+
+/* ---------------------------------------------------------------- empty pane */
+
+.ez-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100vh;
+  padding: 0 32px;
+  text-align: center;
+  -webkit-app-region: drag;
+}
+
+.ez-empty button {
+  -webkit-app-region: no-drag;
+}
+
+.ez-empty-mark {
+  width: 40px;
+  height: 40px;
+}
+
+.ez-empty-mark > svg {
+  width: 100%;
+  height: 100%;
+}
+
+.ez-empty-title {
+  margin: 18px 0 0;
+  font-size: 17px;
+  font-weight: 600;
+}
+
+.ez-empty-lead {
+  max-width: 340px;
+  text-wrap: balance;
+  margin: 6px 0 20px;
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--muted-foreground);
+}
+
+.ez-empty-error {
+  margin: 12px 0 0;
+  font-size: 12.5px;
+  color: oklch(45% 0.15 25);
+}
+
+.ez-home-add-go {
+  height: 34px;
+  padding: 0 14px;
+  border: 1px solid var(--primary);
+  border-radius: 8px;
+  background: var(--primary);
+  color: var(--primary-foreground);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: inset 0 1px 0 0 oklch(100% 0 0 / 0.14);
+}
+
+.ez-home-add-go:hover:not(:disabled) {
+  opacity: 0.88;
+}
+
+.ez-home-pick {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}

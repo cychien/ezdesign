@@ -38,6 +38,7 @@ export interface ShellPorts {
   guests: CanvasGuestPort
   /** Where the strip and the boards go. */
   stageWrap: HTMLElement
+  tabsLead?: HTMLElement
   /** The device stage: hidden while a canvas tab is active, never detached. */
   stage: HTMLElement
   /** `fetch` against `${API}${path}` with JSON headers, as `api()` in the shell. */
@@ -202,6 +203,7 @@ export function installCanvas(ports: ShellPorts): CanvasUi {
       if (sure) await request({ do: 'delete', canvasId: id })
     },
   })
+  if (ports.tabsLead) strip.el.prepend(ports.tabsLead)
   ports.stageWrap.prepend(strip.el)
 
   async function request(r: CanvasRequest): Promise<unknown> {

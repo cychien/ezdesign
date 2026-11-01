@@ -1,0 +1,19 @@
+appId: dev.ezdesign.app
+productName: ezdesign
+directories:
+  output: release
+  buildResources: build
+files:
+  - dist/**
+  - package.json
+extraResources:
+  - from: stage/ezdesign
+    to: ezdesign
+  # A folder named node_modules is skipped unless it is the source itself.
+  - from: stage/ezdesign/node_modules
+    to: ezdesign/node_modules
+mac:
+  category: public.app-category.developer-tools
+  identity: null
+  target:
+    - target: dir

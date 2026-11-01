@@ -46,9 +46,14 @@ import type { AcpSnapshot } from './acp-agent.js'
 import { type AcpConfigValue, configLabel, configValueName } from './acp-config.js'
 import { AGENT_PROFILES, type AgentProfile, agentBrandFor, agentProfileFor, launchCommand } from './agents.js'
 import { clearGroupRecord, reapOrphanedGroups } from './child-groups.js'
-import { DevServer, type DevServerWire, devServerApiRouter } from './dev-server/index.js'
-import { findExecutable } from './login-env.js'
+import { DevServer, type DevServerWire, type Initiator, devServerApiRouter, initiator } from './dev-server/index.js'
+import { adoptLoginEnvironment, findExecutable } from './login-env.js'
+import { DESKTOP_CONTRACT, type DesktopQuitAnswer } from './desktop-wire.js'
 import { scrubRunAsNode, selfNodeCommandLine } from './self-node.js'
+import { ProjectBook } from './projects/book.js'
+import { ProjectHub } from './projects/hub.js'
+import { homePageRouter, projectsApiRouter } from './projects/routes.js'
+import { projectRoot } from './project-root.js'
 import {
   attachmentIds,
   parseBatchView,
@@ -80,6 +85,8 @@ import {
   rememberDesignEffort,
   rememberedDesignEffort,
   rememberedDesignHarness,
+  rememberLastAgent,
+  rememberedLastAgent,
 } from './preferences.js'
 import { readInspireToken } from './credentials.js'
 import type { AttachmentLocator } from './label.js'
@@ -102,6 +109,7 @@ import {
   type AppAttachment,
   type AttachedApp,
   SessionStore,
+  listPersistedSessions,
   listRestorableSessions,
   newId,
   persistedSession,
@@ -126,7 +134,7 @@ import { accountApiRouter, crossSiteAccountCallback } from './account-routes.js'
 import { installVersion, pruneInstalledVersions } from './installer.js'
 import { latestVersion, updateChecksDisabled } from './update-check.js'
 import { Updater, type UpdateWire } from './updater.js'
-import { versionGate } from './version.js'
+import { desktopContractGate, versionGate } from './version.js'
 
 /** Whether a profile's CLI is on the PATH.
  *
@@ -255,6 +263,7 @@ interface SnapshotWire {
   designHarness?: boolean
   devServer: DevServerWire
   appTab: boolean
+  project: string
 }
 
 /** One conversation as the picker draws it. The count is what tells two of them
@@ -687,8 +696,10 @@ function configChangeNote(option: SessionConfigOption, value: AcpConfigValue): s
 }
 
 interface RuntimeServices {
+  projects: ProjectHub<SessionRuntime>
   attachOrigin(runtime: SessionRuntime, origin: string): void
   heldElsewhere(runtime: SessionRuntime, origin: string): boolean
+  environmentReady(): Promise<unknown>
 }
 
 class SessionRuntime implements ProjectRuntime {
@@ -752,6 +763,8 @@ class SessionRuntime implements ProjectRuntime {
   private agentProgress: string | null = null
   /** SPIKE: the ACP-driven agent, when this session owns one. */
   private acp: AcpAgent | null = null
+  /** Who connected `acp` from a shell, so the app's quit disconnects only its own. */
+  private acpBy: Initiator | null = null
   /** Since the last idle check. Born touched: a session just opened is in use. */
   private touched = true
 
@@ -761,7 +774,7 @@ class SessionRuntime implements ProjectRuntime {
     private readonly updater: Updater,
     private readonly library: () => Promise<Library>,
     private readonly account: Account,
-    services: RuntimeServices,
+    private readonly services: RuntimeServices,
   ) {
     this.store = new SessionStore(project)
     this.devServer = new DevServer({
@@ -774,9 +787,11 @@ class SessionRuntime implements ProjectRuntime {
       heldElsewhere: (origin) => services.heldElsewhere(this, origin),
       attach: (origin) => services.attachOrigin(this, origin),
       detachLeavingRecord: (origin) => this.detachDevServerApp(origin),
+      environmentReady: services.environmentReady,
       onChange: () => {
         this.showAppWhenServed()
         this.broadcast()
+        services.projects.changed()
       },
     })
     // Starts detached: which origin this runtime shows is the directory's call,
@@ -908,9 +923,52 @@ class SessionRuntime implements ProjectRuntime {
     this.lastDevServerPhase = phase
   }
 
+  /** Opening the project: the agent it was on, else the user's last, unless they disconnected it here. */
+  ensureAgent(fallback: string, by: Initiator): void {
+    const live = !!this.acp && this.acp.snapshot().state !== 'exited'
+    const { agent, agentDeclined } = this.store.session
+    if (live || agentDeclined || this.pollWaiters.size > 0) return
+    this.connectAgent(agent ?? this.store.currentChat.agent ?? fallback, by)
+  }
+
+  /** A shell's pick. The chat carries on when this agent can resume it; otherwise,
+   *  as with a switch, a new chat begins. */
+  connectAgent(command: string, by: Initiator): boolean {
+    const live = !!this.acp && this.acp.snapshot().state !== 'exited'
+    const resumes = !live && (this.store.currentChat.agent ?? command) === command
+    if (!(resumes ? this.attachAcpAgent(command) : this.switchAcpAgent(command))) return false
+    this.acpBy = by
+    this.store.setAgentBy(by)
+    this.broadcast()
+    return true
+  }
+
+  /** A restore does not bring it back. Asked for by the user, it stays off until they connect one. */
+  disconnectAgent(opts: { declined: boolean }): void {
+    this.acp?.stop()
+    this.acp = null
+    this.acpBy = null
+    this.agentBusy = false
+    this.activeBatch = null
+    this.activeSkills = []
+    this.agentProgress = null
+    this.store.clearAgent()
+    if (opts.declined) this.store.declineAgent()
+    this.broadcast()
+  }
+
+  /** The app's quit: what its windows connected goes with them. */
+  disconnectAgentOf(by: Initiator): boolean {
+    if (this.acpBy !== by) return false
+    this.disconnectAgent({ declined: false })
+    return true
+  }
+
   resumeAgent(): void {
-    const agent = this.store.session.agent
-    if (agent) this.restoreAcpAgent(agent)
+    const { agent, agentBy } = this.store.session
+    if (!agent) return
+    this.restoreAcpAgent(agent)
+    this.acpBy = agentBy ?? null
   }
 
   /** Off the live agent, not the record: the record holds what was asked for. */
@@ -991,6 +1049,7 @@ class SessionRuntime implements ProjectRuntime {
       ...(this.canExplore ? { canExplore: true as const } : {}),
       devServer: this.devServer.snapshot(),
       appTab: this.app.kind === 'attached' || this.devServer.offersApp(),
+      project: this.project,
     }
   }
 
@@ -1015,7 +1074,18 @@ class SessionRuntime implements ProjectRuntime {
   broadcast(): void {
     const data = `data: ${JSON.stringify(this.snapshot())}\n\n`
     for (const res of this.sseClients) res.write(data)
+    if (this.agentWorking !== this.listedAgentWorking) {
+      this.listedAgentWorking = this.agentWorking
+      this.services.projects.changed()
+    }
   }
+
+  get agentWorking(): boolean {
+    return this.agentBusy || !!this.acp?.snapshot().cancelling
+  }
+
+  /** What the project list last heard, so it hears of a turn only as it starts and ends. */
+  private listedAgentWorking = false
 
   /** The workspace wrote, or a frame's file was found changed. Shell clients get
    *  the one canvas that changed as a named event - the snapshot never carries
@@ -2123,12 +2193,18 @@ class SessionRuntime implements ProjectRuntime {
       const profile = AGENT_PROFILES.find((p) => p.id === id)
       // By id, never by a command from the wire: this starts a process.
       if (!profile) return res.status(400).json({ error: 'unknown agent' })
-      if (!this.acp) {
-        return res.status(409).json({ error: 'this review is not driving an agent' })
+      if (!this.acp && this.pollWaiters.size > 0) {
+        return res.status(409).json({ error: 'another agent is driving this review' })
       }
-      if (!this.switchAcpAgent(profile.command)) {
+      if (!this.connectAgent(profile.command, initiator(req))) {
         return res.status(409).json({ error: 'that agent cannot be started right now' })
       }
+      rememberLastAgent(profile.command)
+      res.json({ ok: true })
+    })
+
+    api.post('/acp/disconnect', (_req, res) => {
+      this.disconnectAgent({ declined: true })
       res.json({ ok: true })
     })
 
@@ -2587,6 +2663,7 @@ export interface DaemonOptions {
 
 export async function daemonMain(version: string, opts: DaemonOptions = {}): Promise<void> {
   scrubRunAsNode()
+  const environment = adoptLoginEnvironment()
   const range = controlPortRange()
   if (opts.succeed === undefined) {
     const [adopted] = await ownDaemonsInRange(range)
@@ -2596,8 +2673,11 @@ export async function daemonMain(version: string, opts: DaemonOptions = {}): Pro
   /** One runtime per project, one project per origin. Assigned below, once the
    *  updater the runtimes share exists. */
   let sessions!: SessionDirectory<SessionRuntime>
+  /** Bound once the project hub exists; the updater may change before then. */
+  let projectsChanged = () => {}
   const broadcastAll = () => {
     for (const s of sessions.list()) s.broadcast()
+    projectsChanged()
   }
 
   let stopping = false
@@ -2623,12 +2703,28 @@ export async function daemonMain(version: string, opts: DaemonOptions = {}): Pro
   const library = lazyLibrary(() => openLibrary({ dir: libraryDir(libraryHome()) }))
   const account = new Account({ baseUrl: apiBaseUrl(), onChange: broadcastAll })
 
+  let controlPort = 0
+  const controlOrigin = () => `http://127.0.0.1:${controlPort}`
+  const book = new ProjectBook(listPersistedSessions())
+  const projects = new ProjectHub<SessionRuntime>({
+    sessions: { list: () => sessions.list(), open: (req) => sessions.open(req) },
+    book,
+    version,
+    account: () => account.snapshot(),
+    defaultAgent: () => rememberedLastAgent() ?? AGENT_PROFILES[0]!.command,
+    projectRoot,
+    restored: () => restored,
+  })
+  projectsChanged = () => projects.changed()
+
   const services: RuntimeServices = {
+    projects,
     attachOrigin: (runtime, origin) => sessions.attachOrigin(runtime, origin, { userAttached: false, now: Date.now() }),
     heldElsewhere: (runtime, origin) => {
       const holder = sessions.byOrigin(origin)
       return !!holder && holder !== runtime
     },
+    environmentReady: () => environment,
   }
 
   sessions = new SessionDirectory(
@@ -2636,6 +2732,7 @@ export async function daemonMain(version: string, opts: DaemonOptions = {}): Pro
     {
       restorable: listRestorableSessions,
       get: persistedSession,
+      used: (project, now) => book.markUsed(project, now),
       migrate: () => {
         const { merged } = migrateLegacySessions()
         if (merged.size) {
@@ -2647,9 +2744,6 @@ export async function daemonMain(version: string, opts: DaemonOptions = {}): Pro
     // eslint-disable-next-line no-console
     (message) => console.error(message),
   )
-
-  let controlPort = 0
-  const controlOrigin = () => `http://127.0.0.1:${controlPort}`
 
   const control = express()
   control.use(express.json())
@@ -2665,8 +2759,31 @@ export async function daemonMain(version: string, opts: DaemonOptions = {}): Pro
       pid: process.pid,
       dataDirId: dataDirId(),
       boundAt: String(boundAt),
+      desktop: DESKTOP_CONTRACT,
     })
   })
+
+  control.use('/control/desktop', refuseCrossSite(controlOrigin), desktopContractGate())
+  control.post('/control/desktop/open', async (req, res) => {
+    const path: unknown = req.body?.path
+    if (typeof path !== 'string') return res.status(400).json({ error: 'path required' })
+    const added = projects.add(path)
+    if ('error' in added) return res.status(400).json(added)
+    const opened = await projects.open(added.project, 'desktop')
+    if ('ok' in opened) return res.status(opened.status).json({ error: opened.error })
+    res.json(opened)
+  })
+  control.post('/control/desktop/quit', async (_req, res) => {
+    projects.disconnectAgentsOf('desktop')
+    res.json({ stopped: await projects.stopManagedBy('desktop') } satisfies DesktopQuitAnswer)
+  })
+
+  control.use(homePageRouter({ version, distDir, icon: SHELL_ICON }))
+  control.use(`${URL_PREFIX}/api`, projectsApiRouter(projects, { version, origin: controlOrigin }))
+  // The app's sidebar signs in for every project, so the control origin carries the account too.
+  control.get(ACCOUNT_CALLBACK_PATH, crossSiteAccountCallback(account))
+  control.use(`${URL_PREFIX}/api/account`, refuseCrossSite(controlOrigin))
+  control.use(`${URL_PREFIX}/api`, accountApiRouter({ account, callbackUrl: () => `${controlOrigin()}${ACCOUNT_CALLBACK_PATH}` }))
 
   // Registered before sessions are restored, so a CLI that finds this daemon
   // straight away is held here until its sessions exist rather than told
@@ -2830,6 +2947,7 @@ export async function daemonMain(version: string, opts: DaemonOptions = {}): Pro
     // eslint-disable-next-line no-console
     console.error(`predecessor pid ${opts.succeed} is still running; restoring sessions anyway`)
   }
+  await environment
   // The migration moves directories a live predecessor's stores may still be
   // writing, so it waits for a start whose predecessor is confirmed gone.
   await sessions.restore({ migrate: predecessorGone })
@@ -2849,7 +2967,7 @@ export async function daemonMain(version: string, opts: DaemonOptions = {}): Pro
     const idle = new IdleCount(IDLE_STOP_MS / IDLE_CHECK_MS)
     setInterval(() => {
       // Not `some`: every session's answer starts its own count over.
-      const busy = sessions.list().filter((s) => s.takeBusy()).length > 0
+      const busy = [sessions.list().filter((s) => s.takeBusy()).length > 0, projects.takeBusy()].some(Boolean)
       if (idle.observe(busy) && sessions.size > 0) {
         // The one exit after which nothing needs rebuilding: no shell is open.
         sessions.retireIdle()

@@ -60,6 +60,11 @@ export type DevServerWire =
       tail: string[]
     }
 
+export interface DevServerSummaryWire {
+  phase: DevServerWire['phase']
+  origin?: string
+}
+
 /** `GET /dev-server/log`. */
 export interface DevServerLogWire {
   lines: string[]

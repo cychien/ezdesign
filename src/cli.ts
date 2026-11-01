@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -35,7 +36,8 @@ import {
   withLocalPaths,
 } from './inspire.js'
 import { projectRoot } from './project-root.js'
-import { ensureDaemon, findRunningDaemon } from './registry.js'
+import { findRunningDaemon, resolveDaemon } from './registry.js'
+import { SELF_NODE, selfNodeEnv } from './self-node.js'
 import { VERSION_HEADER } from './version.js'
 import type { PollResult } from './protocol.js'
 
@@ -255,7 +257,9 @@ async function cmdOpen(
       )
     }
   }
-  const daemon = await ensureDaemon(cliEntry, pkg.version)
+  const resolved = await resolveDaemon(cliEntry, pkg.version)
+  if (resolved.kind === 'newer') return reexecAs(resolved.cliEntry)
+  const daemon = resolved.daemon
   const project = projectRoot(process.cwd())
   const res = await controlFetch(daemon.port, '/control/sessions', {
     method: 'POST',
@@ -285,6 +289,14 @@ async function cmdOpen(
   } else {
     console.log(`next:    run \`${APP_NAME} poll\` in this project and wait for feedback`)
   }
+}
+
+function reexecAs(cliEntry: string): never {
+  const { status } = spawnSync(SELF_NODE.execPath, [cliEntry, ...process.argv.slice(2)], {
+    stdio: 'inherit',
+    env: selfNodeEnv(),
+  })
+  process.exit(status ?? 1)
 }
 
 async function cmdPoll(handle: SessionHandle, reply: string | undefined): Promise<void> {

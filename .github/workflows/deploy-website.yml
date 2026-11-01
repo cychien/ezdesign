@@ -32,6 +32,9 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+        env:
+          # The desktop workspace's Electron binary; the website never runs it.
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
       - run: pnpm --filter ezdesign-website run check
       - run: pnpm --filter ezdesign-website run deploy
         env:

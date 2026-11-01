@@ -1,8 +1,11 @@
 import { type ChildProcess, spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { mkdirSync, openSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, openSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { DAEMON_LOG, DATA_DIR, REGISTRY_FILE } from './constants.js'
+import { installedPackageRoot } from './installer.js'
 import { type NodeRuntime, SELF_NODE, selfNodeEnv } from './self-node.js'
+import { isNewer } from './update-check.js'
 
 export interface DaemonInfo {
   port: number
@@ -12,6 +15,7 @@ export interface DaemonInfo {
 
 export interface RunningDaemon extends DaemonInfo {
   version: string
+  desktopContract?: number
 }
 
 export function readRegistry(): DaemonInfo | null {
@@ -59,7 +63,7 @@ export function servesThisDataDir(health: { dataDirId?: unknown }): boolean {
 /** Confirms the port is serving *our* daemon, not just something that answers.
  *  A registry left behind by a killed daemon can otherwise point at whatever
  *  later took the port — including an older daemon from a previous build. */
-export async function probeDaemon(port: number, pid: number): Promise<{ version: string } | null> {
+export async function probeDaemon(port: number, pid: number): Promise<{ version: string; desktopContract?: number } | null> {
   try {
     const res = await fetch(`http://127.0.0.1:${port}/control/health`, {
       signal: AbortSignal.timeout(1500),
@@ -70,9 +74,10 @@ export async function probeDaemon(port: number, pid: number): Promise<{ version:
       pid?: number
       version?: string
       dataDirId?: string
+      desktop?: unknown
     }
     if (body.ok !== true || body.pid !== pid || !servesThisDataDir(body)) return null
-    return { version: body.version ?? 'unknown' }
+    return { version: body.version ?? 'unknown', ...(typeof body.desktop === 'number' ? { desktopContract: body.desktop } : {}) }
   } catch {
     return null
   }
@@ -82,7 +87,7 @@ export async function findRunningDaemon(): Promise<RunningDaemon | null> {
   const info = readRegistry()
   if (!info) return null
   const probed = await probeDaemon(info.port, info.pid)
-  if (probed) return { ...info, version: probed.version }
+  if (probed) return { ...info, ...probed }
   clearRegistry(info.pid)
   return null
 }
@@ -151,14 +156,32 @@ async function spawnDaemon(launch: DaemonLaunch): Promise<RunningDaemon> {
 /** Resolve to a daemon running exactly `version`. All shell and session logic
  *  lives in the daemon, so a leftover one from a previous version keeps serving
  *  stale behavior forever — replace it instead of adopting it. Sessions survive:
- *  the new daemon restores them from disk onto the ports they last held.
- *  The retry covers a spawned daemon adopting a live older one inside its
- *  control range, which `daemonMain` does without looking at versions. */
+ *  the new daemon restores them from disk onto the ports they last held. */
 export async function ensureDaemon(cliEntry: string, version: string): Promise<RunningDaemon> {
+  return ensureDaemonWhere(() => ({ cliEntry }), (running) => running.version === version)
+}
+
+export async function ensureDaemonWhere(
+  launch: () => DaemonLaunch | Promise<DaemonLaunch>,
+  accepts: (running: RunningDaemon) => boolean,
+): Promise<RunningDaemon> {
   for (let attempt = 0; attempt < 2; attempt++) {
-    const running = (await findRunningDaemon()) ?? (await spawnDaemon({ cliEntry }))
-    if (running.version === version) return running
+    const running = (await findRunningDaemon()) ?? (await spawnDaemon(await launch()))
+    if (accepts(running)) return running
     await stopDaemon(running)
   }
   throw new Error(`a daemon running another version keeps taking over (see ${DAEMON_LOG})`)
+}
+
+export type DaemonResolution =
+  | { kind: 'ours'; daemon: RunningDaemon }
+  | { kind: 'newer'; daemon: RunningDaemon; cliEntry: string }
+
+export async function resolveDaemon(cliEntry: string, version: string): Promise<DaemonResolution> {
+  const running = await findRunningDaemon()
+  if (running && isNewer(running.version, version)) {
+    const entry = join(installedPackageRoot(running.version), 'dist', 'cli.mjs')
+    if (existsSync(entry)) return { kind: 'newer', daemon: running, cliEntry: entry }
+  }
+  return { kind: 'ours', daemon: await ensureDaemon(cliEntry, version) }
 }
