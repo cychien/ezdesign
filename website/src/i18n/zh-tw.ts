@@ -30,6 +30,7 @@ export const zhTw: Messages = {
     docs: '看文件 →',
     download: '下載 Mac 版',
     intel: 'Intel 版',
+    firstOpen: '第一次打開？',
     worksWith: '支援',
     noKey: '不用 API key，直接用你電腦上的 agent',
   },

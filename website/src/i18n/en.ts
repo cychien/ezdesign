@@ -29,6 +29,7 @@ export const en = {
     docs: 'Read the docs →',
     download: 'Download for Mac',
     intel: 'Intel Mac',
+    firstOpen: 'First time opening it?',
     worksWith: 'Works with',
     noKey: 'No API key, uses your local agent',
   },

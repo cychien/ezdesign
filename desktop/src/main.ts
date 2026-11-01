@@ -37,11 +37,11 @@ async function launch(): Promise<void> {
     reload: () => shown.reloadShown(),
     toggleDevTools: () => shown.toggleDevTools(),
     checkForUpdates: () => updates.checkNow(),
-    restartToUpdate: () => updates.restartToUpdate(),
-    downloadedUpdateVersion: null,
+    takeUpdate: () => updates.take(),
+    update: null,
   }
   const updates = startAutoUpdate({
-    onReady: (version) => installMenu({ ...menu, downloadedUpdateVersion: version }),
+    onOffer: (version, by) => installMenu({ ...menu, update: { version, by } }),
   })
   installMenu(menu)
   for (const path of pendingOpens.splice(0)) await openFolder(path)

@@ -13,6 +13,7 @@ export const LINKS = {
 export const DOWNLOAD = {
   arm64: `${REPO}/releases/latest/download/ezdesign-arm64.dmg`,
   x64: `${REPO}/releases/latest/download/ezdesign-x64.dmg`,
+  firstOpen: `${REPO}#or-use-the-mac-app`,
 }
 
 export const INSTALL = 'npx -y @cychien/ezdesign@latest'

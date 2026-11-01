@@ -6,8 +6,9 @@ export interface MenuActions {
   reload(): void
   toggleDevTools(): void
   checkForUpdates(): void
-  restartToUpdate(): void
-  downloadedUpdateVersion: string | null
+  takeUpdate(): void
+  /** A version waiting: installed on restart, or, in an ad-hoc signed app, downloaded by hand. */
+  update: { version: string; by: 'restart' | 'download' } | null
 }
 
 /** The Edit roles are what make copy and paste work in the shell's composer. */
@@ -18,8 +19,16 @@ export function installMenu(actions: MenuActions): void {
       submenu: [
         { role: 'about' },
         { label: 'Check for Updates…', click: () => actions.checkForUpdates() },
-        ...(actions.downloadedUpdateVersion
-          ? [{ label: `Restart to Update to ${actions.downloadedUpdateVersion}`, click: () => actions.restartToUpdate() }]
+        ...(actions.update
+          ? [
+              {
+                label:
+                  actions.update.by === 'restart'
+                    ? `Restart to Update to ${actions.update.version}`
+                    : `Download ezdesign ${actions.update.version}…`,
+                click: () => actions.takeUpdate(),
+              },
+            ]
           : []),
         { type: 'separator' },
         { role: 'services' },
@@ -34,7 +43,7 @@ export function installMenu(actions: MenuActions): void {
     {
       label: 'File',
       submenu: [
-        { label: 'Add Folder…', accelerator: 'CmdOrCtrl+O', click: () => actions.addFolder() },
+        { label: 'Add Project…', accelerator: 'CmdOrCtrl+O', click: () => actions.addFolder() },
         { type: 'separator' },
         { role: 'close' },
       ],

@@ -25,15 +25,30 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: npm run typecheck
       - run: npm test
+      # With a Developer ID the release is signed, notarized and updates itself.
+      # Without one it is ad-hoc signed: users allow it once in System Settings,
+      # and the app points them to each new version instead of installing it.
+      - name: Pick signing
+        id: signing
+        run: echo "developer-id=${{ secrets.MAC_CERT_P12_BASE64 != '' }}" >> "$GITHUB_OUTPUT"
       - name: Write the notarization key
+        if: steps.signing.outputs.developer-id == 'true'
         run: echo "$APPLE_API_KEY_P8" > "$RUNNER_TEMP/notary.p8"
         env:
           APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
-      - run: pnpm --filter @cychien/ezdesign-desktop run release
+      - name: Release, signed and notarized
+        if: steps.signing.outputs.developer-id == 'true'
+        run: pnpm --filter @cychien/ezdesign-desktop run release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          EZDESIGN_SIGNED_RELEASE: '1'
           CSC_LINK: ${{ secrets.MAC_CERT_P12_BASE64 }}
           CSC_KEY_PASSWORD: ${{ secrets.MAC_CERT_PASSWORD }}
           APPLE_API_KEY: ${{ runner.temp }}/notary.p8
           APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+      - name: Release, ad-hoc signed
+        if: steps.signing.outputs.developer-id != 'true'
+        run: pnpm --filter @cychien/ezdesign-desktop run release:adhoc
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
