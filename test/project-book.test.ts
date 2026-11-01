@@ -7,7 +7,7 @@ import { ProjectBook, mergeProjects } from '../src/projects/book.js'
 
 const file = () => join(mkdtempSync(join(tmpdir(), 'ezdesign-book-')), 'projects.json')
 
-test('sessions and added folders, most recently used first', () => {
+test('sessions and added folders, by name however recently each was opened', () => {
   const book = new ProjectBook(
     [
       { project: '/code/old', createdAt: 100 },
@@ -15,16 +15,30 @@ test('sessions and added folders, most recently used first', () => {
     ],
     file(),
   )
-  book.add('/code/added', 300)
-  book.markUsed('/code/cli-opened', 400)
+  book.add('/code/Added', 300)
+  book.markUsed('/code/old', 400)
   assert.deepEqual(
     book.list().map((p) => [p.project, p.name, p.usedAt]),
     [
-      ['/code/cli-opened', 'cli-opened', 400],
-      ['/code/added', 'added', 300],
-      ['/code/old', 'old', 100],
+      ['/code/Added', 'Added', 300],
+      ['/code/cli-opened', 'cli-opened', 200],
+      ['/code/old', 'old', 400],
     ],
   )
+})
+
+test('names compare numerically, and the path orders two folders of one name', () => {
+  const rows = mergeProjects(
+    new Map([
+      ['/work/site', { addedAt: 1 }],
+      ['/code/app10', { addedAt: 2 }],
+      ['/code/site', { addedAt: 3 }],
+      ['/code/app9', { addedAt: 4 }],
+    ]),
+    new Map(),
+    () => true,
+  )
+  assert.deepEqual(rows.map((p) => p.project), ['/code/app9', '/code/app10', '/code/site', '/work/site'])
 })
 
 test('hidden until opened or added again, with nothing cleared', () => {
