@@ -13,6 +13,7 @@ export interface HubRuntime extends ProjectRuntime {
     readonly external: boolean
   }
   shellUrl(path?: string): string
+  readonly agentWorking: boolean
   ensureAgent(fallback: string, by: Initiator): void
 }
 
@@ -42,7 +43,10 @@ export class ProjectHub<R extends HubRuntime> {
     const runtimes = new Map(this.deps.sessions.list().map((r) => [r.project, r]))
     const projects: ProjectWire[] = this.deps.book.list().map((row) => {
       const runtime = runtimes.get(row.project)
-      return { ...row, session: runtime ? { devServer: runtime.devServer.summary() } : null }
+      return {
+        ...row,
+        session: runtime ? { devServer: runtime.devServer.summary(), agentWorking: runtime.agentWorking } : null,
+      }
     })
     return { version: this.deps.version, projects }
   }
