@@ -133,7 +133,7 @@ export function installDevServerPanel(api: string): DevServerPanel {
       }
       actions.append(cancel)
     }
-    if (initial?.source === 'user' || initial?.source === 'agent') {
+    if (!proposalId && (initial?.source === 'user' || initial?.source === 'agent')) {
       const reset = button('ez-devserver-secondary', '改回自動偵測')
       reset.onclick = () => {
         editing = false
