@@ -29,7 +29,7 @@ async function launch(): Promise<void> {
   projectWindow = shown
   shown.onClosed(() => app.quit())
   installMenu({
-    showHome: () => shown.showHome(),
+    toggleSidebar: () => shown.toggleSidebar(),
     addFolder: () => void shown.pickFolder().then((path: string | null) => (path ? openFolder(path) : undefined)),
     reload: () => shown.reloadShown(),
     toggleDevTools: () => shown.toggleDevTools(),

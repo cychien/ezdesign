@@ -5950,6 +5950,9 @@ html.ez-on-board body {
     animation-name: ez-fade-in;
   }
 }
+
+/* In the app the tab bar is the title bar: it drags the window, and with the
+   sidebar collapsed it leaves the traffic lights their corner. */
 [data-host='desktop'] .ez-tabs-bar {
   padding-left: var(--traffic-light-room);
   -webkit-app-region: drag;
@@ -5959,4 +5962,28 @@ html.ez-on-board body {
 [data-host='desktop'] .ez-tabs-bar [role='tab'],
 [data-host='desktop'] .ez-tabs-bar .ez-menu {
   -webkit-app-region: no-drag;
+}
+
+.ez-sidebar-toggle {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  margin: 0 6px 0 -4px;
+  border: none;
+  border-radius: 7px;
+  background: none;
+  color: var(--muted-foreground);
+  cursor: pointer;
+}
+
+.ez-sidebar-toggle:hover {
+  background: var(--muted);
+  color: var(--foreground);
+}
+
+[data-sidebar='closed'] .ez-sidebar-toggle {
+  display: inline-flex;
 }

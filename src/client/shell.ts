@@ -1,6 +1,7 @@
 /** Review shell (host page): iframe of the proxied app + feedback sidebar. */
 
 import Cancel01Icon from '@hugeicons/core-free-icons/Cancel01Icon'
+import SidebarLeftIcon from '@hugeicons/core-free-icons/SidebarLeftIcon'
 import AlignSelectionIcon from '@hugeicons/core-free-icons/AlignSelectionIcon'
 import ChevronDownIcon from '@hugeicons/core-free-icons/ChevronDownIcon'
 import ChevronRightIcon from '@hugeicons/core-free-icons/ChevronRightIcon'
@@ -47,6 +48,7 @@ import { videoDigests } from './video-digest/runner.js'
 import type { DigestFailure } from '../protocol.js'
 import type { DevServerWire } from '../dev-server/wire.js'
 import { installDevServerPanel } from './dev-server-panel.js'
+import { host } from './host.js'
 import {
   type CanvasEventWire,
   type CanvasSnapshotWire,
@@ -3367,11 +3369,23 @@ async function api(path: string, init?: RequestInit): Promise<Response> {
   })
 }
 
+/** In the app, with its project sidebar collapsed. */
+function sidebarToggle(toggle: () => void): HTMLElement {
+  const button = h('button', 'ez-sidebar-toggle')
+  button.type = 'button'
+  button.title = '展開側邊欄（⌃⌘S）'
+  button.setAttribute('aria-label', button.title)
+  button.append(icon(SidebarLeftIcon as IconNode, 16))
+  button.onclick = () => toggle()
+  return button
+}
+
 /** What the canvas feature may use of the shell, and nothing more. */
 function canvasPorts(): Parameters<typeof installCanvas>[0] {
   return {
     guests: frames,
     stageWrap,
+    ...(host.kind === 'desktop' ? { tabsLead: sidebarToggle(host.toggleSidebar) } : {}),
     stage,
     api,
     onTabShown: (tab) => {

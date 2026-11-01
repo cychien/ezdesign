@@ -1,5 +1,7 @@
 @import './shell.css';
 
+/* --------------------------------------------------------------- browser note */
+
 .ez-home {
   width: min(720px, calc(100% - 48px));
   margin: 0 auto;
@@ -12,34 +14,264 @@
   height: 24px;
 }
 
-.ez-home-title {
-  margin: 36px 0 0;
-  font-size: 24px;
-  font-weight: 600;
-  letter-spacing: -0.01em;
-}
-
 .ez-home-lead {
   margin: 6px 0 0;
   font-size: 14px;
   color: var(--muted-foreground);
 }
 
-.ez-home-add {
+.ez-home-app-only {
+  margin-top: 36px;
+  max-width: 520px;
+}
+
+/* ------------------------------------------------------------------- sidebar */
+
+/* The window's vibrancy shows through. */
+html:has(.ez-side),
+html:has(.ez-side) body {
+  background: transparent;
+}
+
+.ez-side {
   display: flex;
+  flex-direction: column;
+  height: 100vh;
+  user-select: none;
+}
+
+.ez-side[data-dragging] .ez-side-list {
+  outline: 2px dashed var(--ink-ghost);
+  outline-offset: -2px;
+  border-radius: 9px;
+}
+
+/* The title bar: the traffic lights sit on its left, and it drags the window. */
+.ez-side-top {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-shrink: 0;
+  height: 42px;
+  padding: 0 10px;
+  -webkit-app-region: drag;
+}
+
+.ez-side-top button {
+  -webkit-app-region: no-drag;
+}
+
+.ez-side-section {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px 4px 16px;
+}
+
+.ez-side-label {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--muted-foreground);
+}
+
+.ez-side-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--muted-foreground);
+  cursor: pointer;
+}
+
+.ez-side-icon:hover {
+  background: oklch(0% 0 0 / 0.06);
+  color: var(--foreground);
+}
+
+.ez-side-list {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin: 0;
+  padding: 2px 8px 12px;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.ez-side-row {
+  position: relative;
+}
+
+.ez-side-open {
+  display: flex;
+  align-items: center;
   gap: 8px;
-  margin-top: 24px;
+  width: 100%;
+  height: 30px;
+  padding: 0 10px 0 8px;
+  border: none;
+  border-radius: 7px;
+  background: none;
+  color: var(--foreground);
+  font-family: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: default;
+}
+
+.ez-side-open > svg {
+  flex-shrink: 0;
+  color: var(--muted-foreground);
+}
+
+.ez-side-row:hover .ez-side-open {
+  background: oklch(0% 0 0 / 0.045);
+}
+
+.ez-side-row[data-current] .ez-side-open {
+  background: oklch(0% 0 0 / 0.085);
+  font-weight: 600;
+}
+
+.ez-side-row[data-current] .ez-side-open > svg {
+  color: var(--foreground);
+}
+
+.ez-side-row[data-missing] .ez-side-open {
+  color: var(--ink-faint);
+}
+
+.ez-side-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ez-side-dot {
+  flex-shrink: 0;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+
+.ez-side-dot[data-phase='running'] {
+  background: oklch(68% 0.16 150);
+}
+
+.ez-side-dot[data-phase='starting'] {
+  background: oklch(78% 0.14 80);
+}
+
+.ez-side-dot[data-phase='crashed'],
+.ez-side-dot[data-phase='blocked'],
+.ez-side-dot[data-phase='needs-command'] {
+  background: oklch(60% 0.18 25);
+}
+
+.ez-side-dot[data-phase='external'],
+.ez-side-dot[data-phase='stopped'] {
+  background: var(--ink-ghost);
+}
+
+/* On hover the row's own actions take the dot's place. */
+.ez-side-actions {
+  position: absolute;
+  top: 2px;
+  right: 3px;
+  display: none;
+  gap: 1px;
+}
+
+.ez-side-row:hover .ez-side-actions {
+  display: flex;
+}
+
+.ez-side-row:hover .ez-side-dot {
+  visibility: hidden;
+}
+
+.ez-side-empty {
+  padding: 8px 8px 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--muted-foreground);
+}
+
+.ez-side-error {
+  margin: 0;
+  padding: 8px 16px 12px;
+  font-size: 12px;
+  color: oklch(45% 0.15 25);
+}
+
+.ez-side-error[hidden] {
+  display: none;
+}
+
+/* ---------------------------------------------------------------- empty pane */
+
+.ez-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100vh;
+  padding: 0 32px;
+  text-align: center;
+  -webkit-app-region: drag;
+}
+
+.ez-empty button {
+  -webkit-app-region: no-drag;
+}
+
+.ez-empty-mark {
+  width: 40px;
+  height: 40px;
+}
+
+.ez-empty-mark > svg {
+  width: 100%;
+  height: 100%;
+}
+
+.ez-empty-title {
+  margin: 18px 0 0;
+  font-size: 17px;
+  font-weight: 600;
+}
+
+.ez-empty-lead {
+  max-width: 340px;
+  margin: 6px 0 20px;
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--muted-foreground);
+}
+
+.ez-empty-error {
+  margin: 12px 0 0;
+  font-size: 12.5px;
+  color: oklch(45% 0.15 25);
 }
 
 .ez-home-add-go {
-  height: 36px;
-  padding: 0 16px;
+  height: 34px;
+  padding: 0 14px;
   border: 1px solid var(--primary);
   border-radius: 8px;
   background: var(--primary);
   color: var(--primary-foreground);
   font-family: inherit;
-  font-size: 13.5px;
+  font-size: 13px;
   font-weight: 600;
   cursor: pointer;
   box-shadow: inset 0 1px 0 0 oklch(100% 0 0 / 0.14);
@@ -49,204 +281,8 @@
   opacity: 0.88;
 }
 
-.ez-home-add-go:disabled {
-  opacity: 0.4;
-  cursor: default;
-}
-
-.ez-home-error {
-  margin: 10px 0 0;
-  font-size: 13px;
-  color: oklch(45% 0.15 25);
-}
-
-.ez-home-error[hidden] {
-  display: none;
-}
-
-.ez-home-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin: 24px 0 0;
-  padding: 0;
-  list-style: none;
-}
-
-.ez-home-row {
-  position: relative;
-  display: flex;
-  align-items: center;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--panel);
-  transition: border-color 0.12s ease;
-}
-
-.ez-home-row:hover {
-  border-color: var(--ink-ghost);
-}
-
-.ez-home-open {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex: 1;
-  min-width: 0;
-  padding: 14px 8px 14px 16px;
-  border: none;
-  border-radius: 10px;
-  background: none;
-  color: var(--foreground);
-  font-family: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-
-.ez-home-open > svg {
-  flex-shrink: 0;
-  color: var(--ink-faint);
-}
-
-.ez-home-open:disabled {
-  cursor: default;
-}
-
-.ez-home-row[data-missing] .ez-home-text {
-  opacity: 0.5;
-}
-
-.ez-home-text {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  flex: 1;
-  min-width: 0;
-}
-
-.ez-home-name {
-  font-size: 14.5px;
-  font-weight: 600;
-}
-
-.ez-home-path {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  /* The end of a path tells projects apart, so the ellipsis eats the start. */
-  direction: rtl;
-  text-align: left;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 11.5px;
-  color: var(--muted-foreground);
-}
-
-.ez-home-meta {
-  flex-shrink: 0;
-  font-size: 12px;
-  color: var(--muted-foreground);
-}
-
-.ez-home-status {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 3px 8px;
-  border-radius: 999px;
-  background: var(--muted);
-  color: var(--foreground);
-  font-weight: 500;
-}
-
-.ez-home-actions {
-  display: flex;
-  gap: 2px;
-  padding-right: 10px;
-}
-
-.ez-home-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  border: none;
-  border-radius: 7px;
-  background: none;
-  color: var(--ink-faint);
-  cursor: pointer;
-}
-
-.ez-home-icon:hover {
-  background: var(--muted);
-  color: var(--foreground);
-}
-
-.ez-home-empty {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 28px 20px;
-  border: 1px dashed var(--border);
-  border-radius: 10px;
-  font-size: 13.5px;
-  color: var(--muted-foreground);
-  text-align: center;
-}
-
-.ez-home-empty strong {
-  color: var(--foreground);
-  font-weight: 600;
-}
-
 .ez-home-pick {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-}
-
-.ez-home-hint {
-  align-self: center;
-  font-size: 13px;
-  color: var(--muted-foreground);
-}
-
-.ez-home[data-dragging] .ez-home-list {
-  outline: 2px dashed var(--ink-ghost);
-  outline-offset: 6px;
-  border-radius: 12px;
-}
-
-[data-host='desktop'] .ez-home::before {
-  content: '';
-  position: fixed;
-  inset: 0 0 auto;
-  height: 40px;
-  -webkit-app-region: drag;
-}
-
-.ez-home-app-only {
-  margin-top: 36px;
-  max-width: 520px;
-}
-
-.ez-home-dot {
-  flex-shrink: 0;
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--ink-ghost);
-}
-
-[data-phase='running'] > .ez-home-dot {
-  background: oklch(68% 0.16 150);
-}
-
-[data-phase='starting'] > .ez-home-dot {
-  background: oklch(78% 0.14 80);
-}
-
-[data-phase='crashed'] > .ez-home-dot,
-[data-phase='blocked'] > .ez-home-dot {
-  background: oklch(60% 0.18 25);
 }
