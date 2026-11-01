@@ -209,33 +209,6 @@ html:has(.ez-side) body::after {
   white-space: nowrap;
 }
 
-.ez-side-dot {
-  flex-shrink: 0;
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-}
-
-.ez-side-dot[data-phase='running'] {
-  background: oklch(68% 0.16 150);
-}
-
-.ez-side-dot[data-phase='starting'] {
-  background: oklch(78% 0.14 80);
-}
-
-.ez-side-dot[data-phase='crashed'],
-.ez-side-dot[data-phase='blocked'],
-.ez-side-dot[data-phase='needs-command'] {
-  background: oklch(60% 0.18 25);
-}
-
-.ez-side-dot[data-phase='external'],
-.ez-side-dot[data-phase='stopped'] {
-  background: var(--ink-ghost);
-}
-
-/* On hover the row's own actions take the dot's place. */
 .ez-side-actions {
   position: absolute;
   top: 2px;
@@ -248,8 +221,13 @@ html:has(.ez-side) body::after {
   display: flex;
 }
 
-.ez-side-row:hover .ez-side-dot {
-  visibility: hidden;
+/* A long name ends before the actions rather than under them. */
+.ez-side-row:hover .ez-side-open {
+  padding-right: 32px;
+}
+
+.ez-side-row:hover:has(.ez-side-actions > :nth-child(2)) .ez-side-open {
+  padding-right: 59px;
 }
 
 .ez-side-empty {
