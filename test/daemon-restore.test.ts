@@ -94,6 +94,38 @@ test('ending the session drops the agent, so a restore does not resurrect it', a
   assert.equal(persisted.agent, undefined)
 })
 
+test('a disconnected agent stays disconnected through a restart, until a shell connects one', async () => {
+  const live = await world.liveDaemon()
+  const dir = project('disconnect')
+  const opened = await world.openSession(live.port, { url: 'http://127.0.0.1:13/', project: dir, agent: FAKE_AGENT })
+  await acpIdle(opened.port)
+  const api = `http://127.0.0.1:${opened.port}/__ezdesign/api`
+  const post = (path: string, body: unknown = {}) =>
+    fetch(`${api}${path}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+
+  assert.equal((await post('/acp/disconnect')).status, 200)
+  const disconnected = (await world.state(opened.port)) as unknown as State
+  assert.equal(disconnected.acp, undefined)
+  assert.equal(disconnected.agentOnline, false)
+  const persisted = JSON.parse(readFileSync(join(world.dataDir, 'sessions', sessionKey(dir), 'session.json'), 'utf8')) as {
+    agent?: string
+    state: string
+  }
+  assert.deepEqual([persisted.state, persisted.agent], ['active', undefined])
+
+  await world.stopDaemon(live.port)
+  world.spawnDaemon()
+  const next = await world.liveDaemon()
+  const port = await findPort(next.port, dir)
+  const restored = (await world.state(port)) as unknown as State
+  assert.equal(restored.acp, undefined, 'a restore does not reconnect it')
+
+  const nextApi = `http://127.0.0.1:${port}/__ezdesign/api`
+  const connect = (id: string) =>
+    fetch(`${nextApi}/acp/agent`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id }) })
+  assert.equal((await connect('nobody')).status, 400, 'only a known agent, by id')
+})
+
 test('a session whose last port is taken comes back on another one, not on none', async () => {
   const live = await world.liveDaemon()
   const origin = 'http://127.0.0.1:10'

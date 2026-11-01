@@ -3,10 +3,9 @@ import { mkdirSync, mkdtempSync, realpathSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, test } from 'node:test'
-import { DaemonWorld, FAKE_AGENT, PKG_VERSION, waitFor } from './helpers/daemon.js'
+import { DaemonWorld, PKG_VERSION, waitFor } from './helpers/daemon.js'
 
 const world = await DaemonWorld.create()
-writeFileSync(join(world.dataDir, 'preferences.json'), JSON.stringify({ lastAgent: FAKE_AGENT }))
 after(() => world.dispose())
 
 world.spawnDaemon()
@@ -76,8 +75,8 @@ test('opening starts the dev server and answers with the shell', async () => {
   }, 'the dev server to run')
   assert.equal(await (await fetch(`http://127.0.0.1:${port}/`)).text(), 'hello')
 
-  const state = (await world.state(port)) as { acp?: { agent: string } }
-  assert.equal(state.acp?.agent, FAKE_AGENT, 'a first open drives the last agent the user picked')
+  const state = (await world.state(port)) as { acp?: unknown; agentOnline: boolean }
+  assert.deepEqual([state.acp, state.agentOnline], [undefined, false], 'an agent waits to be connected from the shell')
 
   const sessionApi = `http://127.0.0.1:${port}/__ezdesign/api/projects`
   assert.equal((await fetch(sessionApi, { headers: VERSIONED })).status, 404, 'a review cannot reach other projects')
