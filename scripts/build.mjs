@@ -64,6 +64,10 @@ export const targets = [
   },
   {
     group: 'client',
+    config: { ...browser, entryPoints: ['src/client/home-entry.ts'], outfile: 'dist/home.js' },
+  },
+  {
+    group: 'client',
     config: { ...browser, entryPoints: ['src/client/events-worker.ts'], outfile: 'dist/events-worker.js' },
   },
   {
@@ -77,6 +81,10 @@ export const targets = [
   {
     group: 'client',
     config: { ...browser, entryPoints: ['src/client/shell.css'], outfile: 'dist/shell.css' },
+  },
+  {
+    group: 'client',
+    config: { ...browser, entryPoints: ['src/client/home.css'], outfile: 'dist/home.css' },
   },
 ]
 

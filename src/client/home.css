@@ -1,0 +1,219 @@
+@import './shell.css';
+
+.ez-home {
+  width: min(720px, calc(100% - 48px));
+  margin: 0 auto;
+  padding: 40px 0 64px;
+}
+
+.ez-home-head {
+  display: flex;
+  align-items: center;
+  height: 24px;
+}
+
+.ez-home-title {
+  margin: 36px 0 0;
+  font-size: 24px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.ez-home-lead {
+  margin: 6px 0 0;
+  font-size: 14px;
+  color: var(--muted-foreground);
+}
+
+.ez-home-add {
+  display: flex;
+  gap: 8px;
+  margin-top: 24px;
+}
+
+.ez-home-input {
+  flex: 1;
+  min-width: 0;
+  height: 36px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--foreground);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+}
+
+.ez-home-input:focus-visible {
+  outline: none;
+  border-color: var(--ring);
+  box-shadow: 0 0 0 3px var(--ring-halo);
+}
+
+.ez-home-add-go {
+  height: 36px;
+  padding: 0 16px;
+  border: 1px solid var(--primary);
+  border-radius: 8px;
+  background: var(--primary);
+  color: var(--primary-foreground);
+  font-family: inherit;
+  font-size: 13.5px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: inset 0 1px 0 0 oklch(100% 0 0 / 0.14);
+}
+
+.ez-home-add-go:hover:not(:disabled) {
+  opacity: 0.88;
+}
+
+.ez-home-add-go:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.ez-home-error {
+  margin: 10px 0 0;
+  font-size: 13px;
+  color: oklch(45% 0.15 25);
+}
+
+.ez-home-error[hidden] {
+  display: none;
+}
+
+.ez-home-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 24px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ez-home-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel);
+  transition: border-color 0.12s ease;
+}
+
+.ez-home-row:hover {
+  border-color: var(--ink-ghost);
+}
+
+.ez-home-open {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+  min-width: 0;
+  padding: 14px 8px 14px 16px;
+  border: none;
+  border-radius: 10px;
+  background: none;
+  color: var(--foreground);
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ez-home-open > svg {
+  flex-shrink: 0;
+  color: var(--ink-faint);
+}
+
+.ez-home-open:disabled {
+  cursor: default;
+}
+
+.ez-home-row[data-missing] .ez-home-text {
+  opacity: 0.5;
+}
+
+.ez-home-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.ez-home-name {
+  font-size: 14.5px;
+  font-weight: 600;
+}
+
+.ez-home-path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  /* The end of a path tells projects apart, so the ellipsis eats the start. */
+  direction: rtl;
+  text-align: left;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11.5px;
+  color: var(--muted-foreground);
+}
+
+.ez-home-meta {
+  flex-shrink: 0;
+  font-size: 12px;
+  color: var(--muted-foreground);
+}
+
+.ez-home-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: var(--muted);
+  color: var(--foreground);
+  font-weight: 500;
+}
+
+.ez-home-actions {
+  display: flex;
+  gap: 2px;
+  padding-right: 10px;
+}
+
+.ez-home-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 7px;
+  background: none;
+  color: var(--ink-faint);
+  cursor: pointer;
+}
+
+.ez-home-icon:hover {
+  background: var(--muted);
+  color: var(--foreground);
+}
+
+.ez-home-empty {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 28px 20px;
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+  font-size: 13.5px;
+  color: var(--muted-foreground);
+  text-align: center;
+}
+
+.ez-home-empty strong {
+  color: var(--foreground);
+  font-weight: 600;
+}

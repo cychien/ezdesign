@@ -47,6 +47,7 @@ import { videoDigests } from './video-digest/runner.js'
 import type { DigestFailure } from '../protocol.js'
 import type { DevServerWire } from '../dev-server/wire.js'
 import { installDevServerPanel } from './dev-server-panel.js'
+import { installProjectSwitcher } from './project-switcher.js'
 import {
   type CanvasEventWire,
   type CanvasSnapshotWire,
@@ -208,6 +209,7 @@ interface SnapshotWire {
   designEffort?: DesignEffort
   devServer: DevServerWire
   appTab: boolean
+  project: string
 }
 
 interface ChatWire {
@@ -3370,6 +3372,7 @@ function canvasPorts(): Parameters<typeof installCanvas>[0] {
   return {
     guests: frames,
     stageWrap,
+    tabsLead: installProjectSwitcher(API, BUILD, snapshot!.project),
     stage,
     api,
     onTabShown: (tab) => {

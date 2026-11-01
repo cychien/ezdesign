@@ -44,6 +44,7 @@ export interface SessionRecords {
   get(project: string): PersistedSession | null
   /** `migrateLegacySessions`: fold `(origin, project)` directories in. */
   migrate(): void
+  used?(project: string, now: number): void
 }
 
 export interface OpenRequest {
@@ -83,6 +84,7 @@ export class SessionDirectory<R extends ProjectRuntime> {
       runtime.reopen()
     }
     if (req.origin) this.attachOrigin(runtime, req.origin, { userAttached: true, now: req.now })
+    this.records.used?.(req.project, req.now)
     return { ok: true, runtime }
   }
 

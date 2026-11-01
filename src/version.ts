@@ -1,7 +1,8 @@
 import type { RequestHandler } from 'express'
 import { APP_NAME, NPM_PACKAGE } from './constants.js'
+import { VERSION_HEADER } from './version-header.js'
 
-export const VERSION_HEADER = `x-${APP_NAME}-version`
+export { VERSION_HEADER }
 
 /** Reopening with @latest restarts the daemon on the CLI's version, so one hint
  *  covers a stale CLI and a stale daemon alike. */

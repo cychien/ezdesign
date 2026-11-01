@@ -10,6 +10,7 @@ interface Preferences {
   designHarness?: Record<string, boolean>
   designEffort?: Record<string, DesignEffort>
   announcementsSeen?: string[]
+  lastAgent?: string
 }
 
 function read(file: string): Preferences {
@@ -59,6 +60,15 @@ export function rememberAnnouncementSeen(id: string, file = PREFERENCES_FILE): s
   const next = [...seen, id]
   write(file, { ...prefs, announcementsSeen: next })
   return next
+}
+
+export function rememberedLastAgent(file = PREFERENCES_FILE): string | undefined {
+  return read(file).lastAgent
+}
+
+export function rememberLastAgent(command: string, file = PREFERENCES_FILE): void {
+  const prefs = read(file)
+  if (prefs.lastAgent !== command) write(file, { ...prefs, lastAgent: command })
 }
 
 function write(file: string, prefs: Preferences): void {
