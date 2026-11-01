@@ -6,7 +6,11 @@ export interface ProjectWire {
   usedAt: number | null
   exists: boolean
   /** Null while the project has no live session in this daemon. */
-  session: { devServer: DevServerSummaryWire } | null
+  session: {
+    devServer: DevServerSummaryWire
+    /** The agent is taking a turn, or stopping one. */
+    agentWorking: boolean
+  } | null
 }
 
 export interface ProjectListWire {
