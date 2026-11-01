@@ -5958,6 +5958,11 @@ html.ez-on-board body {
   -webkit-app-region: drag;
 }
 
+/* With the sidebar open the pane's own edge is the first tab's left line. */
+[data-host='desktop'][data-sidebar='open'] .ez-tab:first-child {
+  margin-left: -1px;
+}
+
 [data-host='desktop'] .ez-tabs-bar button,
 [data-host='desktop'] .ez-tabs-bar [role='tab'],
 [data-host='desktop'] .ez-tabs-bar .ez-menu {
