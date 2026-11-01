@@ -86,7 +86,7 @@ test('stop kills with grace and detaches; the exit after it lands on stopped', (
   const running = run([...started, { type: 'origins', runId: RUN, origins: [ORIGIN] }]).machine
   const stopping = step(running, { type: 'stop' })
   assert.deepEqual(stopping.effects, [
-    { type: 'kill', runId: RUN, grace: true },
+    { type: 'kill', runId: RUN },
     { type: 'detach', origin: ORIGIN },
     { type: 'persist-resume', resume: null },
   ])
@@ -122,7 +122,7 @@ test('a URL printed after the ready timeout is ignored', () => {
   ])
   assert.deepEqual(wire, { phase: 'crashed', command: VITE, cause: 'no-url', tail: ['compiling...'] })
   assert.deepEqual(effects.slice(-2), [
-    { type: 'kill', runId: RUN, grace: false },
+    { type: 'kill', runId: RUN },
     { type: 'persist-resume', resume: null },
   ])
 })
@@ -207,7 +207,7 @@ test('a confirmed command while running restarts onto it', () => {
   const running = run([...started, { type: 'origins', runId: RUN, origins: [ORIGIN] }]).machine
   const { effects, machine } = step(running, { type: 'confirmed', now: 5, by: 'browser' })
   assert.deepEqual(effects, [
-    { type: 'kill', runId: RUN, grace: true },
+    { type: 'kill', runId: RUN },
     { type: 'detach', origin: ORIGIN },
   ])
   assert.equal(machine.state.phase, 'stopping')

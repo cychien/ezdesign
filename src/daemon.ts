@@ -2631,6 +2631,9 @@ export async function daemonMain(version: string, opts: DaemonOptions = {}): Pro
 
   let stopping = false
   let boundAt = 0n
+  // Asked, not killed: a task runner such as turbo stops the servers it started
+  // only on SIGTERM, and a SIGKILL leaves them holding their ports.
+  const releaseDevServers = () => Promise.all(sessions.list().map((s) => s.devServer.release()))
 
   const updater = new Updater({
     current: version,
@@ -2639,7 +2642,10 @@ export async function daemonMain(version: string, opts: DaemonOptions = {}): Pro
     handover: handoverTo,
     // Exit is the release: it frees every port at once and takes the agent
     // children with it, which is what the successor is waiting for.
-    retire: async () => process.exit(0),
+    retire: async () => {
+      await releaseDevServers()
+      process.exit(0)
+    },
     onChange: broadcastAll,
   })
 
@@ -2827,7 +2833,7 @@ export async function daemonMain(version: string, opts: DaemonOptions = {}): Pro
     stopping = true
     clearRegistry(process.pid)
     res.json({ ok: true })
-    setTimeout(() => process.exit(0), 100)
+    void releaseDevServers().then(() => process.exit(0))
   })
 
   const controlServer = await listenOn(control, [...range.ports, 0])
@@ -2868,8 +2874,10 @@ export async function daemonMain(version: string, opts: DaemonOptions = {}): Pro
   }
   const cleanup = () => {
     clearRegistry(process.pid)
-    clearGroupRecord()
-    process.exit(0)
+    void releaseDevServers().then(() => {
+      clearGroupRecord()
+      process.exit(0)
+    })
   }
   process.on('SIGTERM', cleanup)
   process.on('SIGINT', cleanup)
