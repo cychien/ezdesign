@@ -50,6 +50,20 @@ html:has(.ez-side) body::before {
   pointer-events: none;
 }
 
+/* The project pane is a separate view laid over this page, so its shadow is drawn here, under the grain. */
+html:has(.ez-side) body::after {
+  content: '';
+  position: fixed;
+  inset: var(--pane-inset) var(--pane-inset) var(--pane-inset) var(--sidebar-width);
+  z-index: -2;
+  border-radius: var(--pane-radius);
+  box-shadow:
+    0 0 0 1px oklch(0% 0 0 / 0.07),
+    0 1px 2px oklch(0% 0 0 / 0.05),
+    0 4px 16px oklch(0% 0 0 / 0.05);
+  pointer-events: none;
+}
+
 .ez-side {
   display: flex;
   flex-direction: column;
