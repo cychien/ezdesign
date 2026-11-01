@@ -102,11 +102,11 @@ It only runs in dev (`apply: 'serve'`) and never touches production builds.
 
 | Key | Mode | Use it for |
 | --- | --- | --- |
-| `E` | **元素** (element) | One thing: a button, a heading, a sentence. Click it, or select text. |
-| `R` | **範圍** (region) | An area: a card, a row of cards, "the spacing through here". Drag a box; whatever it fully encloses is what you meant. |
+| `E` | **Element** | One thing: a button, a heading, a sentence. Click it, or select text. |
+| `R` | **Region** | An area: a card, a row of cards, "the spacing through here". Drag a box; whatever it fully encloses is what you meant. |
 | `Esc` | | Close the comment box, then leave the mode. |
 
-Annotations queue up in **待送清單** and stay editable until you send. Paste or drop a screenshot,
+Annotations queue up beside your app and stay editable until you send. Paste or drop a screenshot,
 or any file, straight into a comment and the agent gets a path to it.
 
 ### Commands in the comment box
@@ -182,7 +182,7 @@ Then open `chrome://extensions`, turn on **Developer mode**, choose **Load unpac
 `~/.ezdesign/extension`. Works with Chrome, Chromium, Arc, Brave, Edge and Vivaldi on macOS and
 Linux.
 
-- **Right-click any image or video** and choose **儲存至 ezdesign**.
+- **Right-click any image or video** and save it to ezdesign.
 - **Press `Alt+Shift+S`** (or click the toolbar icon) and drag over any part of a page.
 - Add tags and a note on why it is good, so the agent knows how to use it later.
 
@@ -202,15 +202,6 @@ When a newer version is out, a card at the top of the shell offers it. One click
 hands your sessions over, and if the new version fails to start you stay on the one you had.
 Always run the CLI as `npx -y @cychien/ezdesign@latest`; a bare `npx @cychien/ezdesign` keeps
 using whatever version npx cached. Update the skill with `npx skills update ezdesign`.
-
-## Enhanced design (experimental)
-
-With `EZDESIGN_DESIGN_HARNESS=1` set where the daemon starts, an **增強設計** switch appears above
-the composer. Turned on, the agent works the way a designer does. It keeps two files at your project
-root: `PRODUCT.md` (who the product is for and what must not change) and
-[`DESIGN.md`](https://github.com/google-labs-code/design.md) (its visual direction). It looks for
-precedent before it builds, and has a fresh reviewer judge each piece of design before you see it.
-The first time, it interviews you for `PRODUCT.md` and reads `DESIGN.md` off your running page.
 
 ## CLI
 
@@ -232,7 +223,6 @@ ezdesign --help                   everything else
 | `EZDESIGN_CONTROL_PORT` | `4400` | First of the ten ports the daemon tries for its control server. |
 | `EZDESIGN_NO_UPDATE_CHECK` | unset | `1` never asks npm for a newer version. |
 | `EZDESIGN_NO_IDLE_STOP` | unset | `1` keeps the daemon running when idle. By default it stops after 30 minutes with no shell open. |
-| `EZDESIGN_DESIGN_HARNESS` | unset | `1` makes [enhanced design](#enhanced-design-experimental) available. |
 
 ## Privacy
 
