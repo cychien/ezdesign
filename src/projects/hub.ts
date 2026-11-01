@@ -15,7 +15,7 @@ export interface HubRuntime extends ProjectRuntime {
     readonly managedBy: Initiator | null
   }
   shellUrl(path?: string): string
-  ensureAgent(fallback: string): void
+  disconnectAgentOf(by: Initiator): boolean
 }
 
 export interface HubSessions<R> {
@@ -27,7 +27,6 @@ export interface ProjectHubDeps<R extends HubRuntime> {
   sessions: HubSessions<R>
   book: ProjectBook
   version: string
-  defaultAgent(): string
   projectRoot(path: string): string
   restored(): Promise<void>
 }
@@ -71,7 +70,6 @@ export class ProjectHub<R extends HubRuntime> {
     if (!opened.ok) return { ok: false, status: 404, error: 'the review could not be opened' }
     const { runtime } = opened
     runtime.devServer.ensure(by)
-    runtime.ensureAgent(this.deps.defaultAgent())
     this.changed()
     return { project, shellUrl: runtime.shellUrl() }
   }
@@ -85,6 +83,10 @@ export class ProjectHub<R extends HubRuntime> {
     const targets = this.deps.sessions.list().filter((r) => r.devServer.managedBy === by)
     await Promise.all(targets.map((r) => r.devServer.stop()))
     return targets.length
+  }
+
+  disconnectAgentsOf(by: Initiator): number {
+    return this.deps.sessions.list().filter((r) => r.disconnectAgentOf(by)).length
   }
 
   changed(): void {

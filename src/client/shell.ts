@@ -18,6 +18,7 @@ import KeyboardIcon from '@hugeicons/core-free-icons/KeyboardIcon'
 import Select01Icon from '@hugeicons/core-free-icons/Select01Icon'
 import Navigation03Icon from '@hugeicons/core-free-icons/Navigation03Icon'
 import BubbleChatAddIcon from '@hugeicons/core-free-icons/BubbleChatAddIcon'
+import Plug01Icon from '@hugeicons/core-free-icons/Plug01Icon'
 import BubbleChatIcon from '@hugeicons/core-free-icons/BubbleChatIcon'
 import BubbleChatOutcomeIcon from '@hugeicons/core-free-icons/BubbleChatOutcomeIcon'
 import Edit02Icon from '@hugeicons/core-free-icons/Edit02Icon'
@@ -3792,6 +3793,7 @@ async function loadAgents(): Promise<void> {
  *  than reporting afterwards. */
 async function switchAgent(agent: AgentWire): Promise<void> {
   closeAgentMenu()
+  if (!snapshot?.acp) return void connectAgent(agent)
   if (agent.id === runningAgentId()) return
   const ok = await askConfirm({
     // Keyed on the act, not on which agent: the reason is the same whichever
@@ -3802,10 +3804,19 @@ async function switchAgent(agent: AgentWire): Promise<void> {
     go: `改用 ${agent.name}`,
   })
   if (!ok) return
+  await connectAgent(agent)
+}
+
+async function connectAgent(agent: AgentWire): Promise<void> {
   await api('/acp/agent', {
     method: 'POST',
-    body: JSON.stringify({ id: agent.id }),
+    body: JSON.stringify({ id: agent.id, host: host.kind }),
   })
+}
+
+async function disconnectAgent(): Promise<void> {
+  closeAgentMenu()
+  await api('/acp/disconnect', { method: 'POST' })
 }
 
 function paintAgents(): void {
@@ -3816,18 +3827,28 @@ function paintAgents(): void {
   // to be in the list it is ticked in.
   const shown = agents.filter((a) => a.installed || a.id === runningId)
 
-  const signature = JSON.stringify([shown, command])
+  const connected = !!snapshot?.acp
+  const signature = JSON.stringify([shown, command, connected])
   if (signature === agentsDrawn) return
   agentsDrawn = signature
 
   agentPill.textContent = ''
+  agentPill.toggleAttribute('data-offline', !connected)
   agentPill.append(
-    ...brandMark(agentBrandFor(command), 14),
-    h('span', 'ez-agent-name', agentProfileFor(command)?.name ?? 'Agent'),
+    ...(connected ? brandMark(agentBrandFor(command), 14) : [icon(Plug01Icon as IconNode, 14)]),
+    h('span', 'ez-agent-name', connected ? (agentProfileFor(command)?.name ?? 'Agent') : '連線 Agent'),
     icon(ChevronDownIcon as IconNode, 12),
   )
 
   agentMenu.textContent = ''
+  const choices = h('div', 'ez-menu-group')
+  agentMenu.append(choices)
+  if (!shown.length) {
+    const none = h('button', 'ez-menu-item')
+    none.disabled = true
+    none.append(h('span', 'ez-menu-name', '這台電腦上沒有可用的 agent'))
+    choices.append(none)
+  }
   agentRows = shown.map((agent) => {
     const on = agent.id === runningId
     const row = h('button', 'ez-menu-item')
@@ -3839,9 +3860,18 @@ function paintAgents(): void {
     const brand = AGENT_PROFILES.find((p) => p.id === agent.id)?.brand
     row.append(...brandMark(brand, 15), h('span', 'ez-menu-name', agent.name), menuCheck())
     row.onclick = () => void switchAgent(agent)
-    agentMenu.append(row)
+    choices.append(row)
     return row
   })
+  if (!connected) return
+  const off = h('button', 'ez-menu-item')
+  off.setAttribute('role', 'menuitem')
+  off.append(icon(Plug01Icon as IconNode, 15), h('span', 'ez-menu-name', '中斷連線'))
+  off.onclick = () => void disconnectAgent()
+  const offGroup = h('div', 'ez-menu-group')
+  offGroup.append(off)
+  agentMenu.append(offGroup)
+  agentRows.push(off)
 }
 
 // ------------------------------------------------------------------- skills
@@ -4533,12 +4563,13 @@ function render(): void {
   onBranch = !!s.chats?.find((c) => c.current)?.parentChatId
   paintVeil()
   frames.postAll({ type: 'ez:in-explore', on: onBranch })
-  agentWrap.hidden = !s.acp
+  // Hidden only while a CLI agent drives the review: anything else can connect one here.
+  agentWrap.hidden = !s.acp && s.agentOnline
   paintHarness()
   // The row carries the gap below it, so it has to go when both of its controls
   // do - otherwise a poll-mode review keeps six pixels of nothing.
   controlRow.hidden = agentWrap.hidden && configWrap.hidden
-  if (s.acp && !agents.length) void loadAgents()
+  if (!agentWrap.hidden && !agents.length) void loadAgents()
   paintAgents()
 
   if (s.acp?.cancelling) {
