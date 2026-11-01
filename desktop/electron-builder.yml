@@ -29,7 +29,10 @@ dmg:
   artifactName: ezdesign-${arch}.dmg
 electronFuses:
   runAsNode: true
-  enableCookieEncryption: true
+  # Its key would live in the login keychain, readable only by the copy that
+  # wrote it; an ad-hoc signature changes with every build, so each update
+  # would ask for the keychain password again. The cookies are the local apps'.
+  enableCookieEncryption: false
   enableNodeOptionsEnvironmentVariable: false
   enableNodeCliInspectArguments: false
   enableEmbeddedAsarIntegrityValidation: true

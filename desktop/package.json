@@ -1,7 +1,7 @@
 {
   "name": "@cychien/ezdesign-desktop",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "The ezdesign macOS app: a native window over the daemon's project list and review shell.",
   "type": "module",
   "main": "dist/main.mjs",

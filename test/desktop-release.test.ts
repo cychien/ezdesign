@@ -26,6 +26,7 @@ test('the daemon can still run on the app binary, and nothing else widens what i
   assert.equal(field('enableNodeCliInspectArguments'), 'false')
   assert.equal(field('onlyLoadAppFromAsar'), 'true')
   assert.equal(field('enableEmbeddedAsarIntegrityValidation'), 'true')
+  assert.equal(field('enableCookieEncryption'), 'false', 'no keychain password after each ad-hoc signed update')
 })
 
 test('a release is signed for the hardened runtime and notarized', () => {

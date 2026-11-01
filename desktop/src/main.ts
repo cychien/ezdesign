@@ -11,6 +11,9 @@ declare const __EZDESIGN_PACKAGE_VERSION__: string
 const WATCH_EVERY_MS = 5_000
 
 app.setName('ezdesign')
+// Nothing here is kept in the keychain, and Chromium reaching for it would ask
+// for the user's password after every ad-hoc signed update.
+app.commandLine.appendSwitch('use-mock-keychain')
 
 function packageSource(): PackageSource {
   if (!app.isPackaged) {
