@@ -86,6 +86,7 @@ import {
   rememberedDesignEffort,
   rememberedDesignHarness,
   rememberLastAgent,
+  rememberedLastAgent,
 } from './preferences.js'
 import { readInspireToken } from './credentials.js'
 import type { AttachmentLocator } from './label.js'
