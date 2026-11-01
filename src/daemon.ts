@@ -86,6 +86,7 @@ import {
   rememberedDesignEffort,
   rememberedDesignHarness,
   rememberLastAgent,
+  rememberedLastAgent,
 } from './preferences.js'
 import { readInspireToken } from './credentials.js'
 import type { AttachmentLocator } from './label.js'
@@ -922,6 +923,14 @@ class SessionRuntime implements ProjectRuntime {
     this.lastDevServerPhase = phase
   }
 
+  /** Opening the project: the agent it was on, else the user's last, unless they disconnected it here. */
+  ensureAgent(fallback: string, by: Initiator): void {
+    const live = !!this.acp && this.acp.snapshot().state !== 'exited'
+    const { agent, agentDeclined } = this.store.session
+    if (live || agentDeclined || this.pollWaiters.size > 0) return
+    this.connectAgent(agent ?? this.store.currentChat.agent ?? fallback, by)
+  }
+
   /** A shell's pick. The chat carries on when this agent can resume it; otherwise,
    *  as with a switch, a new chat begins. */
   connectAgent(command: string, by: Initiator): boolean {
@@ -934,8 +943,8 @@ class SessionRuntime implements ProjectRuntime {
     return true
   }
 
-  /** Until a shell connects one again: a restore does not bring it back. */
-  disconnectAgent(): void {
+  /** A restore does not bring it back. Asked for by the user, it stays off until they connect one. */
+  disconnectAgent(opts: { declined: boolean }): void {
     this.acp?.stop()
     this.acp = null
     this.acpBy = null
@@ -944,13 +953,14 @@ class SessionRuntime implements ProjectRuntime {
     this.activeSkills = []
     this.agentProgress = null
     this.store.clearAgent()
+    if (opts.declined) this.store.declineAgent()
     this.broadcast()
   }
 
   /** The app's quit: what its windows connected goes with them. */
   disconnectAgentOf(by: Initiator): boolean {
     if (this.acpBy !== by) return false
-    this.disconnectAgent()
+    this.disconnectAgent({ declined: false })
     return true
   }
 
@@ -2183,7 +2193,7 @@ class SessionRuntime implements ProjectRuntime {
     })
 
     api.post('/acp/disconnect', (_req, res) => {
-      this.disconnectAgent()
+      this.disconnectAgent({ declined: true })
       res.json({ ok: true })
     })
 
@@ -2686,6 +2696,7 @@ export async function daemonMain(version: string, opts: DaemonOptions = {}): Pro
     sessions: { list: () => sessions.list(), open: (req) => sessions.open(req) },
     book,
     version,
+    defaultAgent: () => rememberedLastAgent() ?? AGENT_PROFILES[0]!.command,
     projectRoot,
     restored: () => restored,
   })
@@ -2742,7 +2753,7 @@ export async function daemonMain(version: string, opts: DaemonOptions = {}): Pro
     if (typeof path !== 'string') return res.status(400).json({ error: 'path required' })
     const added = projects.add(path)
     if ('error' in added) return res.status(400).json(added)
-    const opened = await projects.open(added.project)
+    const opened = await projects.open(added.project, 'desktop')
     if ('ok' in opened) return res.status(opened.status).json({ error: opened.error })
     res.json(opened)
   })

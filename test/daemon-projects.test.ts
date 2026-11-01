@@ -3,9 +3,10 @@ import { mkdirSync, mkdtempSync, realpathSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, test } from 'node:test'
-import { DaemonWorld, PKG_VERSION, waitFor } from './helpers/daemon.js'
+import { DaemonWorld, FAKE_AGENT, PKG_VERSION, waitFor } from './helpers/daemon.js'
 
 const world = await DaemonWorld.create()
+writeFileSync(join(world.dataDir, 'preferences.json'), JSON.stringify({ lastAgent: FAKE_AGENT }))
 after(() => world.dispose())
 
 world.spawnDaemon()
@@ -63,7 +64,7 @@ test('a folder added by any path inside it lists its project, and hides again', 
   assert.equal((await post(API, { path: 'relative/path' })).status, 400)
 })
 
-test('opening answers with the shell, and leaves the dev server and the agent to the user', async () => {
+test('opening connects the agent and leaves the dev server to the user', async () => {
   const dir = project()
   await post(API, { path: dir })
   const opened = (await (await post(`${API}/open`, { project: dir, host: 'browser' })).json()) as { project: string; shellUrl: string }
@@ -78,14 +79,29 @@ test('opening answers with the shell, and leaves the dev server and the agent to
   }, 'the dev server to run')
   assert.equal(await (await fetch(`http://127.0.0.1:${port}/`)).text(), 'hello')
 
-  const state = (await world.state(port)) as { acp?: unknown; agentOnline: boolean }
-  assert.deepEqual([state.acp, state.agentOnline], [undefined, false], 'an agent waits to be connected from the shell')
+  const state = (await world.state(port)) as { acp?: { agent: string } }
+  assert.equal(state.acp?.agent, FAKE_AGENT, 'the last agent the user picked')
 
   const sessionApi = `http://127.0.0.1:${port}/__ezdesign/api/projects`
   assert.equal((await fetch(sessionApi, { headers: VERSIONED })).status, 404, 'a review cannot reach other projects')
 
   assert.equal((await post(`${API}/stop`, { project: dir })).status, 200)
   assert.equal((await list()).projects.find((p) => p.project === dir)?.session?.devServer.phase, 'stopped')
+})
+
+test('a project whose agent the user disconnected opens without one, until they connect it', async () => {
+  const dir = project()
+  await post(API, { path: dir })
+  const open = async () =>
+    Number(new URL(((await (await post(`${API}/open`, { project: dir, host: 'browser' })).json()) as { shellUrl: string }).shellUrl).port)
+  const port = await open()
+  const agent = async () => ((await world.state(port)) as { acp?: { agent: string } }).acp?.agent
+  assert.equal(await agent(), FAKE_AGENT)
+
+  await post(`http://127.0.0.1:${port}/__ezdesign/api/acp/disconnect`, {})
+  assert.equal(await agent(), undefined)
+  assert.equal(await open(), port)
+  assert.equal(await agent(), undefined, 'reopening respects the disconnect')
 })
 
 test('only listed projects open', async () => {
