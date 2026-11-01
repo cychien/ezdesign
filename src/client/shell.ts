@@ -4526,8 +4526,10 @@ function paintDevServer(): void {
   if (!snapshot) return
   const onAppTab = canvasUi?.activeTab === 'app'
   devServerPanel.update(snapshot.devServer, { shown: stagedApp !== null, onAppTab })
-  const canvasOpen = snapshot.canvas.canvases.some((c) => !c.archived)
-  root.toggleAttribute('data-bare', onAppTab && stagedApp === null && !canvasOpen)
+  // An empty canvas may be one the daemon opened so the tab strip was never empty;
+  // 只用 canvas still finds it.
+  const canvasInUse = snapshot.canvas.canvases.some((c) => !c.archived && c.frames > 0)
+  root.toggleAttribute('data-bare', onAppTab && stagedApp === null && !canvasInUse)
 }
 
 function render(): void {
