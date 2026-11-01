@@ -4426,21 +4426,6 @@ code.ez-devserver-name {
   }
 }
 
-/* Before its app runs, with no canvas open, a project is only the card that starts it. */
-#ez-shell[data-bare] :is(.ez-tabs-bar, .ez-resizer, .ez-sidebar-slot, .ez-activity) {
-  display: none;
-}
-
-#ez-shell[data-bare] .ez-stage {
-  display: flex;
-  flex-direction: column;
-  padding: 48px 0;
-}
-
-#ez-shell[data-bare] .ez-devserver-card {
-  margin: auto;
-}
-
 /* With canvases on, the stage area is a column: the tab strip, then whichever
    of the App stage and the boards is showing. */
 .ez-stage-wrap.ez-tabbed {
@@ -6029,15 +6014,4 @@ html.ez-on-board body {
 
 [data-sidebar='closed'] .ez-sidebar-toggle {
   display: inline-flex;
-}
-
-/* A bare project keeps the bar as the title bar, and the way back to the sidebar. */
-[data-host='desktop'] #ez-shell[data-bare] .ez-tabs-bar {
-  display: flex;
-  border-bottom-color: transparent;
-  background: none;
-}
-
-[data-host='desktop'] #ez-shell[data-bare] :is(.ez-tabs, .ez-tabs-tail) {
-  visibility: hidden;
 }
