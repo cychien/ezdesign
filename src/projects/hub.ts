@@ -1,6 +1,5 @@
 import { statSync } from 'node:fs'
 import { isAbsolute } from 'node:path'
-import type { Initiator } from '../dev-server/index.js'
 import type { DevServerSummaryWire } from '../dev-server/wire.js'
 import type { OpenRequest, OpenResult, ProjectRuntime } from '../session-directory.js'
 import type { ProjectBook } from './book.js'
@@ -9,7 +8,6 @@ import type { ProjectListWire, ProjectOpenedWire, ProjectWire } from './wire.js'
 export interface HubRuntime extends ProjectRuntime {
   readonly devServer: {
     summary(): DevServerSummaryWire
-    ensure(by: Initiator): void
     stop(): Promise<void>
     readonly external: boolean
   }
@@ -61,15 +59,14 @@ export class ProjectHub<R extends HubRuntime> {
     this.changed()
   }
 
-  async open(project: string, by: Initiator): Promise<ProjectOpenedWire | OpenRefusal> {
+  /** Opens the review only: its dev server and its agent wait for the user to start them. */
+  async open(project: string): Promise<ProjectOpenedWire | OpenRefusal> {
     if (!this.deps.book.isListed(project)) return { ok: false, status: 404, error: 'not a project on the list' }
     await this.deps.restored()
     const opened = await this.deps.sessions.open({ project, reopen: true, now: Date.now() })
     if (!opened.ok) return { ok: false, status: 404, error: 'the review could not be opened' }
-    const { runtime } = opened
-    runtime.devServer.ensure(by)
     this.changed()
-    return { project, shellUrl: runtime.shellUrl() }
+    return { project, shellUrl: opened.runtime.shellUrl() }
   }
 
   async stop(project: string): Promise<void> {

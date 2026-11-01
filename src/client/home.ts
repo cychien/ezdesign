@@ -69,7 +69,7 @@ export function bootHome(root: HTMLElement, api: string, version: string): void 
   head.append(brand)
 
   const title = h('h1', 'ez-home-title', '專案')
-  const lead = h('p', 'ez-home-lead', '選一個專案開始設計，ezdesign 會幫你把它的 dev server 跑起來。')
+  const lead = h('p', 'ez-home-lead', '選一個專案開始設計。')
 
   const form = h('form', 'ez-home-add')
   form.dataset.testid = HOME_TEST_IDS.add
