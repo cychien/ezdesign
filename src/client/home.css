@@ -34,6 +34,22 @@ html:has(.ez-side) body {
   -webkit-app-region: drag;
 }
 
+html:has(.ez-side) body {
+  isolation: isolate;
+}
+
+/* Grain: an opaque grey tile, rasterised once, so the overlay keeps the ground's tone. */
+html:has(.ez-side) body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='g' x='0' y='0' width='100%25' height='100%25'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='.33 .33 .33 0 0 .33 .33 .33 0 0 .33 .33 .33 0 0 0 0 0 0 1'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23g)'/%3E%3C/svg%3E") 0 0 / 200px 200px repeat;
+  opacity: 0.4;
+  mix-blend-mode: overlay;
+  pointer-events: none;
+}
+
 .ez-side {
   display: flex;
   flex-direction: column;
