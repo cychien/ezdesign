@@ -93,6 +93,12 @@ export class DevServer {
     return this.machine.state.phase === 'external'
   }
 
+  /** The daemon is exiting: the group goes, gracefully, and what the record
+   *  says to resume stays for the next daemon. */
+  async release(): Promise<void> {
+    if (this.live?.process.running) await this.live.process.stop(DEV_SERVER_STOP_GRACE_MS)
+  }
+
   /** Resolves once the process group is gone (or at once when there was none).
    *  A server this daemon did not start is left alone (D7). */
   async stop(): Promise<void> {
@@ -199,7 +205,7 @@ export class DevServer {
       case 'kill': {
         const { runId } = effect
         const managed = this.live?.runId === runId ? this.live.process : null
-        if (managed?.running) void managed.stop(effect.grace ? DEV_SERVER_STOP_GRACE_MS : 0)
+        if (managed?.running) void managed.stop(DEV_SERVER_STOP_GRACE_MS)
         else this.reportAlreadyExited(runId)
         return
       }

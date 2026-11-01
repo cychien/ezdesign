@@ -1,0 +1,9 @@
+
+> dev
+> react-router dev
+
+[restart] Relaunching with --conditions=development
+Port 5173 is in use, trying another one...
+  ➜  Local:   http://localhost:5174/
+  ➜  Network: use --host to expose
+6:13:51 PM [vite] (ssr) connected.
