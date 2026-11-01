@@ -217,3 +217,8 @@
   color: var(--foreground);
   font-weight: 600;
 }
+
+.ez-home-app-only {
+  margin-top: 36px;
+  max-width: 520px;
+}

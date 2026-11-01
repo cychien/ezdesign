@@ -93,7 +93,6 @@ const homeHtml = (version: string, icon: string) => `<!doctype html>
 
 export function homePageRouter(opts: { version: string; distDir: string; icon: string }): Router {
   const router = Router()
-  router.get('/', (_req, res) => res.redirect(HOME_PATH))
   router.get(HOME_PATH, (_req, res) => res.type('html').set('cache-control', 'no-store').send(homeHtml(opts.version, opts.icon)))
   for (const file of ['home.js', 'home.css']) {
     router.get(`${URL_PREFIX}/${file}`, (_req, res) => {

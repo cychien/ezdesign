@@ -48,9 +48,7 @@ const post = (url: string, body: unknown, headers: Record<string, string> = VERS
 const list = async (url = API): Promise<ProjectList> => (await fetch(url, { headers: VERSIONED })).json() as Promise<ProjectList>
 
 test('the control origin serves the home page', async () => {
-  const root = await fetch(`${CONTROL}/`, { redirect: 'manual' })
-  assert.equal(root.status, 302)
-  assert.equal(root.headers.get('location'), '/__ezdesign/home')
+  assert.equal((await fetch(`${CONTROL}/`, { redirect: 'manual' })).status, 404, 'the control root is no landing page')
   const page = await fetch(`${CONTROL}/__ezdesign/home`)
   assert.equal(page.headers.get('cache-control'), 'no-store')
   assert.match(await page.text(), new RegExp(`<script src="/__ezdesign/home.js" data-version="${PKG_VERSION}">`))

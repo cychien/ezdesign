@@ -48,6 +48,7 @@ import type { DigestFailure } from '../protocol.js'
 import type { DevServerWire } from '../dev-server/wire.js'
 import { installDevServerPanel } from './dev-server-panel.js'
 import { installProjectSwitcher } from './project-switcher.js'
+import { host } from './host.js'
 import {
   type CanvasEventWire,
   type CanvasSnapshotWire,
@@ -3372,7 +3373,7 @@ function canvasPorts(): Parameters<typeof installCanvas>[0] {
   return {
     guests: frames,
     stageWrap,
-    tabsLead: installProjectSwitcher(API, BUILD, snapshot!.project),
+    ...(host.kind === 'desktop' ? { tabsLead: installProjectSwitcher(API, BUILD, snapshot!.project) } : {}),
     stage,
     api,
     onTabShown: (tab) => {
