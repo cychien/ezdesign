@@ -845,7 +845,7 @@ function paintAnnotateMode(): void {
   canvasUi?.setAnnotating(annotateMode)
 }
 
-const devServerPanel = installDevServerPanel(API, { openCanvas: () => canvasUi?.openCanvas() })
+const devServerPanel = installDevServerPanel(API)
 
 const sideHead = h('div', 'ez-side-head')
 sideHead.append(headRow, target, deviceRow, annotateGroup)
@@ -1662,7 +1662,7 @@ function paintPage(): void {
     return
   }
   if (stagedApp === null) {
-    target.textContent = '沒有 app'
+    target.textContent = ''
     document.title = 'ezdesign'
     return
   }

@@ -11,7 +11,7 @@
  *  hand: the shell tab holds the app's HMR websocket through here for as long
  *  as it is open, and `server.close` would wait on it forever. */
 
-import type { IncomingMessage } from 'node:http'
+import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Socket } from 'node:net'
 import type { Request, RequestHandler, Response } from 'express'
 import {
@@ -27,6 +27,29 @@ import type { AppAttachment, AttachedApp } from './store.js'
 const NO_APP = `<!doctype html><meta charset="utf-8"><title>ezdesign</title>
 <p>No dev server is attached to this review. Run <code>ezdesign &lt;url&gt;</code> in the project to attach one.</p>`
 
+export const UNREACHABLE_HEADER = 'x-ezdesign-unreachable'
+
+/** The app's server stopped answering. The page retries on its own and reloads
+ *  once the server is back, so restarting it is all the user has to do. */
+const unreachable = (origin: string) => `<!doctype html><meta charset="utf-8"><title>連不上 App</title>
+<style>
+  html { height: 100%; }
+  body { display: grid; place-content: center; height: 100%; margin: 0; padding: 0 24px; background: #f9f8f5;
+    color: #1c1b19; font: 13.5px/1.55 -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans TC', sans-serif; }
+  h1 { margin: 0; font-size: 16px; font-weight: 600; }
+  p { margin: 6px 0 18px; color: #6d6a63; }
+  code { font: 12.5px ui-monospace, SFMono-Regular, Menlo, monospace; }
+  button { justify-self: start; height: 32px; padding: 0 14px; border: none; border-radius: 8px; background: #1c1b19;
+    color: #fff; font: inherit; font-weight: 600; cursor: pointer; }
+</style>
+<h1>連不上 App</h1>
+<p><code>${origin.replace(/^https?:\/\//, '')}</code> 沒有回應，dev server 可能停了。它回來時這頁會自動重新載入。</p>
+<button type="button" onclick="location.reload()">重新整理</button>
+<script>
+  setInterval(() => fetch(location.href, { method: 'HEAD', cache: 'no-store' })
+    .then((r) => { if (!r.headers.has('${UNREACHABLE_HEADER}')) location.reload() }, () => {}), 1500)
+</script>`
+
 export class AppProxy {
   private current: AppAttachment = { kind: 'none' }
   private readonly upgraded = new Set<Socket>()
@@ -41,11 +64,18 @@ export class AppProxy {
     private readonly onRequest: (req: IncomingMessage) => void,
   ) {
     const router = () => (this.current.kind === 'attached' ? this.current.origin : undefined)
+    const error = (_err: Error, req: IncomingMessage, res: ServerResponse | Socket) => {
+      if (!('writeHead' in res) || res.headersSent) return void res.end()
+      const origin = this.current.kind === 'attached' ? this.current.origin : ''
+      res.writeHead(502, { 'content-type': wantsHtml(req.headers.accept) ? 'text/html; charset=utf-8' : 'text/plain', [UNREACHABLE_HEADER]: '1' })
+      res.end(wantsHtml(req.headers.accept) ? unreachable(origin) : '')
+    }
     this.htmlProxy = createProxyMiddleware<Request, Response>({
       router,
       changeOrigin: true,
       selfHandleResponse: true,
       on: {
+        error,
         proxyRes: responseInterceptor(async (buffer, proxyRes, _req, res) => {
           res.removeHeader('content-security-policy')
           res.removeHeader('x-frame-options')
@@ -55,7 +85,7 @@ export class AppProxy {
         }),
       },
     })
-    this.rawProxy = createProxyMiddleware<Request, Response>({ router, changeOrigin: true, ws: true })
+    this.rawProxy = createProxyMiddleware<Request, Response>({ router, changeOrigin: true, ws: true, on: { error } })
   }
 
   get attachment(): AppAttachment {

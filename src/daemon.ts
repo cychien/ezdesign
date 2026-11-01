@@ -46,7 +46,7 @@ import type { AcpSnapshot } from './acp-agent.js'
 import { type AcpConfigValue, configLabel, configValueName } from './acp-config.js'
 import { AGENT_PROFILES, type AgentProfile, agentBrandFor, agentProfileFor, launchCommand } from './agents.js'
 import { clearGroupRecord, reapOrphanedGroups } from './child-groups.js'
-import { DevServer, type DevServerWire, type Initiator, devServerApiRouter, initiator } from './dev-server/index.js'
+import { DevServer, type DevServerWire, type Initiator, devServerApiRouter, initiator, proposingAgent } from './dev-server/index.js'
 import { adoptLoginEnvironment, findExecutable } from './login-env.js'
 import { DESKTOP_CONTRACT, type DesktopQuitAnswer } from './desktop-wire.js'
 import { scrubRunAsNode, selfNodeCommandLine } from './self-node.js'
@@ -788,7 +788,7 @@ class SessionRuntime implements ProjectRuntime {
       attach: (origin) => services.attachOrigin(this, origin),
       detachLeavingRecord: (origin) => this.detachDevServerApp(origin),
       environmentReady: services.environmentReady,
-      proposingAgent: () => this.store.session.agent ?? rememberedLastAgent() ?? AGENT_PROFILES[0]!.command,
+      proposingAgent: () => proposingAgent([this.store.session.agent, rememberedLastAgent()], (p) => agentInstalled(p)),
       onChange: () => {
         this.showAppWhenServed()
         this.broadcast()

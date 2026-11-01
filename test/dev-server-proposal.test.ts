@@ -3,7 +3,8 @@ import { mkdirSync, mkdtempSync, realpathSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
-import { parseProposalReply, projectRelativePath, proposalPrompt } from '../src/dev-server/proposal.js'
+import { AGENT_PROFILES } from '../src/agents.js'
+import { parseProposalReply, projectRelativePath, proposalPrompt, proposingAgent } from '../src/dev-server/proposal.js'
 
 test('the last fenced json block is the answer', () => {
   const reply = 'I looked.\n```json\n{"command": "pnpm dev", "cwd": "."}\n```\nOn second thought:\n```json\n{"command": "pnpm --filter web dev", "cwd": "apps/web", "reason": "the site"}\n```'
@@ -50,4 +51,13 @@ test('the question says what the rules found and fixes the answer’s shape', ()
   assert.match(prompt, /Lockfiles: pnpm-lock.yaml/)
   assert.match(prompt, /do not run anything/)
   assert.match(prompt, /```json\n\{"command": "pnpm --filter web dev", "cwd": ".", "reason": "one sentence"\}\n```/)
+})
+
+test('the agent asked is the first that can run, and none when no agent is installed', () => {
+  const [claude, codex] = AGENT_PROFILES.map((p) => p.command)
+  const only = (...ids: string[]) => (p: { id: string }) => ids.includes(p.id)
+  assert.equal(proposingAgent([codex, claude], only('claude', 'codex')), codex)
+  assert.equal(proposingAgent([undefined, codex], only('claude')), claude, 'an uninstalled pick falls to an installed one')
+  assert.equal(proposingAgent(['node my-agent.mjs'], only()), 'node my-agent.mjs', 'a command of no known agent is the user’s to vouch for')
+  assert.equal(proposingAgent([claude, codex], only()), null)
 })

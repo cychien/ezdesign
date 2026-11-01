@@ -1,6 +1,6 @@
 import { PlayIcon, StopIcon } from '@hugeicons/core-free-icons'
 import { agentProfileFor } from '../agents.js'
-import type { DevCommandWire, DevServerLogWire, DevServerWire, InstallPart, ProposalWire, UndecidedReason } from '../dev-server/wire.js'
+import type { DevCommandWire, DevServerLogWire, DevServerWire, InstallPart, ProposalWire } from '../dev-server/wire.js'
 import { host } from './host.js'
 import { type IconNode, icon } from './icon.js'
 
@@ -16,12 +16,6 @@ export interface DevServerPanel {
 
 const LOG_POLL_MS = 700
 const CARD_LOG_LINES = 200
-
-const REASON: Record<UndecidedReason, string> = {
-  'no-package-json': '這個專案沒有 package.json，ezdesign 不知道要怎麼啟動它。',
-  'no-script': 'package.json 裡沒有 dev 或 start script。',
-  'monorepo-root': '這是 monorepo 的根目錄，請指定要啟動哪一個 app。',
-}
 
 const SOURCE: Record<DevCommandWire['source'], string> = {
   detected: '從 package.json 偵測',
@@ -59,7 +53,7 @@ function crashLine(state: Extract<DevServerWire, { phase: 'crashed' }>): string 
   return state.exitCode !== undefined ? `Dev server 結束了（exit code ${state.exitCode}）。` : 'Dev server 結束了。'
 }
 
-export function installDevServerPanel(api: string, opts: { openCanvas(): void }): DevServerPanel {
+export function installDevServerPanel(api: string): DevServerPanel {
   const card = h('section', 'ez-devserver-card')
   card.dataset.testid = DEV_SERVER_TEST_IDS.card
   card.setAttribute('aria-live', 'polite')
@@ -159,12 +153,6 @@ export function installDevServerPanel(api: string, opts: { openCanvas(): void })
     return form
   }
 
-  function canvasOnly(): HTMLButtonElement {
-    const b = button('ez-devserver-secondary', '只用 canvas')
-    b.onclick = () => opts.openCanvas()
-    return b
-  }
-
   function proposalBlock(offer: Extract<ProposalWire, { state: 'proposed' }>): HTMLElement {
     const block = commandBlock({ line: offer.line, cwd: offer.cwd, source: 'agent' })
     block.querySelector('.ez-devserver-source')!.textContent = `${agentName(offer.agent)} 的建議${offer.cwd ? ` · 在 ${offer.cwd}/ 執行` : ''}`
@@ -176,7 +164,7 @@ export function installDevServerPanel(api: string, opts: { openCanvas(): void })
     const name = agentName(offer.agent)
     switch (offer.state) {
       case 'asking':
-        return h('p', 'ez-devserver-asking', `正在請 ${name} 看看這個專案…`)
+        return h('p', 'ez-devserver-asking', 'agent 偵測中…')
       case 'none-found':
         return h('p', 'ez-devserver-hint', `${name} 看過了，沒找到可以啟動的網頁${offer.reason ? `：${offer.reason}` : '。'}`)
       case 'failed':
@@ -223,12 +211,12 @@ export function installDevServerPanel(api: string, opts: { openCanvas(): void })
         case 'stopped':
           title.textContent = s.phase === 'idle' ? '啟動 dev server' : 'Dev server 已停止'
           if (command) {
-            body.push(h('p', 'ez-devserver-text', '啟動 dev server，在實際 App 上進行設計。'), commandBlock(command))
+            body.push(commandBlock(command))
             start('啟動')
             edit()
           } else {
-            body.push(h('p', 'ez-devserver-text', 'ezdesign 判斷不出啟動指令，會請 agent 看看這個專案，你確認之後才會執行。'))
-            start('啟動')
+            title.textContent = '正在偵測啟動指令'
+            body.push(h('p', 'ez-devserver-asking', 'agent 偵測中…'))
             edit('自己輸入指令')
           }
           break
@@ -243,9 +231,14 @@ export function installDevServerPanel(api: string, opts: { openCanvas(): void })
           break
         }
         case 'needs-command': {
-          title.textContent = '需要一個啟動指令'
-          body.push(h('p', 'ez-devserver-text', REASON[s.reason]))
           const offer = s.proposal
+          if (offer?.state === 'asking' && !editing) {
+            title.textContent = '正在偵測啟動指令'
+            body.push(proposalNote(offer))
+            edit('自己輸入指令')
+            break
+          }
+          title.textContent = '需要一個啟動指令'
           if (offer?.state === 'proposed' && !editing) {
             body.push(proposalBlock(offer))
             const run = button('ez-devserver-go', '執行', PlayIcon as IconNode)
@@ -256,7 +249,7 @@ export function installDevServerPanel(api: string, opts: { openCanvas(): void })
               editing = true
               repaint()
             }
-            actions.append(run, change, canvasOnly())
+            actions.append(run, change)
             break
           }
           if (offer) body.push(proposalNote(offer))
@@ -271,7 +264,6 @@ export function installDevServerPanel(api: string, opts: { openCanvas(): void })
             again.onclick = () => void post('propose')
             actions.append(again)
           }
-          if (offer && offer.state !== 'asking') actions.append(canvasOnly())
           break
         }
         case 'blocked': {
@@ -314,8 +306,15 @@ export function installDevServerPanel(api: string, opts: { openCanvas(): void })
 
   let lastPage = { shown: false, onAppTab: false }
 
+  /** The rules found no command: ask the agent at once rather than wait for a click. */
+  let detecting = false
+
   function paint(s: DevServerWire, page: { shown: boolean; onAppTab: boolean }): void {
     const showCard = page.onAppTab && !page.shown
+    if (showCard && s.phase === 'idle' && !s.command && !detecting) {
+      detecting = true
+      void post('start')
+    }
     card.hidden = !showCard
     log.feedCard(showCard && s.phase === 'starting')
     const key = JSON.stringify([s, showCard, editing, busy, error])

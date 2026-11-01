@@ -2,7 +2,7 @@ import { randomBytes } from 'node:crypto'
 import { mkdirSync, realpathSync, statSync } from 'node:fs'
 import { isAbsolute, relative, resolve, sep } from 'node:path'
 import { AcpAgent } from '../acp-agent.js'
-import { launchCommand } from '../agents.js'
+import { AGENT_PROFILES, type AgentProfile, agentProfileFor, launchCommand } from '../agents.js'
 import { ACP_NPM_PREFIX } from '../constants.js'
 import type { Detection, ProjectFacts } from './detect.js'
 
@@ -77,6 +77,20 @@ const REASONS: Record<ProposalRequest['undecided']['reason'], string> = {
   'no-package-json': 'There is no package.json at the project root.',
   'no-script': 'package.json has neither a "dev" nor a "start" script.',
   'monorepo-root': 'This is a workspace root with neither a "dev" nor a "start" script.',
+}
+
+/** Who is asked for a dev command: the first of `preferred` that can run, else
+ *  any installed agent. None when no agent is on this machine, and then nobody
+ *  is asked. A command that names no known agent is taken as runnable. */
+export function proposingAgent(
+  preferred: readonly (string | undefined)[],
+  installed: (profile: AgentProfile) => boolean,
+): string | null {
+  const usable = (command: string) => {
+    const profile = agentProfileFor(command)
+    return !profile || installed(profile)
+  }
+  return [...preferred, ...AGENT_PROFILES.map((p) => p.command)].find((c): c is string => !!c && usable(c)) ?? null
 }
 
 export function proposalPrompt(req: Pick<ProposalRequest, 'project' | 'facts' | 'undecided'>): string {

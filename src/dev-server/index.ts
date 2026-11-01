@@ -22,6 +22,7 @@ import type { DevCommandChoice, DevCommandWire, DevServerLogWire, DevServerSumma
 export type { DevCommandChoice, DevServerLogWire, DevServerWire } from './wire.js'
 export type { Initiator } from './lifecycle.js'
 export { devServerApiRouter, initiator } from './routes.js'
+export { proposingAgent } from './proposal.js'
 
 export interface DevServerDeps {
   project: string
@@ -31,7 +32,8 @@ export interface DevServerDeps {
   attach(origin: string): void
   detachLeavingRecord(origin: string): void
   environmentReady(): Promise<unknown>
-  proposingAgent(): string
+  /** `null` when no agent can be asked: the user types the command instead. */
+  proposingAgent(): string | null
   onChange(): void
 }
 
@@ -244,9 +246,11 @@ export class DevServer {
         return this.deps.detachLeavingRecord(effect.origin)
       case 'ask-agent': {
         this.proposal?.abort.abort()
+        this.proposal = null
+        const agent = this.deps.proposingAgent()
+        if (!agent) return
         const asking: AgentAsk = { live: null, abort: new AbortController() }
         this.proposal = asking
-        const agent = this.deps.proposingAgent()
         this.dispatchAfterThisStep({ type: 'proposal', proposal: { state: 'asking', agent } })
         const facts = readProjectFacts(this.deps.project)
         const undecided = detectDevCommand(facts)
