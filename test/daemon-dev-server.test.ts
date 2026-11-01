@@ -44,11 +44,23 @@ function project(files: Record<string, string>): string {
   return dir
 }
 
+/** A task runner, as turbo is: its server in a group of its own, stopped only
+ *  when the runner is asked to stop. */
+const RUNNER = `
+import { spawn } from 'node:child_process'
+const server = spawn(process.execPath, ['server.mjs'], { detached: true, stdio: 'inherit' })
+process.on('SIGTERM', () => {
+  process.kill(-server.pid, 'SIGTERM')
+  process.exit(0)
+})
+`
+
 const npmProject = (dev: string) =>
   project({
     'package.json': JSON.stringify({ name: 'app', scripts: { dev } }),
     'package-lock.json': '{}',
     'server.mjs': SERVER,
+    'runner.mjs': RUNNER,
   })
 
 async function api(port: number, path: string, body: unknown = {}, method = 'POST'): Promise<Response> {
@@ -181,14 +193,17 @@ test('a web page cannot stop the daemon; the CLI still can', async () => {
 })
 
 test('a self-update handover restarts the dev server for the same initiator', async () => {
-  const dir = npmProject('node server.mjs')
+  const dir = npmProject('node runner.mjs')
   const { port } = await world.openSession(daemon.port, { project: dir })
   await api(port, 'start', { host: 'browser' })
   const first = await phase(port, 'running')
 
   world.spawnDaemon(['--succeed', String(daemon.pid)])
   await world.stopDaemon(daemon.port)
-  await assert.rejects(fetch(first.devServer.origin!, { signal: AbortSignal.timeout(1000) }), 'the old daemon took its server down')
+  await assert.rejects(
+    fetch(first.devServer.origin!, { signal: AbortSignal.timeout(1000) }),
+    'the old daemon asked the runner to stop, and its server went with it',
+  )
 
   const successor = await world.liveDaemon()
   assert.notEqual(successor.pid, daemon.pid)

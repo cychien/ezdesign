@@ -26,6 +26,11 @@ const cases: [string, string[]][] = [
   ['astro-7.4-already-running.txt', ['http://localhost:4420']],
   ['astro-7.4-daemonized.txt', ['http://localhost:5496']],
   ['vite-6.4-moved-port.txt', ['http://localhost:5491']],
+  ['next-16.4-plain.txt', ['http://localhost:3000']],
+  ['nuxt-4.6-plain.txt', ['http://localhost:3000']],
+  ['sveltekit-3.1-plain.txt', ['http://localhost:5174']],
+  ['react-router-8.5-plain.txt', ['http://localhost:5174']],
+  ['turbo-2.10-two-apps.txt', ['http://localhost:3000', 'http://localhost:3001']],
 ]
 
 for (const [name, expected] of cases) {

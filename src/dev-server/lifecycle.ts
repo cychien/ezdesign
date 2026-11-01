@@ -70,7 +70,7 @@ export type DevServerEvent =
 export type DevServerEffect =
   | { type: 'resolve'; attempt: number }
   | { type: 'spawn'; run: Run }
-  | { type: 'kill'; runId: number; grace: boolean }
+  | { type: 'kill'; runId: number }
   | { type: 'arm-timers'; runId: number }
   | { type: 'scan-ports'; runId: number }
   | { type: 'confirm-external'; runId: number; origin: string; tail: readonly string[] }
@@ -101,7 +101,7 @@ export function step(machine: DevServerMachine, event: DevServerEvent): Step {
     if (state.phase === 'stopping') return to({ ...state, then: { kind: 'restart', by, since: now } })
     const run = liveRun(state)!
     return to({ phase: 'stopping', run, then: { kind: 'restart', by, since: now } }, [
-      { type: 'kill', runId: run.id, grace: true },
+      { type: 'kill', runId: run.id },
       ...detachShown(state),
     ])
   }
@@ -134,7 +134,7 @@ export function step(machine: DevServerMachine, event: DevServerEvent): Step {
       const run = liveRun(state)
       if (run) {
         return to({ phase: 'stopping', run, then: { kind: 'stopped' } }, [
-          { type: 'kill', runId: run.id, grace: true },
+          { type: 'kill', runId: run.id },
           ...detachShown(state),
           NO_RESUME,
         ])
@@ -194,7 +194,7 @@ export function step(machine: DevServerMachine, event: DevServerEvent): Step {
     case 'ready-timeout': {
       if (state.phase !== 'starting' || !current(event.runId)) return same()
       const crashed = crash(state.run, 'no-url', event.tail)
-      return { ...crashed, effects: [{ type: 'kill', runId: event.runId, grace: false }, ...crashed.effects] }
+      return { ...crashed, effects: [{ type: 'kill', runId: event.runId }, ...crashed.effects] }
     }
 
     case 'exited': {
