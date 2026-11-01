@@ -141,6 +141,20 @@ test('app quit leaves an agent the CLI connected', async () => {
   assert.equal(state.acp?.agent, FAKE_AGENT)
 })
 
+test('an app quit disconnects the agent without declining it: the next open connects again', async () => {
+  const dir = project()
+  const open = async () => {
+    const { shellUrl } = (await (await desktop('open', { path: dir })).json()) as { shellUrl: string }
+    return Number(new URL(shellUrl).port)
+  }
+  const agent = async (port: number) => ((await world.state(port)) as { acp?: { agent: string } }).acp?.agent
+  const port = await open()
+  assert.equal(await agent(port), FAKE_AGENT)
+  assert.equal((await desktop('quit', {})).status, 200)
+  assert.equal(await agent(port), undefined)
+  assert.equal(await agent(await open()), FAKE_AGENT)
+})
+
 // Last: it replaces the daemon.
 test('app quit disconnects the agent its window connected, even after a daemon restart', async () => {
   const dir = project()
