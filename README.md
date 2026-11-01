@@ -5,53 +5,67 @@
   </picture>
 </h1>
 
-> Point at your live app. Your agent fixes it.
+**The best way to design with AI agents.** Click anything in your running app, say what should
+change, and your coding agent edits the exact line of code.
 
-ezdesign turns any locally running dev server into an annotatable review surface for human ↔
-agent iteration. The user marks up the **real page** - click an element, frame a region, select
-some text, leave a comment - and the feedback flows to a local coding agent (Claude Code, Codex,
-anything that can run a CLI) as structured items that resolve to **exact source locations**. The
-agent edits the code, HMR updates the page in place, the user reviews the next round. Beside the
-app, **canvases** hold HTML designs the agent draws, for exploring ideas before (or instead of)
-changing the real thing.
+[![npm](https://img.shields.io/npm/v/@cychien/ezdesign?color=e56d41&label=npm)](https://www.npmjs.com/package/@cychien/ezdesign)
+[![license](https://img.shields.io/badge/license-MIT-171717)](#license)
 
-```
-$ npx -y @cychien/ezdesign@latest http://localhost:5173/pricing --agent claude  # managed ACP agent
-$ npx -y @cychien/ezdesign@latest http://localhost:5173/pricing                 # portable poll mode
-$ npx -y @cychien/ezdesign@latest poll                                          # agent waits for feedback
-$ npx -y @cychien/ezdesign@latest --agent claude                                # no dev server: canvases only
+```sh
+npx -y @cychien/ezdesign@latest http://localhost:5173 --agent claude
 ```
 
-- **Zero config.** A local daemon reverse-proxies your dev server and injects the annotation
-  overlay. No code changes, no build plugins required, works with any framework.
-- **Anchored feedback.** Annotations carry a layered anchor: `file:line` (with the optional Vite
-  plugin), React component chain, `data-section`, CSS selector, text, viewport. Agents stop
-  guessing which part of the page you meant. Paste or drop a screenshot into any comment and the
-  agent gets a path to it; `/element` points a comment at a second element, so "make this match
-  that one" arrives as a `file:line` too.
-- **Every screen at once.** Review on one device or lay all three out on a grid - desktop,
-  iPad and iPhone side by side at their real viewports, scrolling together. An annotation stays on
-  the screen it was made on, and reaches the agent tagged with the width it was made at.
-- **Canvases beside the app.** Tabs next to the App hold boards of frames - complete HTML pages
-  at real viewport widths that the agent adds, you arrange, and both of you annotate. `/element`
-  crosses tabs, so "build [ref 1] into the app" points at a frame from an App comment.
-- **Built for the loop.** In ACP mode, ezdesign owns the agent and keeps its live work, questions,
-  and permission prompts in the review shell. Poll mode keeps the blocking structured-JSON contract
-  for any external agent or automation. HMR keeps iterations in place; the review chrome lives
-  outside the app frame, so it survives your agent's syntax errors.
-- **Local-first.** Everything binds to 127.0.0.1. Nothing leaves your machine, except one
-  request to the npm registry every few hours to learn whether a newer version exists (opt out
-  with `EZDESIGN_NO_UPDATE_CHECK=1`).
+Works with **Claude Code**, **Codex** and **Gemini CLI**. Open source, runs on your machine, no API
+key. See it in action at **[ezdesign.dev](https://ezdesign.dev)**.
 
-## Install
+## Why
 
-Nothing to install - `npx -y @cychien/ezdesign@latest` is enough. For agents, add the bundled skill:
+Describing UI changes in chat is lossy. "Make the second card's title a bit bigger" leaves your
+agent guessing which card, which file and how much. Designing in Figma first means building
+everything twice.
+
+ezdesign puts the review on the real page. You point, it tells the agent where that thing lives in
+your source, and the change appears in place a moment later through your dev server's hot reload.
 
 ```
+  you                          ezdesign                          your agent
+  ───                          ────────                          ──────────
+  click the hero title    ──▶  src/sections/Hero.tsx:13     ──▶  edits that line
+  "make this 56px"             <Hero ← App>                      page hot-reloads
+```
+
+## Quick start
+
+You need Node.js 22.13+ and an app running locally.
+
+**1. Open a review** from your project's root, pointing at the page you want to work on:
+
+```sh
+npx -y @cychien/ezdesign@latest http://localhost:5173/pricing --agent claude
+```
+
+A review shell opens in your browser with your app inside it and the agent beside it.
+
+**2. Point and comment.** Press `E` and click an element, or `R` and drag over an area. Write what
+should change. Repeat for as many things as you like.
+
+**3. Send** with `⌘↵`. The agent works through the batch, streams what it is doing, and the page
+updates in place. Review, comment again, send again.
+
+### Or start it from your agent
+
+Add the skill once:
+
+```sh
 npx skills add cychien/ezdesign --skill ezdesign
 ```
 
-Optional, for exact `file:line` anchors in Vite + React projects:
+Then type `/ezdesign` in Claude Code, Codex or Gemini CLI, and the agent opens the review for you.
+
+### Exact `file:line` for Vite + React
+
+ezdesign works with any framework, no code changes. For Vite + React, add the plugin and every
+annotation carries the exact source line:
 
 ```ts
 // vite.config.ts
@@ -62,554 +76,188 @@ export default defineConfig({
 })
 ```
 
-Dev-only (`apply: 'serve'`) - it never touches production builds.
+It only runs in dev (`apply: 'serve'`) and never touches production builds.
 
-## Updating
+## Features
 
-When a newer ezdesign is on npm, a card appears at the top of the review shell and one button takes
-it. The new version is installed under `~/.ezdesign/versions/` and started as this daemon's
-successor: the successor binds and registers first, and only once it is up does the old daemon let
-go - so a version that fails to start leaves you on the one you had, with the error in the card.
-Your sessions come back on the ports they held and the shell reloads itself.
+- **Point, don't describe.** Click an element, drag over a region, or select a run of text. Each
+  annotation reaches the agent with its source `file:line`, React component chain, selector, text
+  and viewport.
+- **Every screen size at once.** Preview at phone, tablet or desktop, or lay them all out on one
+  grid at true size, scrolling and navigating together.
+- **Explore before you commit.** Ask for a few versions of any element and flip through them on the
+  real page. Keep the one you like.
+- **Canvases beside your app.** The agent draws whole design directions as real HTML pages at real
+  widths, on a board next to your app. Pick one and it builds that into your components.
+- **A design library from the whole web.** The Chrome extension saves any image, video or region
+  of a page, with tags and a note. Pull those into a comment as references.
+- **The agent lives in the shell.** Its replies, plan, tool calls, questions and permission
+  prompts all show up next to your app. No terminal to babysit.
+- **Local-first.** Your code never leaves your machine, and ezdesign uses the agent you already
+  have, so there is nothing new to pay for.
 
-An ACP agent is restarted along with the daemon and asked to resume the conversation it was having,
-so an update no longer costs the review its context. An agent that cannot resume comes back in a
-fresh session, the same as `/new`, and the thread says so when it happens.
+## Using the review shell
 
-The close button in the card's corner puts the offer away; the version beside the name in the
-header turns into a pill you can click to bring it back. Nothing is installed or restarted without
-that click.
+### Annotating
 
-Without the shell:
-
-- **CLI** - always invoke it as `npx -y @cychien/ezdesign@latest`. A bare `npx @cychien/ezdesign`
-  reuses whatever version npx cached and never checks for a newer one.
-- **Daemon** - opening a session with a different CLI version replaces the running daemon with that
-  version, under the same restore guarantee any daemon restart gets (see Configuration). A CLI
-  that reaches a daemon on another version is refused with a `409` that says how to update,
-  instead of speaking a mismatched protocol.
-- **Skill** - `npx skills update ezdesign`, whenever you feel like it. Deliberately not part of the
-  update button: the skill's own instructions launch the CLI as `npx -y @cychien/ezdesign@latest`,
-  so an old copy still starts a current review, and everything that governs a review once it is
-  running ships with the daemon. Its reader is also an agent session ezdesign did not spawn and
-  cannot restart, so a sync would not take effect until that agent's next session either way. The
-  bundled copy carries the release it came from in its frontmatter (`metadata.version`).
-
-The daemon asks the npm registry for the latest version at most once every four hours. Set
-`EZDESIGN_NO_UPDATE_CHECK=1` to never ask.
-
-## Annotating
-
-Two modes, and the toolbar shows which one is armed. Both leave the page live underneath, and
-`Esc` steps back out - first the open comment box, then the mode.
-
-- **元素** (`E`) - point at one thing. Hover frames the element under the cursor, a click opens the
-  comment box on it, and selecting text instead annotates that run. This is the mode for "this
-  button", "this heading", "this sentence".
-- **範圍** (`R`) - drag a box over an area. What the box encloses *whole* is what it means: the
-  elements it merely cuts through are looked past, down to the ones that fit - so framing a card is
-  the card, and framing a row of them is the row. The box you drew stays on screen as the comment's
-  subject, and the agent is handed the enclosing element's `file:line` plus `anchor.contains`, a
-  line per element the box held: component, `file:line`, and a snippet of that element's own text,
-  which is what tells two instances of the same component apart. This is the mode for "this whole
-  block", "these four cards", "the spacing through here".
-
-One comment is composed at a time - across every preview on the grid, not just the one you are
-in - so a box drawn in one screen cannot open a second comment box behind the one you are writing.
-
-## The comment box
-
-Typing `/` in either comment box opens a command menu - arrow keys and Enter, or click. A slash
-mid-word stays a slash, so urls and paths are left alone. The commands:
-
-- **`/file`** opens the system file picker and drops what you choose in as an attachment, where the
-  slash was.
-- **`/new`** starts a new chat: the agent's context is thrown away and the review carries on in a
-  fresh session, which is how a long review stops paying to replay its own history on every turn.
-  Only offered in [ACP mode](#acp-mode-experimental), and only in the note box below the queue. The
-  thread empties with it, back to the state it opened in - a notice explaining that the history above
-  no longer counts is still history above. The log on disk is untouched: `/new` records where the
-  visible thread starts, so the record of the review stays whole while the shell shows the fresh
-  start that was actually asked for. Every batch the agent had not finished with goes too, not just
-  the turn it was on - a question queued behind that turn was asked of a context you have just said
-  to start over from, and a fresh session answering it would be answering something else. The 待送
-  清單 is left alone: those you have not sent yet, so they were never the old context's to begin
-  with. A note you were part-way through typing survives, so `/new` and then send is one move.
-  One thing does carry over: the first batch of the new chat is handed what you asked for in the
-  earlier ones, one line each, marked as already handled. The agent works to `PRODUCT.md`, starts
-  from `DESIGN.md`, and is told to write a correction into them when it has come up before; a fresh
-  session cannot see "before" on its own, so the daemon shows it.
-- **`$`** opens a second menu, of the skills this machine can run, and picking one
-  asks the agent to run it over the batch you are about to send. The skill shows as a pill above
-  the box until the batch goes, and on the sent bubble afterwards - which is the only place it
-  appears, because an explicitly invoked skill is expanded into the agent's prompt rather than
-  loaded through its skill tool, so nothing in the turn's activity would otherwise say it ran.
-  A skill on its own is a batch: "run this over what you can see" needs no annotation and no note.
-
-  Its own symbol rather than more rows under `/`, because the two are different kinds of thing:
-  `/file` and `/element` act on the box you are typing in, and a skill is handed to the agent.
-  Only offered in [ACP mode](#acp-mode-experimental), and only in the note box.
-
-  The list is read off disk - `.claude/skills` and `.agents/skills`, in the project and in your
-  home directory, plus `.claude/plugins/*/skills`. Skills bundled inside the Claude Code binary
-  are **not** listed: they have no file to find, and the protocol's own command list cannot tell a
-  skill from `/doctor`, so including it would mean a menu of "skills" that offers things that are
-  not skills.
-- **`/element`** points the comment at a *second* element - "make this match that one". The page
-  stays live while you choose, so a plain click still follows links and opens menus and only
-  ⌘/Ctrl+click picks; the comment box steps aside and comes back when you are done. You can cross to
-  another page to find what you meant, and ezdesign brings you back to finish the comment. The
-  element arrives as a chip carrying the same layered anchor an annotation gets, so the agent is
-  handed a `file:line` instead of a description, and `[ref 1]` in the comment text says exactly where
-  in the sentence you meant it.
-
-  The same command also takes a plain **drag**, the way a screenshot tool does: frame a box and the
-  chip points at everything inside it (no modifier needed - a press only becomes a box once it has
-  moved, so a plain click is still the page's). What the box encloses whole is what it means - the
-  elements it merely cuts through are looked past, down to the ones that fit - so framing a card is
-  the card, and framing a row of them is the row. A region resolves to their common ancestor for the
-  `file:line`, and carries `anchor.contains`, a line per element it enclosed - component, `file:line`
-  and a snippet of that element's own text, which is what tells two instances of the same component
-  apart. A frame around exactly one element is simply that element, the same as clicking it.
-
-
-Either comment box also takes an image or file, pasted or dropped in. Attachments become inline chips
-in the text itself, so a comment can point at a file mid sentence, and backspace deletes one the
-way it deletes a character. They are names, not previews - the box is for the comment, and a
-thumbnail takes the room it needs. The bytes go straight to the session directory, capped at 8 MB
-per file, and the batch hands the agent an absolute path per attachment so it opens the screenshot
-instead of being handed base64. Deleting a queued annotation deletes its files with it; anything
-attached and then abandoned is collected a day later.
-
-## The queue
-
-Queued annotations stay editable until the batch goes out. The pencil on a row turns that row's
-comment into a field in place - nothing appears elsewhere, and there is no second place to look.
-Editing borrows the two buttons the row already has rather than adding any: the pencil becomes the
-tick that commits, and the cross, which dismisses either way, becomes the one that backs out. The row
-keeps its number and its source label throughout, so what is being changed never stops being obvious.
-
-The field is seeded with exactly what the row was showing, chips where the sentence had them, so a
-`[ref 1]` or an attached screenshot survives a wording change instead of having to be picked again.
-⌘/Ctrl+Enter saves, Escape cancels, and both outrank the shell's own bindings while the field is
-open, so ⌘+Enter is this save rather than the batch send. `/file` works inside it; `/element` does
-not - pointing a comment at a new element needs the page's own pointer routed back into a row, which
-is a different thing from adjusting what you already wrote, so delete the chip and re-annotate
-instead.
-
-A cancel takes any file attached during the edit with it; the files the row already had are left
-alone either way, and one dropped by a save is collected by the same sweep that collects an
-attachment nothing references.
-
-## Asking while the agent is still working
-
-Sending mid-turn is allowed and queues - you should not have to wait for a turn to finish before
-writing down what you just noticed. The batch goes out on its own the moment the agent comes back,
-and your bubble appears in the thread the moment it leaves the composer, which is what says it went.
-To make it go *now*, stop the current turn: the queued batch is delivered as soon as that turn ends.
-`/new` does the opposite - it drops the queue along with the context.
-
-The thread draws each answer under the question it answers, which is not always where the log put it.
-The log itself stays append-only and stamped in real time - it is the record of the review - but a
-batch sent mid-turn lands *between* an earlier question and its reply, so rendering the log verbatim
-would put the agent's answer under a question it is not answering, and put the new question above
-output that started before it was typed. Instead every entry carries the batch it belongs to, and the
-in-flight turn is drawn in the same place its finished reply will be, so nothing moves when the reply
-lands. Entries that answer no batch - the session notices - stay exactly where the log put them,
-because for those the timeline *is* the meaning.
-
-## Devices
-
-The header carries one toggle group with two sides: a menu picking the size to preview at, and
-all of them at once (`4`). The raised side is the one showing. The sizes are real device viewports, not bare widths - where the fold lands is
-half of what a responsive review is looking at:
-
-| Key | Device | Viewport |
+| Key | Mode | Use it for |
 | --- | --- | --- |
-| `1` | 手機 | 375×629 - a 375×812 screen, less the browser's bars |
-| `2` | 平板 | 1112×740 - a 10.5" tablet on its side, past the breakpoint most layouts switch on |
-| `3` | 電腦 | 1440×788 - a 1440×900 laptop screen, less the menu bar and the browser's own |
+| `E` | **元素** (element) | One thing: a button, a heading, a sentence. Click it, or select text. |
+| `R` | **範圍** (region) | An area: a card, a row of cards, "the spacing through here". Drag a box; whatever it fully encloses is what you meant. |
+| `Esc` | | Close the comment box, then leave the mode. |
 
-The sizes are the **page area** a browser leaves on that device, not the screen it leaves it on -
-so a card on the grid stops showing the page exactly where the real thing stops showing it. On
-its own a size takes only its width from the table and the height from your screen: one preview
-gets the whole stage to show the page in, and the grid is where the fold is what you are
-checking.
+Annotations queue up in **待送清單** and stay editable until you send. Paste or drop a screenshot,
+or any file, straight into a comment and the agent gets a path to it.
 
-The names are shelves, not machines - a 手機 row naming a handset would claim a precision the
-row does not have, when phone widths run from 360 up past 430. The sizes are still taken from
-real machines; the comments in `devices.ts` say which.
+### Commands in the comment box
 
-**`4` lays them out on one grid** - phone and tablet side by side, the desktop on the row below.
-The control in the stage's top corner picks which sizes are on it: the three above, plus a portrait
-tablet (834×1018) that is off by default.
+Type `/` in a comment for these:
 
-The grid is drawn at **true size**, always. A 375 card is 375 pixels whether it is standing alone
-or with three others beside it - a scaled 375 is not 375 to a media query, and a page measured at a
-size nobody browses at is not a measurement. Turning a size off does not resize or rearrange the
-ones that are left. What does not fit is what the dragging is for.
+| Command | What it does |
+| --- | --- |
+| `/element` | Point at a second element, so "make this match that one" arrives as two exact locations. `⌘`-click to pick, or drag a box. Works across pages and across canvas tabs. |
+| `/explore` | Ask for variants of the element you are commenting on, then try each one on the page. |
+| `/library` | Attach references from your design library. |
+| `/file` | Attach a file from disk. |
+| `/new` | Start a fresh conversation with the agent (note box only). Earlier ones stay one click away. |
 
-Every card is the device it names, at its own height. What keeps the grid short enough to work
-on is the two-row layout, not a cap on the cards - a card cut to a shared height would be lying
-about where the fold falls, which is half of what the preview is for.
+Type `$` in the note box to run one of your installed agent skills over the batch.
 
-**Drag a card by its label to rearrange the grid.** A card cannot stop just anywhere: it lands
-top-aligned in an existing row, or on a row of its own, and a line marks where it would go -
-upright between two cards, flat between two rows. The arrangement is remembered, and a size turned
-on later joins as its own row at the bottom rather than reshuffling what you laid out.
+### Shortcuts
 
-**Drag the background to move the grid.** The frames are the app: a press inside one belongs to
-the page, so the backdrop and the gaps are what the grid is panned by. That is also why the
-grid does not have to fit - what is off the edge is a drag away.
+| Key | Action |
+| --- | --- |
+| `⌘↵` | Send the queue to the agent. Sending while it is still working queues the batch for its next turn. |
+| `⌘.` | Stop the agent's current turn. |
+| `1` `2` `3` | Preview at phone (375), tablet (1112) or desktop (1440). |
+| `4` | Show every size on one grid. Drag a card's label to rearrange, drag the background to pan. |
 
-Scrolling inside any one preview scrolls the others to the same point in the page, and navigating
-one - a link, back, forward - takes all of them: annotations are filtered by path, and three
-previews on three pages is three separate reviews.
+### Choosing the agent and model
 
-An annotation belongs to the screen it was made on: mark up the iPhone card and the pin lives
-there, not on all three. The agent gets `@mobile 390x844` in the anchor either way. Everything the
-overlay draws - the comment box, the element label, the pins - is drawn back up to full size, so a
-grid scaled to 60% is still one you can read and type into.
+The pills above the note box pick the agent and the model, plus reasoning effort where the agent
+offers it. Switching models keeps the conversation, so you can move to a stronger model for the
+hard part of a review and back again. Switching agents starts a new conversation.
+
+## Agents
+
+| `--agent` | Agent |
+| --- | --- |
+| `claude` | Claude Code |
+| `codex` | Codex |
+| `gemini` | Gemini CLI |
+
+ezdesign talks to agents over the [Agent Client Protocol](https://agentclientprotocol.com). Any
+other value is run as an ACP server command, so a custom agent works too:
+`--agent 'my-acp-agent --flag'`.
 
 ## Canvases
 
-A canvas is an infinite board of frames. Each frame is one complete, self-contained HTML document -
-its own `<head>`, its own styles, scripts and CDN assets allowed - rendered in its own iframe at a
-real viewport width, so a 390 frame is a phone to its media queries however far the board is zoomed
-out. No CSS is shared between frames: exploration directions diverge, and that is the point.
+A canvas is an infinite board of frames. Each frame is a complete HTML page at a real viewport width,
+so a 390 frame is a phone to its media queries however far you zoom out.
 
-**Tabs.** The strip above the stage has an **App** tab while a dev server is attached, then one tab
-per open canvas. `+` makes a new one, a double-click on a tab renames it, and closing a tab
-archives the canvas: the tab goes, the files stay. **Canvas** lists every canvas, open and
-archived, and reopens one; hover a row for **刪除**, which removes the canvas and all its frames
-(after asking). A session has one active tab:
-two shell windows follow each other, and every batch tells the agent which tab you sent it from.
+- **Open one** from the `+` in the tab strip, or run ezdesign without a url to work on canvases in
+  a project that has no dev server yet:
+  ```sh
+  npx -y @cychien/ezdesign@latest --agent claude
+  ```
+- **Ask for designs** and the agent adds them as frames. Annotate a frame exactly like your app.
+- **Move around** by dragging the background or scrolling. Pinch or `⌘`-scroll to zoom, `⇧1` to fit
+  everything, `⇧0` for 100%. Frames snap to each other, and `⌘Z` undoes.
+- **Bring one into the app** with `/element`: comment on your app, switch to the canvas, `⌘`-click
+  the frame you mean.
 
-Run `ezdesign` with no url in a project without a dev server and the shell opens on that
-project's canvases - one empty `未命名 canvas` the first time. Run `ezdesign <url>` later and the
-App tab joins the same shell; the conversation carries on.
+Canvases are saved in your project under `.ezdesign/canvases/`. Commit them or ignore them, your
+call. Frames are served from a separate origin, so agent-written pages cannot reach the review shell.
 
-**The board.** Drag the background or hold Space to pan, scroll to pan, pinch or Cmd/Ctrl+scroll to
-zoom around the pointer, `-`/`+` in the corner to step, `⇧1` to fit everything, `⇧0` to go back to
-100%. Click a frame to select it, Shift+click to add, `⌘A` for all; drag to move, with guides that
-snap to other frames' edges and centres; `⌘D` duplicates, `⌫` deletes, arrows nudge (`⇧` for 10). A
-frame keeps the size it was added at: it is a viewport, so it is never resized. Every step undoes
-and redoes (`⌘Z`, `⌘⇧Z`). Double-click a frame to scroll it or click through its controls; Escape
-hands the pointer back. Positions, the open tabs, the active tab and each canvas's camera survive a
-reload and a daemon restart.
+## Design library
 
-**Annotating.** `元素` and `範圍` work inside frames as they do on the app, and an annotation in a
-frame reaches the agent as a line of that frame's file -
-`.ezdesign/canvases/<canvas>/frames/<frame>.html:14 · [canvas frame "Hero A" on canvas "首頁探索"]`.
-`/element` crosses tabs both ways: start it in an App comment, switch to a canvas, Cmd+click the
-frame you mean, and the comment comes back with the ref in it - or the reverse.
+The Chrome extension saves references into one library under `~/.ezdesign/library/`, shared by
+every project. Saving works anytime, with or without a review open.
 
-**The agent.** An ACP agent gets the `ezdesign-canvas` tools - `list_canvases`, `create_canvas`,
-`read_canvas`, `reopen_canvas`, `add_frame`, `update_frame`, `remove_frame` - from its first turn,
-granted without asking. New frames go on the canvas you sent from, or else the newest open one; the
-agent starts a new canvas only when none is open or you ask for one. A canvas it creates becomes the
-active tab and its frames appear as each call returns. A frame's HTML is the agent's: it changes it
-through the tools or by editing the file, and the open shell reloads that frame either way. The agent
-picks a frame's size when it adds it; after that, where the frame sits is yours, and the tools
-refuse geometry on a frame that exists. Poll mode has no canvas tools.
-
-**On disk.** Canvases live in the project, in `.ezdesign/canvases/<canvas>/`: `canvas.json` (name,
-frames), `layout.json` (where each frame is) and `frames/<frame>.html`. ezdesign writes the two
-JSON files and never reads back an edit made to them by hand; frame files are yours to edit. It
-does not touch your `.gitignore`: committing canvases is your call.
-
-**Isolation.** Frame documents are agent-written pages running third-party scripts, so they are
-served from `http://localhost:<port>` while the shell stays on `http://127.0.0.1:<port>` - another
-site. A frame cannot read the shell's storage, script it, or call the session's api, and the
-overlay inside it reaches the review through the shell. Two shortcuts do not fire while focus is
-inside a frame: send (`⌘↵`) and stop (`⌘.`).
-
-## Configuration
-
-| Variable | Default | What it moves |
-| --- | --- | --- |
-| `EZDESIGN_DATA_DIR` | `~/.ezdesign` | Session state, the daemon registry and log, versions installed by the in-shell update, and the update-check cache |
-| `EZDESIGN_CONTROL_PORT` | `4400` | First port of the ten-port range the daemon searches for its control server |
-| `EZDESIGN_NO_UPDATE_CHECK` | unset | Set to `1` and the daemon never asks the npm registry for the latest version, so the shell never offers an update |
-| `EZDESIGN_NO_IDLE_STOP` | unset | Set to `1` and the daemon never stops itself for being idle; something else, like `npm run dev`, owns its lifetime |
-| `EZDESIGN_DESIGN_HARNESS` | unset (off) | Set to `1` in the environment the daemon starts from and the experimental 增強設計 design harness is available; unset, the shell has no switch and no agent is asked to use it |
-| `EZDESIGN_INSPIRE_URL` | `https://inspire.ezdesign.dev` | The inspiration database the `inspire` commands query |
-| `EZDESIGN_API_URL` | `https://api.ezdesign.dev` | The ezdesign backend the review shell signs in through |
-
-Set `EZDESIGN_DATA_DIR` to run a second, fully isolated instance: a starting daemon only adopts a
-live daemon that serves its own data dir, so instances sharing a control range each take their own
-port in it. `npm run dev` sets both.
-
-Sessions outlive the daemon that served them. On start, the daemon picks each session back up
-from disk and re-binds it to the port it last held, so a review shell tab you already have open
-reconnects by itself, and feedback you queued before the restart is still waiting. If that port
-has since been taken, the session moves to a free one and the CLI re-resolves it. A daemon brings
-back the sessions that were live when it went down; one that stopped itself after half an hour
-with no shell open brings back none, and the next `ezdesign` or `poll` in a project wakes that
-project's session. Only time awake counts toward that half hour, so a laptop that sleeps with a
-shell open wakes to a review that is still there. A shell left open while its daemon is gone says
-so, and the `ezdesign` that brings the session back finds it reconnecting instead of opening a
-second window. A session that was driving an ACP agent starts that agent again **and asks it to
-resume the conversation they were having**, so the review carries on where it stopped. Whether
-that works is the agent's answer to give - a transcript it no longer has, or an agent that cannot
-resume at all, leaves the review in a fresh context, and only then does the thread say so.
-
-A session belongs to a project, not to a dev-server origin. The project is the nearest `.git` or
-`package.json` ancestor of the directory you run `ezdesign` from. A dev server that comes back on
-another port keeps the review: `ezdesign http://localhost:5174/` in the same project points the
-open shell at the new port, with the conversation and the queue intact. Dev servers all default to
-the same port, so one origin is attached to one project at a time: opening a second project on
-`localhost:5173` moves the origin to it, and the first project keeps its conversation and queue and
-only loses its app until you attach one again. `poll`, `progress` and `end` find the session by the
-project they run from; a url passed to them is only checked against the attached app, with a note
-when it differs.
-
-Sessions from versions before this one were per origin. The first daemon of this version folds them
-into project sessions, keeping every queued annotation, batch and conversation, and moves the old
-directories to `sessions-legacy/` in the data dir, never deleting them. A daemon older than this
-version does not read the new format, so going back to one starts with no sessions.
-
-## Agent modes
-
-ezdesign can either manage an ACP agent inside the review session or expose feedback through its
-portable polling contract. Both modes receive the same structured feedback and exact anchors.
-
-### ACP mode (experimental)
-
-Pass `--agent` when opening the session:
-
-```
-npx -y @cychien/ezdesign@latest http://localhost:5173/ --agent claude
-```
-
-The daemon starts the agent as a child process, sends each feedback batch as one turn, and shows
-the agent's streaming reply, plan, tool activity, questions, and permission prompts in the review
-shell. The completed reply is saved in the conversation, and the next queued batch is delivered
-automatically. No second terminal or `poll` loop is needed. This is also the mode used by the
-bundled ezdesign skill.
-
-Three controls come with owning the agent:
-
-- **⌘/Ctrl+.** stops the turn in flight, from anywhere including mid-sentence in the composer -
-  which is when you usually want it, since watching the agent head the wrong way is what prompts it.
-  No button: a control that is live for the few seconds a turn lasts costs the composer a permanent
-  slot to say so. The status badge reads `正在中止` until the agent answers, so the keypress is not
-  silent. Whatever it had already said stays in the thread, and the batch is not handed back: you
-  stopped it on purpose.
-- **`/new`** in the note box clears the agent's context. See [The comment box](#the-comment-box).
-  Every conversation a review has had stays reachable: once there is more than one, a control at the
-  head of the thread lists them by time and by how much was said, and picking one shows its thread
-  and puts the agent back on it. While an earlier conversation is showing the control says so in
-  colour, because feedback sent then joins *that* conversation and nothing else on screen would
-  mention it.
-- **The pill above the note box** names the model the next batch will be answered by, and opens
-  everything else the agent lets the session be set to - reasoning effort, permission mode, and any
-  toggle it offers. It is a permanent slot because unlike a cancel it is *state*: it says what you
-  are about to send your feedback to.
-
-  What it offers is the model and, where the agent has one, the reasoning effort. Not the permission
-  mode and not the fast-mode toggle: those are the agent's own configuration, and a review is not
-  where they should be decided. A mode the *agent* changes is still reported in the thread - some
-  models do not support every mode, and selecting one moves it as a side effect that outlives the
-  model that caused it, so the problem worth solving there was the silence rather than the missing
-  control.
-
-  A switch keeps the conversation. The model changes on the running session, so nothing is replayed
-  and nothing is forgotten - which is what makes it worth reaching for mid-review: point at the easy
-  half on a cheap model, move up for the layout problem that needs it. Sending mid-turn is allowed
-  and applies from the next turn.
-
-  What the menu holds is whatever the agent reports, not a list ezdesign keeps. That matters because
-  the list changes with the choice: pick a model with no reasoning levels and no fast mode and both
-  options leave the menu, and the agent can move a value on its own - a refusal falling back to
-  another model - which arrives here and redraws. Some models do not support every permission mode,
-  and picking one **downgrades the mode** as a side effect; showing the mode is what keeps that from
-  happening silently.
-
-  Your pick is remembered for the session and re-asserted on the next one, so `/new` and a daemon
-  restart do not hand the review back to the agent's default. Every switch goes into the thread, so
-  a review read back later says which model answered which batch.
-
-The agent itself can be changed from the pill left of the model, which is where it belongs: the two
-answer one question between them - what is about to read this feedback - and the model is a choice
-*within* the agent, so changing the agent replaces the list the model was chosen from. That always
-starts a new conversation, and the shell says so before it does it: a session id belongs to the agent that issued
-it - Claude keeps its conversations in one store and Codex in another, and neither can resolve the
-other's - so there is no way to hand a conversation over. Nothing ezdesign owns is lost. Every earlier
-conversation stays in the thread's own picker with the agent that had it, and switching back finds it
-again, resumable by the agent that remembers it.
-
-The agent can design the way a designer works, through a five-step harness shipped with the daemon:
-product, stack, design, components, make. It is off by default: set `EZDESIGN_DESIGN_HARNESS=1` in the
-environment the daemon starts from to enable it, and until then the shell has no switch, no agent is asked
-to use it, and the remembered choice for each project is kept untouched for when it is on. With
-the flag on it is opt-in, experimental - the switch says 實驗 - and a
-premium feature: the **增強設計** switch on its own line above the agent and the model, marked with a
-gold sparkle, turns it on, and the choice is remembered for the project - across sessions, a dev
-server that moved ports, `/new` and daemon restarts - except that it starts off when the project's
-`PRODUCT.md` or `DESIGN.md` is gone, so turning it on asks again. Off, every batch is handled
-exactly as it was before the harness existed. The harness applies only to a turn whose prompt says
-it is on; after it has been on in a conversation, every later turn with it off is told so, because
-the agent still remembers what it read while it was on. Two files at the project root are what it
-works to. **`PRODUCT.md`** says what the product is for - who uses it, what it makes possible, what
-must not change. **`DESIGN.md`** ([the format](https://github.com/google-labs-code/design.md)) says
-what it looks like, in broad strokes - a few anchor values in YAML frontmatter and the character of
-the language in prose, with the full scales left to the design system. When both exist, every batch
-tells the agent to read them before a visual change, keep to `PRODUCT.md`, and take `DESIGN.md` as
-a direction rather than a rule: a document held to the letter makes everything look alike, so the
-agent may go past it. An ordinary change edits code only. The two files change
-when you ask for it, when a correction has come twice, or when you state a rule - only on what you
-actually said, never on what the agent reads into a send-back; a change that only leaves a line stale is mentioned in the reply, not edited. Between them,
-`.ezdesign/config.json` records the stack and the browser tool the agent looks at the page with. The
-installed skill does not carry the harness: it opens reviews, and the harness is reached only
-through the daemon with the flag on.
-
-Turning the switch on in a project that lacks either file asks first, in the card above the
-composer: 啟用增強設計 - 增強設計會建立 PRODUCT.md 與 DESIGN.md，是否繼續？ 取消 leaves the switch off,
-because the harness cannot run without them. 繼續 turns it on and starts a setup turn at once, which walks the steps
-that build the missing files before any batch is worked. Switching off again before the agent has
-started that turn cancels it, and the thread says so. `PRODUCT.md` is written as a designer meets a
-client: the agent reads the project's own copy and assets first, then asks, three questions a round,
-what they could not answer - who it is for, what it makes possible, what must be preserved - each
-led by what it inferred, so you correct rather than dictate. Nothing about feel or style is asked there; that belongs to `DESIGN.md`, which
-is read off the running page the way a design-token extractor reads one: computed styles, counted,
-so the colour on three hundred elements is the surface and the one on two is the accent, and only
-the character and its anchors are written down; the format's own linter checks the result.
-
-How the agent then works - where it looks for precedent, the principles it builds to, how it
-writes a repeated correction back into the two files - lives in the bundled skill's `reference/`
-files, which the daemon points it at turn by turn. A piece of design is not judged by the agent
-that made it, since a maker praises its own work: it starts a subagent with a fresh context, which
-looks at the agent's screenshots of the change and scores it against the reaction good work gets on
-X and Dribbble, "super clean!", in a product held to the standard of Shopify, Stripe, Linear and
-Vercel - useful, super clean, clear, fitting, well made - and answers ship, refine or pivot. One review; a second only after a pivot,
-comparing the two directions. The reply never mentions the review. What you say about quality in so many words, or correct twice, is
-written to `.ezdesign/taste.md`, which the agent builds to and the reviewer judges by,
-so both move toward your eye. The daemon carries
-only the facts a skill cannot know: whether the switch is on, which files exist, where the page
-is, what the turn is for.
-
-Three built-in profiles map short names to ACP server commands:
-
-| Profile | Command |
-| --- | --- |
-| `claude` | `npx -y @agentclientprotocol/claude-agent-acp` |
-| `codex` | `npx -y @agentclientprotocol/codex-acp` |
-| `gemini` | `gemini --experimental-acp` |
-
-Any other value is used as an ACP command line, so a custom server can be started with
-`--agent 'my-acp-agent --flag'`. Only one live ACP agent can own a session. End the session or stop
-the daemon before switching it to a different agent.
-
-### Poll mode
-
-Without `--agent`, the review uses the existing CLI contract:
-
-```
-npx -y @cychien/ezdesign@latest http://localhost:5173/
-npx -y @cychien/ezdesign@latest poll
-```
-
-`poll` blocks until the user sends feedback, prints the structured batch as JSON, and exits. Run it
-from the project, like the command that opened the session. This
-mode remains available for scripts and integrations that consume the CLI contract directly.
-
-## Inspiration
-
-Before it builds a piece of design, the agent looks for precedent: a curated collection of
-interfaces, each entry carrying the reason it works and the case where it would be the wrong
-choice. It is searched by meaning - a description of what the piece has to show - and entries carry
-tags in their curator's own words, which nudge a search that names one. It needs a token:
-
-```
-npx -y @cychien/ezdesign@latest login --token <token>
-npx -y @cychien/ezdesign@latest inspire --query "a command menu over the whole product"
-npx -y @cychien/ezdesign@latest inspire --query "an onboarding checklist" --tag "dark popover" --limit 3
-```
-
-`login` writes the token to `~/.ezdesign/credentials.json`, mode 600; without `--token` it prompts,
-and `logout` forgets it. A search takes a `--query`, `--tag`, or both. `inspire` prints a block per
-result - the tags, `Shows:`, `Components:`,
-`Actions:`, `Why it works:`, `Wrong when:`, and local paths to the entry's images, which are
-downloaded once and reused after that; `(approximate)` in a heading means the entry was read off a
-screenshot. `--json` prints the same response with those paths in place of the service's own URLs,
-and carries what the block leaves out: the visible wording, the layout and its metrics, and the
-relevance score. There is no fixed list of tags; the query does the finding.
-
-Nothing about the collection ships in the package: a query returns what it asked for, and the
-results belong in the agent's reply, not in your repository. A search that finds nothing exits 0
-with one line, and one that cannot run - no token, a refused token, a service that cannot be
-reached - exits 2 with one line, so the agent says so and carries on.
-
-## Saving references from Chrome
-
-The capture extension saves an image, a video or a region of any page into one design library
-under `~/.ezdesign/library/`, shared by every project, with your tags and a note. Saving needs no
-dev server, no session and no daemon: Chrome talks to a small native host that ezdesign installs.
-
-```
+```sh
 npx -y @cychien/ezdesign@latest extension install
 ```
 
-`install` copies the host into `~/.ezdesign/native-host/`, registers it with every Chromium browser
-it finds (Chrome and its channels, Chromium, Arc, Brave, Edge, Vivaldi; macOS and Linux), and
-prints the folder to load once: open `chrome://extensions`, turn on **Developer mode**, choose
-**Load unpacked** and pick `~/.ezdesign/extension`. The folder stays put across ezdesign updates,
-and the daemon brings the host and the extension up to its own version when it starts. The host
-needs Node 22.13 or newer. `--user-data-dir <dir>` installs into one browser profile only.
+Then open `chrome://extensions`, turn on **Developer mode**, choose **Load unpacked** and pick
+`~/.ezdesign/extension`. Works with Chrome, Chromium, Arc, Brave, Edge and Vivaldi on macOS and
+Linux.
 
-- **Right-click an image or a video** and choose **儲存至 ezdesign**. A dialog opens over the page
-  with a preview, tags (suggested by how often you use them) and a note; **儲存** or Cmd+Enter saves,
-  Esc or a click outside leaves nothing behind. Saving the same bytes again shows **已收藏過** and
-  adds to the item you already have.
-- **The toolbar icon or Alt+Shift+S** starts a region capture: drag a rectangle, or click once for
-  the whole visible page. On pages an extension cannot draw on, such as `chrome://` pages, the
-  visible page is captured at once and the dialog opens in its own window.
-- Images and plain video files keep their original bytes. A streaming video (YouTube, Instagram,
-  anything playing through MediaSource) and a video over 200 MB are saved as a link with the time
-  you were at and the frame on screen. An image the host is refused for (a signed-in CDN) offers
-  **允許讀取** for that site, then is read with your cookies.
+- **Right-click any image or video** and choose **儲存至 ezdesign**.
+- **Press `Alt+Shift+S`** (or click the toolbar icon) and drag over any part of a page.
+- Add tags and a note on why it is good, so the agent knows how to use it later.
 
-`ezdesign extension status` lists each browser and any problem, and exits 1 when there is one.
-`ezdesign extension uninstall` removes the host and the extension folder; the library stays.
+`ezdesign extension status` checks the install, and `ezdesign extension uninstall` removes it while
+keeping your library.
 
-## Signing in
+## Sessions and updates
 
-Some features will run on the ezdesign backend, and those need you signed in. The icon at the foot of the review shell's right-hand bar then signs you in, with Google or an
-email and a password. It opens the sign-in page in a new tab. When you are through, the tab closes
-itself and the icon shows your initial. Its menu shows the account and signs you out. One sign-in
-covers every review the daemon is serving. The token is kept in `~/.ezdesign/credentials.json`,
-mode 600, beside the inspiration token, and signing out revokes it.
+A review belongs to your project (the nearest `.git` or `package.json`), not to a port. Restart
+your dev server on another port and run ezdesign again: the shell switches over and the
+conversation and queue carry on.
+
+Reviews survive restarts. The background daemon brings its sessions back on the ports they held,
+your open shell reconnects on its own, and the agent resumes the conversation it was in.
+
+When a newer version is out, a card at the top of the shell offers it. One click installs it and
+hands your sessions over, and if the new version fails to start you stay on the one you had.
+Always run the CLI as `npx -y @cychien/ezdesign@latest`; a bare `npx @cychien/ezdesign` keeps
+using whatever version npx cached. Update the skill with `npx skills update ezdesign`.
+
+## Enhanced design (experimental)
+
+With `EZDESIGN_DESIGN_HARNESS=1` set where the daemon starts, an **增強設計** switch appears above
+the composer. Turned on, the agent works the way a designer does. It keeps two files at your project
+root: `PRODUCT.md` (who the product is for and what must not change) and
+[`DESIGN.md`](https://github.com/google-labs-code/design.md) (its visual direction). It looks for
+precedent before it builds, and has a fresh reviewer judge each piece of design before you see it.
+The first time, it interviews you for `PRODUCT.md` and reads `DESIGN.md` off your running page.
+
+## CLI
+
+```
+ezdesign [<url>] --agent <name>   open or resume this project's review
+ezdesign status                   show running sessions
+ezdesign stop                     stop the background daemon
+ezdesign extension install        set up the Chrome extension
+ezdesign --help                   everything else
+```
+
+`ezdesign` here is short for `npx -y @cychien/ezdesign@latest`.
+
+## Configuration
+
+| Variable | Default | Effect |
+| --- | --- | --- |
+| `EZDESIGN_DATA_DIR` | `~/.ezdesign` | Where sessions, the daemon's registry and log, and installed versions live. A separate dir runs a fully isolated instance. |
+| `EZDESIGN_CONTROL_PORT` | `4400` | First of the ten ports the daemon tries for its control server. |
+| `EZDESIGN_NO_UPDATE_CHECK` | unset | `1` never asks npm for a newer version. |
+| `EZDESIGN_NO_IDLE_STOP` | unset | `1` keeps the daemon running when idle. By default it stops after 30 minutes with no shell open. |
+| `EZDESIGN_DESIGN_HARNESS` | unset | `1` makes [enhanced design](#enhanced-design-experimental) available. |
+
+## Privacy
+
+The daemon binds to `127.0.0.1` and your code stays on your machine. Apart from your agent's own
+traffic, ezdesign reaches out only to npm, to fetch the agent adapter and to check for a newer
+version (at most every four hours, off with `EZDESIGN_NO_UPDATE_CHECK=1`), and to the ezdesign
+backend for sign-in and inspiration search when you use them.
 
 ## Development
 
-Working on ezdesign itself takes one command:
-
-```
-npm run dev                 # watch src/, serve the playground fixture, start an isolated daemon,
-                            # open the review shell with an ACP agent on it
-npm run dev -- --no-plugin  # the same page without ezdesignSource(), to see fallback-only anchors
-npm run dev:agent           # a stand-in poll-mode agent, for working on the poll contract itself
-npm run dev:cli status      # the ezdesign CLI, pointed at the dev daemon instead of the real one
-npm run brand               # regenerate the logo's PNG and SVG copies after editing src/brand.ts
+```sh
+npm run dev                 # watch src/, serve the playground fixture, open a review with an agent
+npm run dev -- --no-plugin  # the same, without the Vite plugin, to see fallback anchors
+npm run dev:cli status      # the CLI, pointed at the dev daemon
+npm run brand               # regenerate logo assets after editing src/brand.ts
+npm run check               # build, typecheck, test
 ```
 
-`npm run dev` opens the review in ACP mode, scoped to the fixture - the agent's working directory
-is `fixtures/playground`, which is the project it is reviewing. Nothing else is needed; `dev:agent`
-is only for the poll contract.
-
-A client rebuild (`src/client/**`) only needs a browser reload; a rebuild the daemon loads
-restarts it, and in-flight polls reconnect on their own. Dev mode keeps its daemon registry and
-sessions in `.dev/`, so your own `~/.ezdesign` is never touched. Each checkout runs its own stack:
-its daemon takes a control range in 4100-4199 and the fixture a port from 5173, both picked from
-the checkout's path and recorded in `.dev/dev.json`, so worktrees run `npm run dev` side by side
-and `npm run dev:cli` reaches its own checkout's daemon. The review target is
+Dev mode keeps its state in `.dev/`, so your own `~/.ezdesign` is never touched, and each checkout
+picks its own ports, so worktrees run side by side. The review target is
 [`fixtures/playground`](fixtures/playground/README.md).
 
 ## Status
 
-Early. On the roadmap: diff-derived Keep/Undo and layout-issue detection. ACP mode is an
-experimental spike.
+Early and moving fast. Feedback and issues are welcome.
 
 ## License
 
