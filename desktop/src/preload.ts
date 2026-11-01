@@ -1,5 +1,12 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
-import { DESKTOP_BRIDGE, DESKTOP_CONTRACT, DESKTOP_IPC, type DesktopBridge, type DesktopLayout } from '../../src/desktop-wire.js'
+import {
+  DESKTOP_BRIDGE,
+  DESKTOP_CONTRACT,
+  DESKTOP_IPC,
+  type DesktopBridge,
+  type DesktopLayout,
+  type DesktopUpdateOffer,
+} from '../../src/desktop-wire.js'
 import { PANE_INSET, PANE_RADIUS, SIDEBAR_WIDTH, TRAFFIC_LIGHT_ROOM } from './title-bar.js'
 
 const bridge: DesktopBridge = {
@@ -16,6 +23,11 @@ const bridge: DesktopBridge = {
     ipcRenderer.on(DESKTOP_IPC.layout, (_event, layout: DesktopLayout) => listener(layout))
     void (ipcRenderer.invoke(DESKTOP_IPC.layoutNow) as Promise<DesktopLayout>).then(listener)
   },
+  onUpdate: (listener) => {
+    ipcRenderer.on(DESKTOP_IPC.update, (_event, offer: DesktopUpdateOffer | null) => listener(offer))
+    void (ipcRenderer.invoke(DESKTOP_IPC.updateNow) as Promise<DesktopUpdateOffer | null>).then(listener)
+  },
+  takeUpdate: () => ipcRenderer.send(DESKTOP_IPC.takeUpdate),
 }
 
 contextBridge.exposeInMainWorld(DESKTOP_BRIDGE, bridge)

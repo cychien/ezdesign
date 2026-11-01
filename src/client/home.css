@@ -260,6 +260,30 @@ html:has(.ez-side) body::after {
   padding-right: 59px;
 }
 
+/* A new version of the app, just above the account. */
+.ez-side-update {
+  flex-shrink: 0;
+  padding: 0 8px;
+}
+
+.ez-side-update[hidden] {
+  display: none;
+}
+
+.ez-side-update-btn {
+  cursor: pointer;
+  font-weight: 500;
+}
+
+.ez-side-update-btn:hover {
+  background: oklch(0% 0 0 / 0.045);
+}
+
+.ez-side-update-btn > svg {
+  flex-shrink: 0;
+  color: #e56d41;
+}
+
 /* The shared sign-in, at the foot of the list. Its menu opens upward. */
 .ez-side-account {
   position: relative;

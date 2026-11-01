@@ -1,5 +1,5 @@
 import { BaseWindow, type IpcMainEvent, type IpcMainInvokeEvent, WebContentsView, dialog, ipcMain, shell } from 'electron'
-import { DESKTOP_IPC, type DesktopLayout } from '../../src/desktop-wire.js'
+import { DESKTOP_IPC, type DesktopLayout, type DesktopUpdateOffer } from '../../src/desktop-wire.js'
 import type { ProjectOpenedWire } from '../../src/projects/wire.js'
 import { type KnownOrigins, type NavigationVerdict, judgeNavigation, judgeWindowOpen } from './navigation.js'
 import { FIRST_LOAD_WAIT_MS, PANE_GROUND, PANE_INSET, PANE_RADIUS, SIDEBAR_WIDTH, TRAFFIC_LIGHTS, WINDOW_GROUND } from './title-bar.js'
@@ -29,6 +29,8 @@ export class ProjectWindow {
   /** The project last asked for: a slower load finishing later does not take the pane back. */
   private wantedProject: string | null = null
   private sidebarOpen = true
+  private update: DesktopUpdateOffer | null = null
+  private takeUpdate = () => {}
   private homeUrl: string
 
   constructor(private readonly opts: ProjectWindowOptions) {
@@ -62,6 +64,17 @@ export class ProjectWindow {
     ipcMain.on(DESKTOP_IPC.toggleSidebar, (event) => {
       if (this.fromDaemonPageTopFrame(event)) this.toggleSidebar()
     })
+    ipcMain.handle(DESKTOP_IPC.updateNow, () => this.update)
+    ipcMain.on(DESKTOP_IPC.takeUpdate, (event) => {
+      if (this.fromDaemonPageTopFrame(event)) this.takeUpdate()
+    })
+  }
+
+  /** The sidebar shows it; taking it is the updater's. */
+  offerUpdate(offer: DesktopUpdateOffer, take: () => void): void {
+    this.update = offer
+    this.takeUpdate = take
+    this.sidebar.webContents.send(DESKTOP_IPC.update, offer)
   }
 
   focus(): void {

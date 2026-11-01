@@ -1,4 +1,4 @@
-import { DESKTOP_BRIDGE, type DesktopBridge, type DesktopLayout } from '../desktop-wire.js'
+import { DESKTOP_BRIDGE, type DesktopBridge, type DesktopLayout, type DesktopUpdateOffer } from '../desktop-wire.js'
 import type { ProjectOpenedWire } from '../projects/wire.js'
 
 export type Host =
@@ -10,6 +10,9 @@ export type Host =
       pathForFile(file: File): string
       toggleSidebar(): void
       onLayout(listener: (layout: DesktopLayout) => void): void
+      /** Never called by an app too old to offer updates here. */
+      onUpdate(listener: (offer: DesktopUpdateOffer | null) => void): void
+      takeUpdate(): void
     }
 
 const bridge = (window as unknown as Record<string, DesktopBridge | undefined>)[DESKTOP_BRIDGE]
@@ -22,6 +25,8 @@ export const host: Host = bridge
       pathForFile: (file) => bridge.pathForFile(file),
       toggleSidebar: () => bridge.toggleSidebar(),
       onLayout: (listener) => bridge.onLayout(listener),
+      onUpdate: (listener) => bridge.onUpdate?.(listener),
+      takeUpdate: () => bridge.takeUpdate?.(),
     }
   : { kind: 'browser', showProject: (opened) => location.assign(opened.shellUrl) }
 

@@ -76,8 +76,9 @@ The app is not signed with an Apple Developer ID, so macOS stops it the first ti
    **Open Anyway**, and confirm.
 
 After that it opens normally. (In Terminal, `xattr -dr com.apple.quarantine /Applications/ezdesign.app`
-does the same.) When a new version is out, the app's menu offers it under **ezdesign → Download
-ezdesign …**; download it and replace the old copy.
+does the same.) New versions install from inside the app: when one is out, the foot of the sidebar
+offers **重新啟動以更新**, and the app restarts on it. A copy opened straight from the DMG cannot
+replace itself, so drag it into Applications first.
 
 ### Exact `file:line` for Vite + React
 

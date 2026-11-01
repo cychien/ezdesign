@@ -1,5 +1,7 @@
 import {
+  ArrowReloadHorizontalIcon,
   Cancel01Icon,
+  Download04Icon,
   Folder01Icon,
   FolderAddIcon,
   Logout01Icon,
@@ -117,7 +119,7 @@ function bootSidebar(root: HTMLElement, desktop: DesktopHost, api: string, versi
   const errorLine = h('p', 'ez-side-error')
   errorLine.setAttribute('role', 'alert')
   const account = accountFooter(api)
-  side.append(top, section, rows, errorLine, account.el)
+  side.append(top, section, rows, errorLine, updateRow(desktop), account.el)
   root.replaceChildren(side, h('div', 'ez-side-grip'))
 
   function open(go: () => Promise<void>): void {
@@ -260,4 +262,26 @@ function accountFooter(api: string): { el: HTMLElement; paint(account: AccountWi
       }
     },
   }
+}
+
+/** A new version of the app, above the account. Restarting installs it; an app
+ *  that cannot replace itself where it is opens the download page instead. */
+function updateRow(desktop: DesktopHost): HTMLElement {
+  const el = h('div', 'ez-side-update')
+  el.hidden = true
+  const button = h('button', 'ez-side-open ez-side-update-btn')
+  button.type = 'button'
+  button.onclick = () => desktop.takeUpdate()
+  el.append(button)
+  desktop.onUpdate((offer) => {
+    el.hidden = !offer
+    if (!offer) return
+    const restart = offer.by === 'restart'
+    button.title = restart ? `重新啟動 ezdesign，換成 ${offer.version}` : `下載 ezdesign ${offer.version}`
+    button.replaceChildren(
+      icon((restart ? ArrowReloadHorizontalIcon : Download04Icon) as IconNode, 15),
+      h('span', 'ez-side-name', restart ? `重新啟動以更新到 ${offer.version}` : `下載新版 ${offer.version}`),
+    )
+  })
+  return el
 }

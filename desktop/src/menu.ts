@@ -1,4 +1,5 @@
 import { Menu, type MenuItemConstructorOptions, app } from 'electron'
+import type { DesktopUpdateOffer } from '../../src/desktop-wire.js'
 
 export interface MenuActions {
   toggleSidebar(): void
@@ -7,8 +8,7 @@ export interface MenuActions {
   toggleDevTools(): void
   checkForUpdates(): void
   takeUpdate(): void
-  /** A version waiting: installed on restart, or, in an ad-hoc signed app, downloaded by hand. */
-  update: { version: string; by: 'restart' | 'download' } | null
+  update: DesktopUpdateOffer | null
 }
 
 /** The Edit roles are what make copy and paste work in the shell's composer. */

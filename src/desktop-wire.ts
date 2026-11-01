@@ -30,6 +30,13 @@ export interface DesktopLayout {
   shown: string | null
 }
 
+/** A new version of the app, ready to install on restart or, where the app
+ *  cannot replace itself, to download. */
+export interface DesktopUpdateOffer {
+  version: string
+  by: 'restart' | 'download'
+}
+
 /** At `window[DESKTOP_BRIDGE]` in daemon pages inside the app; read only by
  *  `client/host.ts`. */
 export interface DesktopBridge {
@@ -48,6 +55,9 @@ export interface DesktopBridge {
   toggleSidebar(): void
   /** Called now and on every change. */
   onLayout(listener: (layout: DesktopLayout) => void): void
+  /** Called now and whenever an update is offered. Absent in apps that predate it. */
+  onUpdate?(listener: (offer: DesktopUpdateOffer | null) => void): void
+  takeUpdate?(): void
 }
 
 export const DESKTOP_IPC = {
@@ -56,4 +66,7 @@ export const DESKTOP_IPC = {
   toggleSidebar: 'ezdesign:toggle-sidebar',
   layout: 'ezdesign:layout',
   layoutNow: 'ezdesign:layout-now',
+  update: 'ezdesign:update',
+  updateNow: 'ezdesign:update-now',
+  takeUpdate: 'ezdesign:take-update',
 } as const
