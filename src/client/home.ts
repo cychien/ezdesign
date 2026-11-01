@@ -85,6 +85,8 @@ function bootSidebar(root: HTMLElement, desktop: DesktopHost, api: string, versi
   const client = projectsClient(api, version)
   let list: ProjectListWire | null = null
   let shown: string | null = null
+  /** Projects whose agent finished a turn while another was on screen: green until opened. */
+  const unseen = new Set<string>()
   let error: string | null = null
 
   const side = h('nav', 'ez-side')
@@ -125,10 +127,12 @@ function bootSidebar(root: HTMLElement, desktop: DesktopHost, api: string, versi
     pick.title = project.exists ? project.project : `${project.project}（資料夾不見了）`
     pick.disabled = !project.exists
     pick.append(icon(Folder01Icon as IconNode, 15), h('span', 'ez-side-name', project.name))
-    if (project.session?.agentWorking) {
-      const working = h('span', 'ez-side-working')
-      working.title = 'Agent 工作中'
-      pick.append(working)
+    const agent = project.session?.agentWorking ? 'working' : unseen.has(project.project) ? 'done' : null
+    if (agent) {
+      const dot = h('span', 'ez-side-agent')
+      dot.dataset.state = agent
+      dot.title = agent === 'working' ? 'Agent 工作中' : 'Agent 做完了'
+      pick.append(dot)
     }
     pick.onclick = () => open(() => client.go(project.project))
     item.append(pick)
@@ -176,9 +180,14 @@ function bootSidebar(root: HTMLElement, desktop: DesktopHost, api: string, versi
 
   desktop.onLayout((layout) => {
     shown = layout.shown
+    if (shown) unseen.delete(shown)
     paint()
   })
   client.watch((next) => {
+    for (const project of next.projects) {
+      const before = list?.projects.find((p) => p.project === project.project)?.session?.agentWorking
+      if (before && !project.session?.agentWorking && project.project !== shown) unseen.add(project.project)
+    }
     list = next
     paint()
     if (!performance.getEntriesByName(LIST_SHOWN_MARK).length) performance.mark(LIST_SHOWN_MARK)
