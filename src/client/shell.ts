@@ -2798,6 +2798,8 @@ function showLibrary(shown: boolean, { animate = false } = {}): void {
 // The resizer sits beside the sidebar rather than in it: it is one of the ways a
 // folded-away sidebar comes back, so it cannot go inert with the rest.
 root.append(stageWrap, resizer, sidebarSlot, activityBar, statusPill)
+/** Until the first snapshot says whether a canvas is open. */
+root.toggleAttribute('data-bare', stagedApp === null)
 
 // ---------------------------------------------------------------- panning
 
@@ -4492,7 +4494,10 @@ function paintAnnotateAvailability(): void {
 
 function paintDevServer(): void {
   if (!snapshot) return
-  devServerPanel.update(snapshot.devServer, { shown: stagedApp !== null, onAppTab: canvasUi?.activeTab === 'app' })
+  const onAppTab = canvasUi?.activeTab === 'app'
+  devServerPanel.update(snapshot.devServer, { shown: stagedApp !== null, onAppTab })
+  const canvasOpen = snapshot.canvas.canvases.some((c) => !c.archived)
+  root.toggleAttribute('data-bare', onAppTab && stagedApp === null && !canvasOpen)
 }
 
 function render(): void {

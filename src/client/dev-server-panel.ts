@@ -275,7 +275,7 @@ export function installDevServerPanel(api: string, opts: { openCanvas(): void })
               editing = true
               repaint()
             }
-            actions.append(run, change, canvasOnly())
+            actions.append(run, change)
             break
           }
           if (offer) body.push(proposalNote(offer))
@@ -290,7 +290,6 @@ export function installDevServerPanel(api: string, opts: { openCanvas(): void })
             again.onclick = () => void post('propose')
             actions.append(again)
           }
-          if (offer && offer.state !== 'asking') actions.append(canvasOnly())
           break
         }
         case 'blocked': {
@@ -326,6 +325,7 @@ export function installDevServerPanel(api: string, opts: { openCanvas(): void })
           break
       }
     }
+    if (!editing && s.phase !== 'running' && s.phase !== 'external') actions.append(canvasOnly())
     card.replaceChildren(title, ...body)
     if (actions.childElementCount) card.append(actions)
     if (error) card.append(h('p', 'ez-devserver-error', error))
