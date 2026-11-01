@@ -30,7 +30,8 @@ the user did not provide an ACP command, ask them which ACP agent to use.
 
 1. Make sure the dev server is running. Never start a second instance when one is already up. If
    the user only wants to explore designs on a canvas, there may be no dev server: run the command
-   below without the url and the review opens on the project's canvases.
+   below without the url and the review opens with no app attached: on the project's canvases, or
+   on an App tab where the user can start the dev server themselves.
 2. From the project root, run:
 
    ```sh

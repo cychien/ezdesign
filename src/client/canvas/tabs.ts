@@ -17,7 +17,6 @@ export interface Tab {
   id: TabId
   /** The accessible name, from `LABELS`. */
   label: string
-  /** The App tab does not close: it goes when its dev server is detached. */
   closable: boolean
 }
 
@@ -30,13 +29,12 @@ export interface TabsModel {
   all: CanvasSummary[]
 }
 
-/** App first when attached, then open canvases by `createdAt`. */
-export function tabsModel(app: string | undefined, canvas: CanvasSnapshotWire): TabsModel {
+export function tabsModel(appTab: boolean, canvas: CanvasSnapshotWire): TabsModel {
   const open = canvas.canvases
     .filter((c) => !c.archived)
     .sort((a, b) => a.createdAt - b.createdAt)
   const tabs: Tab[] = [
-    ...(app ? [{ id: 'app' as const, label: LABELS.appTab, closable: false }] : []),
+    ...(appTab ? [{ id: 'app' as const, label: LABELS.appTab, closable: false }] : []),
     ...open.map((c) => ({ id: c.id, label: LABELS.canvasTab(c.name), closable: true })),
   ]
   const active = tabs.some((t) => t.id === canvas.activeTab)

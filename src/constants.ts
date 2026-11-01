@@ -102,3 +102,7 @@ export const SHELL_RETRY_MS = 1000
  *  left open on it to reconnect: one retry, its connect, and slack. */
 export const SHELL_RETURN_MS = 2000
 export const SOURCE_ATTR = 'data-ez-source'
+export const DEV_SERVER_READY_MS = 60_000
+export const DEV_SERVER_PORT_SCAN_AFTER_MS = 3_000
+export const DEV_SERVER_STOP_GRACE_MS = 3_000
+export const DEV_SERVER_LOG_LINES = 2_000

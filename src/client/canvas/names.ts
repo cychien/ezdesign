@@ -7,7 +7,7 @@
 export const TEST_IDS = {
   /** role=tablist */
   tabs: 'ez-tabs',
-  /** role=tab, only while a dev server is attached */
+  /** role=tab, while a dev server is attached or there is one to start */
   appTab: 'ez-tab-app',
   /** role=tab, `data-canvas-id` */
   canvasTab: 'ez-tab-canvas',

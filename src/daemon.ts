@@ -1,8 +1,8 @@
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto'
 import { EventEmitter } from 'node:events'
-import { accessSync, constants, mkdirSync, readFileSync, statSync } from 'node:fs'
+import { mkdirSync, readFileSync, statSync } from 'node:fs'
 import { type Server, createServer } from 'node:http'
-import { delimiter, dirname, join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { Socket } from 'node:net'
 import type { SessionConfigOption } from '@agentclientprotocol/sdk'
@@ -45,7 +45,10 @@ import { readLimit, rememberedLimit, rememberLimit } from './usage-limit.js'
 import type { AcpSnapshot } from './acp-agent.js'
 import { type AcpConfigValue, configLabel, configValueName } from './acp-config.js'
 import { AGENT_PROFILES, type AgentProfile, agentBrandFor, agentProfileFor, launchCommand } from './agents.js'
-import { clearAgentRecord, reapOrphanedAgents } from './agent-children.js'
+import { clearGroupRecord, reapOrphanedGroups } from './child-groups.js'
+import { DevServer, type DevServerWire, devServerApiRouter } from './dev-server/index.js'
+import { findExecutable } from './login-env.js'
+import { scrubRunAsNode, selfNodeCommandLine } from './self-node.js'
 import {
   attachmentIds,
   parseBatchView,
@@ -131,28 +134,14 @@ import { versionGate } from './version.js'
  *  shell imports those too - and a `node:fs` call reached through that import
  *  would end up in the browser bundle. */
 function agentInstalled(profile: AgentProfile, env = process.env): boolean {
-  return (env.PATH ?? '')
-    .split(delimiter)
-    .filter(Boolean)
-    .some((dir) => {
-      try {
-        accessSync(join(dir, profile.binary), constants.X_OK)
-        return true
-      } catch {
-        return false
-      }
-    })
+  return findExecutable(profile.binary, env.PATH) !== null
 }
 
 const distDir = dirname(fileURLToPath(import.meta.url))
 const SKILL_DIR = skillDir(distDir)
 
-const shellWord = (w: string) => (/^[\w@%+=:,./-]+$/.test(w) ? w : `'${w.replace(/'/g, `'\\''`)}'`)
 /** How this daemon's own CLI is run, so the agent never reaches for a different version. */
-const SELF_CLI = [process.execPath, ...process.execArgv, process.argv[1] ?? '']
-  .filter(Boolean)
-  .map(shellWord)
-  .join(' ')
+const SELF_CLI = selfNodeCommandLine([...process.execArgv, process.argv[1] ?? ''].filter(Boolean))
 
 /** Read per turn: a login mid-review should reach the next batch. */
 function inspireAccess(): Inspire {
@@ -200,7 +189,7 @@ function decodeAttachmentName(raw: string | undefined): string {
 
 const SHELL_ICON = `data:image/svg+xml,${encodeURIComponent(brandMarkSvg())}`
 
-const shellHtml = (version: string) => `<!doctype html>
+const shellHtml = (version: string, app: string | null) => `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -211,7 +200,7 @@ const shellHtml = (version: string) => `<!doctype html>
 </head>
 <body>
 <div id="ez-shell"></div>
-<script src="${URL_PREFIX}/shell.js" data-version="${version}"></script>
+<script src="${URL_PREFIX}/shell.js" data-version="${version}" data-app="${app ?? ''}"></script>
 </body>
 </html>`
 
@@ -264,6 +253,8 @@ interface SnapshotWire {
   canExplore?: true
   /** ACP mode only: the harness reaches the agent through this daemon's prompts. */
   designHarness?: boolean
+  devServer: DevServerWire
+  appTab: boolean
 }
 
 /** One conversation as the picker draws it. The count is what tells two of them
@@ -695,8 +686,14 @@ function configChangeNote(option: SessionConfigOption, value: AcpConfigValue): s
   return `已切換${label}：${configValueName(option, value)}`
 }
 
+interface RuntimeServices {
+  attachOrigin(runtime: SessionRuntime, origin: string): void
+  heldElsewhere(runtime: SessionRuntime, origin: string): boolean
+}
+
 class SessionRuntime implements ProjectRuntime {
   readonly store: SessionStore
+  readonly devServer: DevServer
   readonly bus = new EventEmitter()
   /** The explore rounds this session is taking variants for, and the tool the
    *  agent sends them through. */
@@ -764,8 +761,24 @@ class SessionRuntime implements ProjectRuntime {
     private readonly updater: Updater,
     private readonly library: () => Promise<Library>,
     private readonly account: Account,
+    services: RuntimeServices,
   ) {
     this.store = new SessionStore(project)
+    this.devServer = new DevServer({
+      project,
+      dir: this.store.dir,
+      userAttachedOrigin: () => {
+        const app = this.store.app
+        return app.kind === 'attached' ? app.origin : null
+      },
+      heldElsewhere: (origin) => services.heldElsewhere(this, origin),
+      attach: (origin) => services.attachOrigin(this, origin),
+      detachLeavingRecord: (origin) => this.detachDevServerApp(origin),
+      onChange: () => {
+        this.showAppWhenServed()
+        this.broadcast()
+      },
+    })
     // Starts detached: which origin this runtime shows is the directory's call,
     // because only it can see who else holds it.
     this.appProxy = new AppProxy(`${URL_PREFIX}/shell`, (req) => {
@@ -776,7 +789,7 @@ class SessionRuntime implements ProjectRuntime {
       view: this.store,
       frameOrigin: () => `http://${FRAME_HOST}:${this.port}`,
       overlay: () => ({ assets: overlayAssetKey(), shellOrigin: this.shellOrigin }),
-      hasApp: () => this.app.kind === 'attached',
+      hasApp: () => this.app.kind === 'attached' || this.devServer.offersApp(),
       onChange: (change) => this.canvasChanged(change),
       // eslint-disable-next-line no-console
       log: (message) => console.error(message),
@@ -874,6 +887,25 @@ class SessionRuntime implements ProjectRuntime {
 
   setRestoreOnStart(on: boolean): void {
     this.store.setRestoreOnStart(on)
+    if (!on) this.devServer.forgetResume()
+  }
+
+  private detachDevServerApp(origin: string): void {
+    if (this.app.kind !== 'attached' || this.app.origin !== origin) return
+    this.appProxy.detach()
+    this.forgetPageState()
+    this.canvases.appChanged({ show: false, create: this.shellClients.size > 0 })
+  }
+
+  private lastDevServerPhase: DevServerWire['phase'] = 'idle'
+
+  private showAppWhenServed(): void {
+    const phase = this.devServer.snapshot().phase
+    const served = (p: DevServerWire['phase']) => p === 'running' || p === 'external'
+    if (served(phase) && !served(this.lastDevServerPhase)) {
+      this.canvases.appChanged({ show: true, create: this.shellClients.size > 0 })
+    }
+    this.lastDevServerPhase = phase
   }
 
   resumeAgent(): void {
@@ -957,6 +989,8 @@ class SessionRuntime implements ProjectRuntime {
       account: this.account.snapshot(),
       ...(live.length ? { explores: live } : {}),
       ...(this.canExplore ? { canExplore: true as const } : {}),
+      devServer: this.devServer.snapshot(),
+      appTab: this.app.kind === 'attached' || this.devServer.offersApp(),
     }
   }
 
@@ -1798,6 +1832,7 @@ class SessionRuntime implements ProjectRuntime {
     api.use(libraryApiRouter({ library: this.library }))
     api.use(extensionApiRouter({ distDir, version: this.version, dataDir: libraryHome() }))
     api.use(announcementApiRouter())
+    api.use(devServerApiRouter(this.devServer))
     api.use(
       accountApiRouter({ account: this.account, callbackUrl: () => `${this.shellOrigin}${ACCOUNT_CALLBACK_PATH}` }),
     )
@@ -2393,7 +2428,9 @@ class SessionRuntime implements ProjectRuntime {
     app.use(frameHost(this.canvases.read, () => this.shellOrigin))
 
     const rk = Router()
-    rk.get('/shell', (_req, res) => res.type('html').send(shellHtml(this.version)))
+    rk.get('/shell', (_req, res) =>
+      res.type('html').send(shellHtml(this.version, this.app.kind === 'attached' ? this.app.origin : null)),
+    )
     // Never cached. These assets are the daemon's, and the daemon is replaceable
     // under an open shell - by a self-update, or by a `@latest` CLI run. The
     // reload that follows has to fetch the new code, and a heuristically cached
@@ -2441,6 +2478,7 @@ class SessionRuntime implements ProjectRuntime {
     this.store.setPort(this.port)
     // After the bind: frame urls carry the port.
     this.canvases.start()
+    this.devServer.resume()
     return this.port
   }
 
@@ -2548,6 +2586,7 @@ export interface DaemonOptions {
 }
 
 export async function daemonMain(version: string, opts: DaemonOptions = {}): Promise<void> {
+  scrubRunAsNode()
   const range = controlPortRange()
   if (opts.succeed === undefined) {
     const [adopted] = await ownDaemonsInRange(range)
@@ -2563,6 +2602,9 @@ export async function daemonMain(version: string, opts: DaemonOptions = {}): Pro
 
   let stopping = false
   let boundAt = 0n
+  // Asked, not killed: a task runner such as turbo stops the servers it started
+  // only on SIGTERM, and a SIGKILL leaves them holding their ports.
+  const releaseDevServers = () => Promise.all(sessions.list().map((s) => s.devServer.release()))
 
   const updater = new Updater({
     current: version,
@@ -2571,15 +2613,26 @@ export async function daemonMain(version: string, opts: DaemonOptions = {}): Pro
     handover: handoverTo,
     // Exit is the release: it frees every port at once and takes the agent
     // children with it, which is what the successor is waiting for.
-    retire: async () => process.exit(0),
+    retire: async () => {
+      await releaseDevServers()
+      process.exit(0)
+    },
     onChange: broadcastAll,
   })
 
   const library = lazyLibrary(() => openLibrary({ dir: libraryDir(libraryHome()) }))
   const account = new Account({ baseUrl: apiBaseUrl(), onChange: broadcastAll })
 
+  const services: RuntimeServices = {
+    attachOrigin: (runtime, origin) => sessions.attachOrigin(runtime, origin, { userAttached: false, now: Date.now() }),
+    heldElsewhere: (runtime, origin) => {
+      const holder = sessions.byOrigin(origin)
+      return !!holder && holder !== runtime
+    },
+  }
+
   sessions = new SessionDirectory(
-    (project) => new SessionRuntime(project, version, updater, library, account),
+    (project) => new SessionRuntime(project, version, updater, library, account, services),
     {
       restorable: listRestorableSessions,
       get: persistedSession,
@@ -2594,6 +2647,9 @@ export async function daemonMain(version: string, opts: DaemonOptions = {}): Pro
     // eslint-disable-next-line no-console
     (message) => console.error(message),
   )
+
+  let controlPort = 0
+  const controlOrigin = () => `http://127.0.0.1:${controlPort}`
 
   const control = express()
   control.use(express.json())
@@ -2640,9 +2696,10 @@ export async function daemonMain(version: string, opts: DaemonOptions = {}): Pro
   })
 
   /** Open or resume the project's session; with `url`, attach that origin to
-   *  it. Body `{project, url?, reopen?, agent?}`. */
+   *  it. Body `{project, url?, reopen?, agent?, devServer?}`. `devServer: true`
+   *  asks for the project's dev server. */
   control.post('/control/sessions', async (req, res) => {
-    const { url, reopen, project, agent } = req.body ?? {}
+    const { url, reopen, project, agent, devServer } = req.body ?? {}
     if (typeof project !== 'string' || !project) {
       return res.status(400).json({ error: 'missing project' })
     }
@@ -2668,6 +2725,7 @@ export async function daemonMain(version: string, opts: DaemonOptions = {}): Pro
     }
     const runtime = opened.runtime
     runtime.touch()
+    if (devServer === true && !parsed) runtime.devServer.ensure('cli')
     // SPIKE: ACP mode - this session spawns and drives its own agent.
     if (typeof agent === 'string' && agent) {
       // A different agent already on this session is a switch, not a conflict.
@@ -2710,17 +2768,18 @@ export async function daemonMain(version: string, opts: DaemonOptions = {}): Pro
     })
   })
 
-  control.post('/control/stop', (_req, res) => {
+  control.post('/control/stop', refuseCrossSite(controlOrigin), (_req, res) => {
     stopping = true
     clearRegistry(process.pid)
     res.json({ ok: true })
-    setTimeout(() => process.exit(0), 100)
+    void releaseDevServers().then(() => process.exit(0))
   })
 
   const controlServer = await listenOn(control, [...range.ports, 0])
   boundAt = process.hrtime.bigint()
   const controlAddress = controlServer.address()
   const port = typeof controlAddress === 'object' && controlAddress ? controlAddress.port : 0
+  controlPort = port
   // Cold starts that raced past the scan above are ordered by when each bound:
   // one stamped earlier was already listening when a later one looks, so the
   // earliest wins and the rest stand down before touching any state. Port order
@@ -2747,15 +2806,17 @@ export async function daemonMain(version: string, opts: DaemonOptions = {}): Pro
   // Whatever a killed predecessor could not kill for itself. Before any session
   // is restored, so a review that is about to start its agent again is not
   // sharing the machine with the one it left behind.
-  const reaped = reapOrphanedAgents()
+  const reaped = reapOrphanedGroups()
   if (reaped > 0) {
     // eslint-disable-next-line no-console
-    console.error(`reaped ${reaped} agent process group(s) left by a killed daemon`)
+    console.error(`reaped ${reaped} process group(s) left by a killed daemon`)
   }
   const cleanup = () => {
     clearRegistry(process.pid)
-    clearAgentRecord()
-    process.exit(0)
+    void releaseDevServers().then(() => {
+      clearGroupRecord()
+      process.exit(0)
+    })
   }
   process.on('SIGTERM', cleanup)
   process.on('SIGINT', cleanup)

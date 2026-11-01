@@ -1,0 +1,1 @@
+{ "name": "bun-dev", "scripts": { "dev": "bun run --hot src/index.ts" } }

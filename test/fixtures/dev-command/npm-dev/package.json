@@ -1,0 +1,1 @@
+{ "name": "npm-dev", "scripts": { "dev": "vite" } }

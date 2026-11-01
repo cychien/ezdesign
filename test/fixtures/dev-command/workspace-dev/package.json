@@ -1,0 +1,1 @@
+{ "name": "workspace-dev", "private": true, "scripts": { "dev": "turbo dev" } }

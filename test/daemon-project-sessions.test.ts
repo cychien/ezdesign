@@ -151,6 +151,7 @@ test('CV-p2-origin-handoff: another project taking the origin leaves the first i
   assert.equal(held.conversation.filter((e) => e.role === 'user').length, 1)
   const shell = await fetch(`http://127.0.0.1:${p.port}/__ezdesign/shell`)
   assert.equal(shell.status, 200)
+  assert.match(await shell.text(), /data-app=""/, 'a shell served with no app mounts no preview')
   const root = await fetch(`http://127.0.0.1:${p.port}/`, { headers: { accept: 'text/html' } })
   assert.equal(root.status, 404)
   assert.doesNotMatch(await root.text(), /the shared app/)
@@ -166,6 +167,8 @@ test('CV-p2-origin-handoff: another project taking the origin leaves the first i
   assert.equal(preview.status, 200)
   assert.match(await preview.text(), /No dev server is attached/)
   assert.equal((await state(world, q.port)).app, app.origin)
+  const shellWithApp = await (await fetch(`http://127.0.0.1:${q.port}/__ezdesign/shell`)).text()
+  assert.ok(shellWithApp.includes(`data-app="${app.origin}"`), 'the shell knows its app before any snapshot')
   sse.destroy()
 })
 
@@ -287,4 +290,30 @@ test('a shell left open across a restart is waited for, so ezdesign opens no sec
   assert.equal(other.port, q.port)
   assert.equal(other.shellOpen, false, 'no shell was open on it to wait for')
   shell.close()
+})
+
+test('an app that stops answering gets a page that reloads itself once the app is back', async () => {
+  const world = await newWorld()
+  world.spawnDaemon()
+  const daemon = await world.liveDaemon()
+  const server = createServer((_req, res) => res.writeHead(200, { 'content-type': 'text/html' }).end('<!doctype html><h1>back</h1>'))
+  await new Promise<void>((r) => server.listen(0, '127.0.0.1', () => r()))
+  const { port } = server.address() as AddressInfo
+  const opened = await world.openSession(daemon.port, { url: `http://127.0.0.1:${port}/`, project: project(world, 'stops') })
+  await new Promise<void>((r) => server.close(() => r()))
+
+  const page = await fetch(`http://127.0.0.1:${opened.port}/`, { headers: { accept: 'text/html', 'sec-fetch-dest': 'iframe' } })
+  assert.equal(page.status, 502)
+  assert.equal(page.headers.get('x-ezdesign-unreachable'), '1')
+  const html = await page.text()
+  assert.match(html, /連不上 App/)
+  assert.match(html, new RegExp(`127\\.0\\.0\\.1:${port}`))
+  const asset = await fetch(`http://127.0.0.1:${opened.port}/main.js`)
+  assert.deepEqual([asset.status, asset.headers.get('x-ezdesign-unreachable'), await asset.text()], [502, '1', ''])
+
+  const back = createServer((_req, res) => res.writeHead(200, { 'content-type': 'text/html' }).end('<!doctype html><h1>back</h1>'))
+  servers.push(back)
+  await new Promise<void>((r) => back.listen(port, '127.0.0.1', () => r()))
+  const again = await fetch(`http://127.0.0.1:${opened.port}/`, { method: 'HEAD' })
+  assert.deepEqual([again.status, again.headers.get('x-ezdesign-unreachable')], [200, null], 'what the page polls for')
 })

@@ -45,6 +45,8 @@ import { LIBRARY_TEST_IDS } from './library/names.js'
 import { chooseLibraryAttachments } from './library/picker.js'
 import { videoDigests } from './video-digest/runner.js'
 import type { DigestFailure } from '../protocol.js'
+import type { DevServerWire } from '../dev-server/wire.js'
+import { installDevServerPanel } from './dev-server-panel.js'
 import {
   type CanvasEventWire,
   type CanvasSnapshotWire,
@@ -204,6 +206,8 @@ interface SnapshotWire {
   canExplore?: true
   designHarness?: boolean
   designEffort?: DesignEffort
+  devServer: DevServerWire
+  appTab: boolean
 }
 
 interface ChatWire {
@@ -320,11 +324,11 @@ const TICK_ICON = 14
 let snapshot: SnapshotWire | null = null
 /** The canvas tabs and boards, installed on the first snapshot that has any. */
 let canvasUi: CanvasUi | null = null
-/** The app the previews are of: `null` with none attached, `undefined` until the
- *  first snapshot says. The stage mounts on load without waiting for it, since
- *  nearly every review has an app, and is rebuilt only if that guess was wrong
- *  or the app changes under it. */
-let stagedApp: string | null | undefined = undefined
+/** The app the previews are of, `null` with none attached. It starts as the
+ *  daemon's answer when it served this page, so the stage mounts on load without
+ *  waiting for a snapshot, and a frame is never left showing the note it got
+ *  from a proxy that had no app yet. */
+let stagedApp: string | null = (document.currentScript as HTMLScriptElement | null)?.dataset.app || null
 
 let annotateMode: Mode = 'off'
 /** The daemon's stream has been down longer than a restart takes. Every request
@@ -800,6 +804,7 @@ multiBtn.onclick = () => setMulti(!multi)
  *  for a pressed button. */
 const deviceRow = h('div', 'ez-seg')
 deviceRow.append(deviceGroup, multiBtn)
+deviceRow.hidden = stagedApp === null
 
 function paintControls(): void {
   const device = deviceById(deviceId)
@@ -835,6 +840,8 @@ function paintAnnotateMode(): void {
   }
   canvasUi?.setAnnotating(annotateMode)
 }
+
+const devServerPanel = installDevServerPanel(API)
 
 const sideHead = h('div', 'ez-side-head')
 sideHead.append(headRow, target, deviceRow, annotateGroup)
@@ -994,7 +1001,7 @@ const stage = h('div', 'ez-stage')
  *  wider than the stage overflows in the one direction the stage can scroll to
  *  reach, instead of being centred half-way out of view. */
 const grid = h('div', 'ez-grid')
-stage.append(grid)
+stage.append(devServerPanel.card, grid)
 
 /** The variant strip: what the agent produced, across the bottom of the stage.
  *
@@ -1651,7 +1658,7 @@ function paintPage(): void {
     return
   }
   if (stagedApp === null) {
-    target.textContent = '沒有 app'
+    target.textContent = ''
     document.title = 'ezdesign'
     return
   }
@@ -1824,10 +1831,8 @@ function paintStageClasses(): void {
 
 function stageApp(app: string | null): void {
   if (app === stagedApp) return
-  const presumed = stagedApp === undefined
   stagedApp = app
   deviceRow.hidden = app === null || (!!canvasUi && canvasUi.activeTab !== 'app')
-  if (presumed && app !== null) return
   rebuildStage()
 }
 
@@ -3369,6 +3374,7 @@ function canvasPorts(): Parameters<typeof installCanvas>[0] {
     api,
     onTabShown: (tab) => {
       deviceRow.hidden = stagedApp === null || tab !== 'app'
+      paintDevServer()
       if (tab === 'app') paintFrames()
       paintPage()
       paintPickPill()
@@ -4469,6 +4475,11 @@ function paintAnnotateAvailability(): void {
   for (const { btn } of annotateBtns) btn.disabled = off
 }
 
+function paintDevServer(): void {
+  if (!snapshot) return
+  devServerPanel.update(snapshot.devServer, { shown: stagedApp !== null, onAppTab: canvasUi?.activeTab === 'app' })
+}
+
 function render(): void {
   if (!snapshot) return
   const s = snapshot
@@ -4476,6 +4487,7 @@ function render(): void {
   stageApp(s.app ?? null)
   canvasUi ??= installCanvas(canvasPorts())
   canvasUi.render(s)
+  paintDevServer()
   paintPage()
 
   const ended = s.state === 'ended'

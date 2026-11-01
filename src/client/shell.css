@@ -1464,6 +1464,205 @@ body.ez-arranging .ez-frame {
   display: none;
 }
 
+.ez-devserver-card {
+  width: min(520px, calc(100% - 48px));
+  margin: max(48px, 12vh) auto 48px;
+  font-size: 13.5px;
+  line-height: 1.55;
+}
+
+.ez-devserver-card[hidden] {
+  display: none;
+}
+
+.ez-devserver-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.ez-devserver-text {
+  margin: 6px 0 0;
+  color: var(--muted-foreground);
+}
+
+.ez-devserver-hint {
+  margin: 10px 0 0;
+  font-size: 12.5px;
+  color: var(--muted-foreground);
+}
+
+.ez-devserver-command {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 14px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--muted);
+}
+
+.ez-devserver-line,
+.ez-devserver-tool,
+.ez-devserver-log,
+.ez-devserver-input {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.ez-devserver-line {
+  font-size: 13px;
+  color: var(--foreground);
+  word-break: break-all;
+}
+
+.ez-devserver-source {
+  font-size: 12px;
+  color: var(--muted-foreground);
+}
+
+.ez-devserver-log {
+  margin: 14px 0 0;
+  max-height: 260px;
+  overflow: auto;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--ink);
+  color: #e8e6e1;
+  font-size: 11.5px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.ez-devserver-log:empty::before {
+  content: '等待輸出…';
+  color: var(--ink-faint);
+}
+
+.ez-devserver-missing {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 14px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ez-devserver-missing li {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.ez-devserver-tool {
+  flex-shrink: 0;
+  padding: 1px 6px;
+  border-radius: 5px;
+  background: var(--muted);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.ez-devserver-inline {
+  padding: 0 4px;
+  border-radius: 4px;
+  background: var(--muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+}
+
+.ez-devserver-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.ez-devserver-label {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--muted-foreground);
+}
+
+.ez-devserver-input {
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--panel);
+  color: var(--foreground);
+  font-size: 13px;
+}
+
+.ez-devserver-input:focus-visible {
+  outline: none;
+  border-color: var(--ring);
+  box-shadow: 0 0 0 3px var(--ring-halo);
+}
+
+.ez-devserver-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+.ez-devserver-form .ez-devserver-actions {
+  margin-top: 4px;
+}
+
+.ez-devserver-go,
+.ez-devserver-secondary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 14px;
+  border-radius: 7px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.ez-devserver-go {
+  border: 1px solid var(--primary);
+  background: var(--primary);
+  color: var(--primary-foreground);
+  box-shadow: inset 0 1px 0 0 oklch(100% 0 0 / 0.14);
+}
+
+.ez-devserver-secondary {
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--foreground);
+}
+
+.ez-devserver-go:hover:not(:disabled) {
+  opacity: 0.88;
+}
+
+.ez-devserver-secondary:hover:not(:disabled) {
+  background: var(--muted);
+}
+
+.ez-devserver-go:disabled,
+.ez-devserver-secondary:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.ez-devserver-error {
+  margin: 10px 0 0;
+  font-size: 12.5px;
+  color: oklch(45% 0.15 25);
+}
+
 /* ---------------------------------------------------------------- sections */
 
 .ez-section {

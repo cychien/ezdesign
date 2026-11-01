@@ -1,52 +1,10 @@
 import assert from 'node:assert/strict'
-import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
-import { dirname, join, relative, resolve, sep } from 'node:path'
+import { join } from 'node:path'
 import { test } from 'node:test'
-import { fileURLToPath } from 'node:url'
+import { ROOT, inside, rel, scanImports, show } from './helpers/imports.js'
 
-const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const SRC = join(ROOT, 'src')
-
-interface Import {
-  from: string
-  spec: string
-  target: string
-  typeOnly: boolean
-  dynamic: boolean
-}
-
-function walk(dir: string): string[] {
-  return readdirSync(dir).flatMap((name) => {
-    const path = join(dir, name)
-    if (statSync(path).isDirectory()) return walk(path)
-    return /\.ts$/.test(name) && !/\.d\.ts$/.test(name) ? [path] : []
-  })
-}
-
-function importsOf(file: string): Import[] {
-  const text = readFileSync(file, 'utf8')
-    .replace(/\/\*[\s\S]*?\*\//g, '')
-    .replace(/(^|[^:'"`])\/\/.*$/gm, '$1')
-  const found: Import[] = []
-  const add = (spec: string, typeOnly: boolean, dynamic: boolean) => {
-    let target = spec
-    if (spec.startsWith('.')) {
-      const base = resolve(dirname(file), spec)
-      target = [base.replace(/\.js$/, '.ts'), base, `${base}.ts`].find((p) => existsSync(p)) ?? base
-    }
-    found.push({ from: file, spec, target, typeOnly, dynamic })
-  }
-  for (const m of text.matchAll(/^\s*(?:import|export)\s+(type\s+)?(?:[^'";]*?\sfrom\s+)?['"]([^'"]+)['"]/gm)) {
-    add(m[2]!, Boolean(m[1]), false)
-  }
-  for (const m of text.matchAll(/\bimport\(\s*['"]([^'"]+)['"]\s*\)/g)) add(m[1]!, false, true)
-  return found
-}
-
-const imports = walk(SRC).flatMap(importsOf)
-const rel = (path: string) => relative(ROOT, path).split(sep).join('/')
-const inside = (path: string, dir: string) => rel(path).startsWith(`${dir}/`)
-const show = (list: Import[]) => list.map((i) => `${rel(i.from)} -> ${i.spec}`).join('\n')
+const imports = scanImports('src')
 
 test('the library is entered only through its two public files', () => {
   const crossing = imports.filter(

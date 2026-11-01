@@ -58,7 +58,8 @@ Usage:
   ${APP_NAME} [<url>] [--reopen] [--agent <name|command>]
       open (or resume) this project's review session. With <url>, that dev
       server is on its App tab (a dev server that moved ports keeps the
-      conversation); without one, the shell opens on the project's canvases.
+      conversation); without one, its App tab offers to start the project's
+      dev server, or the shell opens on its canvases when there is none.
       --agent (SPIKE) drives the agent over ACP: the session spawns it, feedback
       goes straight to it, and its stream, questions and permission prompts all
       surface in the review shell - no terminal needed. Profiles: claude, gemini,
