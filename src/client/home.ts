@@ -1,8 +1,11 @@
-import { Cancel01Icon, Folder01Icon, StopIcon } from '@hugeicons/core-free-icons'
+import { Cancel01Icon, Folder01Icon, FolderAddIcon, StopIcon } from '@hugeicons/core-free-icons'
 import { brandLockupSvg } from '../brand.js'
 import type { ProjectListWire, ProjectWire } from '../projects/wire.js'
+import { host } from './host.js'
 import { type IconNode, icon } from './icon.js'
 import { devServerStatus, projectsClient } from './projects.js'
+
+export const LIST_SHOWN_MARK = 'ez:list-shown'
 
 export const HOME_TEST_IDS = {
   list: 'ez-home-list',
@@ -83,6 +86,44 @@ export function bootHome(root: HTMLElement, api: string, version: string): void 
     ).finally(() => (add.disabled = false))
   }
 
+  const pickFolder = host.pickFolder
+  if (pickFolder) {
+    const pick = h('button', 'ez-home-add-go ez-home-pick')
+    pick.type = 'button'
+    pick.append(icon(FolderAddIcon as IconNode, 16), h('span', undefined, '加入資料夾…'))
+    pick.onclick = () => void pickFolder().then((path) => path && addAndOpen(path))
+    form.replaceChildren(pick, h('span', 'ez-home-hint', '或把專案資料夾拖進這個視窗'))
+    form.onsubmit = (e) => e.preventDefault()
+  }
+
+  function addAndOpen(path: string): void {
+    client.add(path).then(
+      (added) => openProject(added.project),
+      (e: Error) => {
+        error = e.message
+        paint()
+      },
+    )
+  }
+
+  const pathForFile = host.pathForFile
+  if (pathForFile) {
+    document.addEventListener('dragover', (e) => {
+      e.preventDefault()
+      page.toggleAttribute('data-dragging', true)
+    })
+    document.addEventListener('dragleave', (e) => {
+      if (!e.relatedTarget) page.toggleAttribute('data-dragging', false)
+    })
+    document.addEventListener('drop', (e) => {
+      e.preventDefault()
+      page.toggleAttribute('data-dragging', false)
+      const file = e.dataTransfer?.files[0]
+      const path = file ? pathForFile(file) : ''
+      if (path) addAndOpen(path)
+    })
+  }
+
   const errorLine = h('p', 'ez-home-error')
   errorLine.setAttribute('role', 'alert')
   const rows = h('ul', 'ez-home-list')
@@ -90,6 +131,19 @@ export function bootHome(root: HTMLElement, api: string, version: string): void 
   rows.setAttribute('aria-label', '專案')
   page.append(head, title, lead, form, errorLine, rows)
   root.replaceChildren(page)
+
+  function openProject(project: string): void {
+    opening = project
+    error = null
+    paint()
+    client
+      .go(project)
+      .catch((e: Error) => (error = e.message))
+      .finally(() => {
+        opening = null
+        paint()
+      })
+  }
 
   function row(project: ProjectWire, now: number): HTMLElement {
     const item = h('li', 'ez-home-row')
@@ -112,16 +166,7 @@ export function bootHome(root: HTMLElement, api: string, version: string): void 
       meta.append(pill)
     } else if (project.usedAt) meta.append(h('span', 'ez-home-when', ago(project.usedAt, now)))
     open.append(icon(Folder01Icon as IconNode, 18), text, meta)
-    open.onclick = () => {
-      opening = project.project
-      error = null
-      paint()
-      client.go(project.project).catch((e: Error) => {
-        opening = null
-        error = e.message
-        paint()
-      })
-    }
+    open.onclick = () => openProject(project.project)
     item.append(open)
 
     const actions = h('span', 'ez-home-actions')
@@ -154,7 +199,13 @@ export function bootHome(root: HTMLElement, api: string, version: string): void 
       const empty = h('li', 'ez-home-empty')
       empty.append(
         h('strong', undefined, '還沒有專案'),
-        h('span', undefined, '在上面貼上專案資料夾的路徑，或在專案資料夾裡執行 npx -y @cychien/ezdesign。'),
+        h(
+          'span',
+          undefined,
+          host.pickFolder
+            ? '按「加入資料夾…」或把專案資料夾拖進這個視窗。'
+            : '在上面貼上專案資料夾的路徑，或在專案資料夾裡執行 npx -y @cychien/ezdesign。',
+        ),
       )
       rows.replaceChildren(empty)
       return
@@ -165,11 +216,7 @@ export function bootHome(root: HTMLElement, api: string, version: string): void 
   client.watch((next) => {
     list = next
     paint()
-  })
-  window.addEventListener('pageshow', (e) => {
-    if (!e.persisted) return
-    opening = null
-    paint()
+    if (!performance.getEntriesByName(LIST_SHOWN_MARK).length) performance.mark(LIST_SHOWN_MARK)
   })
   paint()
 }

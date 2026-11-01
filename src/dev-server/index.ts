@@ -30,6 +30,7 @@ export interface DevServerDeps {
   heldElsewhere(origin: string): boolean
   attach(origin: string): void
   detachLeavingRecord(origin: string): void
+  environmentReady(): Promise<unknown>
   onChange(): void
 }
 
@@ -81,6 +82,11 @@ export class DevServer {
 
   restart(by: Initiator): void {
     this.dispatch({ type: 'restart', now: Date.now(), by })
+  }
+
+  get managedBy(): Initiator | null {
+    const state = this.machine.state
+    return state.phase === 'starting' || state.phase === 'running' || state.phase === 'stopping' ? state.run.by : null
   }
 
   get external(): boolean {
@@ -217,6 +223,7 @@ export class DevServer {
   }
 
   private async resolve(): Promise<Resolution> {
+    await this.deps.environmentReady()
     const recorded = this.deps.userAttachedOrigin()
     if (recorded && !this.deps.heldElsewhere(recorded) && (await originAnswers(recorded))) {
       const cwd = await listenerCwd(recorded)

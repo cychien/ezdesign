@@ -6064,3 +6064,14 @@ html.ez-on-board body {
 .ez-switcher-item .ez-switcher-dot {
   margin: 0 3.5px;
 }
+
+[data-host='desktop'] .ez-tabs-bar {
+  padding-left: var(--traffic-light-room);
+  -webkit-app-region: drag;
+}
+
+[data-host='desktop'] .ez-tabs-bar button,
+[data-host='desktop'] .ez-tabs-bar [role='tab'],
+[data-host='desktop'] .ez-tabs-bar .ez-menu {
+  -webkit-app-region: no-drag;
+}

@@ -49,7 +49,13 @@ export function installProjectSwitcher(api: string, version: string, project: st
       if (status) dot.dataset.phase = status.phase
       item.append(dot, h('span', 'ez-menu-name', row.name))
       if (!row.exists) item.append(h('span', 'ez-switcher-note', '資料夾不見了'))
-      item.onclick = () => void client.go(row.project).catch((e: Error) => paint(list, e.message))
+      item.onclick = () => {
+        setOpen(false)
+        void client.go(row.project).catch((e: Error) => {
+          setOpen(true)
+          paint(list, e.message)
+        })
+      }
       items.push(item)
     }
     if (list && !items.length) items.push(h('div', 'ez-switcher-empty', '沒有其他專案'))
@@ -59,7 +65,10 @@ export function installProjectSwitcher(api: string, version: string, project: st
     all.append(icon(GridViewIcon as IconNode, 14), h('span', 'ez-menu-name', '所有專案'))
     all.setAttribute('role', 'menuitem')
     all.disabled = !list
-    all.onclick = () => list && host.showHome(list.home)
+    all.onclick = () => {
+      setOpen(false)
+      if (list) host.showHome(list.home)
+    }
     menu.replaceChildren(...items, h('div', 'ez-switcher-sep'), all)
   }
 

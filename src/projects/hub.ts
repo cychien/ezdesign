@@ -12,6 +12,7 @@ export interface HubRuntime extends ProjectRuntime {
     ensure(by: Initiator): void
     stop(): Promise<void>
     readonly external: boolean
+    readonly managedBy: Initiator | null
   }
   shellUrl(path?: string): string
   ensureAgent(fallback: string): void
@@ -79,6 +80,12 @@ export class ProjectHub<R extends HubRuntime> {
   async stop(project: string): Promise<void> {
     const runtime = this.deps.sessions.list().find((r) => r.project === project)
     if (runtime && !runtime.devServer.external) await runtime.devServer.stop()
+  }
+
+  async stopManagedBy(by: Initiator): Promise<number> {
+    const targets = this.deps.sessions.list().filter((r) => r.devServer.managedBy === by)
+    await Promise.all(targets.map((r) => r.devServer.stop()))
+    return targets.length
   }
 
   changed(): void {

@@ -1,0 +1,22 @@
+{
+  "name": "@cychien/ezdesign-desktop",
+  "private": true,
+  "version": "0.1.0",
+  "description": "The ezdesign macOS app: a native window over the daemon's project list and review shell.",
+  "type": "module",
+  "main": "dist/main.mjs",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "stage": "node scripts/stage-package.mjs",
+    "start": "npm run build && electron .",
+    "typecheck": "tsc -p . --noEmit",
+    "dist": "npm run stage && npm run build && electron-builder --mac --dir --publish never"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "electron": "45.2.1",
+    "electron-builder": "^26.0.12",
+    "esbuild": "^0.25.0",
+    "typescript": "^5.7.0"
+  }
+}

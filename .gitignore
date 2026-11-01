@@ -8,3 +8,6 @@ docs/*
 !docs/brand.md
 !docs/brand/
 .ezdesign/
+desktop/dist/
+desktop/stage/
+desktop/release/

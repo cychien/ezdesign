@@ -1,5 +1,6 @@
 import type { RequestHandler } from 'express'
 import { APP_NAME, NPM_PACKAGE } from './constants.js'
+import { DESKTOP_CONTRACT, DESKTOP_HEADER } from './desktop-wire.js'
 import { VERSION_HEADER } from './version-header.js'
 
 export { VERSION_HEADER }
@@ -25,5 +26,13 @@ export function versionGate(daemonVersion: string): RequestHandler {
     const cliVersion = req.get(VERSION_HEADER) || undefined
     if (cliVersion === daemonVersion) return next()
     res.status(409).json(versionMismatchBody(cliVersion, daemonVersion))
+  }
+}
+
+export function desktopContractGate(served: number = DESKTOP_CONTRACT): RequestHandler {
+  return (req, res, next) => {
+    const asked = Number(req.get(DESKTOP_HEADER))
+    if (Number.isInteger(asked) && asked >= 1 && asked <= served) return next()
+    res.status(409).json({ error: `this ${APP_NAME} daemon serves desktop contracts up to ${served}` })
   }
 }

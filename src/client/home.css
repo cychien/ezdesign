@@ -217,3 +217,29 @@
   color: var(--foreground);
   font-weight: 600;
 }
+
+.ez-home-pick {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ez-home-hint {
+  align-self: center;
+  font-size: 13px;
+  color: var(--muted-foreground);
+}
+
+.ez-home[data-dragging] .ez-home-list {
+  outline: 2px dashed var(--ink-ghost);
+  outline-offset: 6px;
+  border-radius: 12px;
+}
+
+[data-host='desktop'] .ez-home::before {
+  content: '';
+  position: fixed;
+  inset: 0 0 auto;
+  height: 40px;
+  -webkit-app-region: drag;
+}

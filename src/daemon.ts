@@ -48,7 +48,8 @@ import { type AcpConfigValue, configLabel, configValueName } from './acp-config.
 import { AGENT_PROFILES, type AgentProfile, agentBrandFor, agentProfileFor, launchCommand } from './agents.js'
 import { clearGroupRecord, reapOrphanedGroups } from './child-groups.js'
 import { DevServer, type DevServerWire, devServerApiRouter } from './dev-server/index.js'
-import { findExecutable } from './login-env.js'
+import { adoptLoginEnvironment, findExecutable } from './login-env.js'
+import { DESKTOP_CONTRACT, type DesktopQuitAnswer } from './desktop-wire.js'
 import { scrubRunAsNode, selfNodeCommandLine } from './self-node.js'
 import { ProjectBook } from './projects/book.js'
 import { ProjectHub } from './projects/hub.js'
@@ -134,7 +135,7 @@ import { accountApiRouter, crossSiteAccountCallback } from './account-routes.js'
 import { installVersion, pruneInstalledVersions } from './installer.js'
 import { latestVersion, updateChecksDisabled } from './update-check.js'
 import { Updater, type UpdateWire } from './updater.js'
-import { versionGate } from './version.js'
+import { desktopContractGate, versionGate } from './version.js'
 
 /** Whether a profile's CLI is on the PATH.
  *
@@ -699,6 +700,7 @@ interface RuntimeServices {
   projects: ProjectHub<SessionRuntime>
   attachOrigin(runtime: SessionRuntime, origin: string): void
   heldElsewhere(runtime: SessionRuntime, origin: string): boolean
+  environmentReady(): Promise<unknown>
 }
 
 class SessionRuntime implements ProjectRuntime {
@@ -784,6 +786,7 @@ class SessionRuntime implements ProjectRuntime {
       heldElsewhere: (origin) => services.heldElsewhere(this, origin),
       attach: (origin) => services.attachOrigin(this, origin),
       detachLeavingRecord: (origin) => this.detachDevServerApp(origin),
+      environmentReady: services.environmentReady,
       onChange: () => {
         this.showAppWhenServed()
         this.broadcast()
@@ -2611,6 +2614,7 @@ export interface DaemonOptions {
 
 export async function daemonMain(version: string, opts: DaemonOptions = {}): Promise<void> {
   scrubRunAsNode()
+  const environment = adoptLoginEnvironment()
   const range = controlPortRange()
   if (opts.succeed === undefined) {
     const [adopted] = await ownDaemonsInRange(range)
@@ -2661,6 +2665,7 @@ export async function daemonMain(version: string, opts: DaemonOptions = {}): Pro
       const holder = sessions.byOrigin(origin)
       return !!holder && holder !== runtime
     },
+    environmentReady: () => environment,
   }
 
   sessions = new SessionDirectory(
@@ -2695,7 +2700,22 @@ export async function daemonMain(version: string, opts: DaemonOptions = {}): Pro
       pid: process.pid,
       dataDirId: dataDirId(),
       boundAt: String(boundAt),
+      desktop: DESKTOP_CONTRACT,
     })
+  })
+
+  control.use('/control/desktop', refuseCrossSite(controlOrigin), desktopContractGate())
+  control.post('/control/desktop/open', async (req, res) => {
+    const path: unknown = req.body?.path
+    if (typeof path !== 'string') return res.status(400).json({ error: 'path required' })
+    const added = projects.add(path)
+    if ('error' in added) return res.status(400).json(added)
+    const opened = await projects.open(added.project, 'desktop')
+    if ('ok' in opened) return res.status(opened.status).json({ error: opened.error })
+    res.json(opened)
+  })
+  control.post('/control/desktop/quit', async (_req, res) => {
+    res.json({ stopped: await projects.stopManagedBy('desktop') } satisfies DesktopQuitAnswer)
   })
 
   control.use(homePageRouter({ version, distDir, icon: SHELL_ICON }))
@@ -2862,6 +2882,7 @@ export async function daemonMain(version: string, opts: DaemonOptions = {}): Pro
     // eslint-disable-next-line no-console
     console.error(`predecessor pid ${opts.succeed} is still running; restoring sessions anyway`)
   }
+  await environment
   // The migration moves directories a live predecessor's stores may still be
   // writing, so it waits for a start whose predecessor is confirmed gone.
   await sessions.restore({ migrate: predecessorGone })
