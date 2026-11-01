@@ -197,7 +197,7 @@ function decodeAttachmentName(raw: string | undefined): string {
 
 const SHELL_ICON = `data:image/svg+xml,${encodeURIComponent(brandMarkSvg())}`
 
-const shellHtml = (version: string) => `<!doctype html>
+const shellHtml = (version: string, app: string | null) => `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -208,7 +208,7 @@ const shellHtml = (version: string) => `<!doctype html>
 </head>
 <body>
 <div id="ez-shell"></div>
-<script src="${URL_PREFIX}/shell.js" data-version="${version}"></script>
+<script src="${URL_PREFIX}/shell.js" data-version="${version}" data-app="${app ?? ''}"></script>
 </body>
 </html>`
 
@@ -2450,7 +2450,9 @@ class SessionRuntime implements ProjectRuntime {
     app.use(frameHost(this.canvases.read, () => this.shellOrigin))
 
     const rk = Router()
-    rk.get('/shell', (_req, res) => res.type('html').send(shellHtml(this.version)))
+    rk.get('/shell', (_req, res) =>
+      res.type('html').send(shellHtml(this.version, this.app.kind === 'attached' ? this.app.origin : null)),
+    )
     // Never cached. These assets are the daemon's, and the daemon is replaceable
     // under an open shell - by a self-update, or by a `@latest` CLI run. The
     // reload that follows has to fetch the new code, and a heuristically cached
