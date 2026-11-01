@@ -34,6 +34,9 @@ export interface DesktopBridge {
   readonly trafficLightRoom: number
   /** The sidebar page lies under the whole window, as its ground; this much of it is the sidebar. */
   readonly sidebarWidth: number
+  /** The project pane's inset from the window's other edges, and its corner radius. */
+  readonly paneInset: number
+  readonly paneRadius: number
   pickFolder(): Promise<string | null>
   /** `''` for a dropped item with no path. */
   pathForFile(file: File): string
