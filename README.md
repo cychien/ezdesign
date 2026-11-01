@@ -62,6 +62,23 @@ npx skills add cychien/ezdesign --skill ezdesign
 
 Then type `/ezdesign` in Claude Code, Codex or Gemini CLI, and the agent opens the review for you.
 
+### Or use the Mac app
+
+Download it from [Releases](https://github.com/cychien/ezdesign/releases/latest): `ezdesign-arm64.dmg`
+for Apple silicon, `ezdesign-x64.dmg` for Intel. Pick a project in its sidebar and start its dev
+server from the App tab; the agent connects on its own.
+
+The app is not signed with an Apple Developer ID, so macOS stops it the first time:
+
+1. Open the DMG and drag **ezdesign** into **Applications**, then open it. macOS says it cannot
+   verify the developer; choose **Done**.
+2. Open **System Settings → Privacy & Security**, scroll to the note about ezdesign, choose
+   **Open Anyway**, and confirm.
+
+After that it opens normally. (In Terminal, `xattr -dr com.apple.quarantine /Applications/ezdesign.app`
+does the same.) When a new version is out, the app's menu offers it under **ezdesign → Download
+ezdesign …**; download it and replace the old copy.
+
 ### Exact `file:line` for Vite + React
 
 ezdesign works with any framework, no code changes. For Vite + React, add the plugin and every

@@ -1,4 +1,4 @@
-import type { CrashCause, DevCommandSource, DevServerWire, MissingToolWire, UndecidedReason } from './wire.js'
+import type { CrashCause, DevCommandSource, DevServerWire, MissingToolWire, ProposalWire, UndecidedReason } from './wire.js'
 
 export interface DevCommand {
   readonly line: string
@@ -22,7 +22,7 @@ export type DevServerState =
   | { phase: 'running'; run: Run; origin: string; origins: readonly string[] }
   | { phase: 'stopping'; run: Run; then: { kind: 'stopped' } | { kind: 'restart'; by: Initiator; since: number } }
   | { phase: 'external'; origin: string }
-  | { phase: 'needs-command'; reason: UndecidedReason; serverScripts: readonly string[] }
+  | { phase: 'needs-command'; reason: UndecidedReason; serverScripts: readonly string[]; proposal?: ProposalWire }
   | { phase: 'blocked'; command: DevCommand; missing: readonly MissingToolWire[] }
   | { phase: 'stopped'; command?: DevCommand }
   | {
@@ -65,6 +65,8 @@ export type DevServerEvent =
   | { type: 'spawn-failed'; runId: number; error: string }
   | { type: 'confirmed'; now: number; by: Initiator }
   | { type: 'command-forgotten' }
+  | { type: 'ask-again' }
+  | { type: 'proposal'; proposal: ProposalWire }
   | { type: 'origin-picked'; origin: string }
 
 export type DevServerEffect =
@@ -77,6 +79,7 @@ export type DevServerEffect =
   | { type: 'attach'; origin: string }
   | { type: 'detach'; origin: string }
   | { type: 'persist-resume'; resume: { by: Initiator } | null }
+  | { type: 'ask-agent' }
 
 export interface Step {
   machine: DevServerMachine
@@ -165,7 +168,7 @@ export function step(machine: DevServerMachine, event: DevServerEvent): Step {
         case 'blocked':
           return to({ phase: 'blocked', command: r.command, missing: r.missing })
         case 'undecided':
-          return to({ phase: 'needs-command', reason: r.reason, serverScripts: r.serverScripts })
+          return to({ phase: 'needs-command', reason: r.reason, serverScripts: r.serverScripts }, [{ type: 'ask-agent' }])
       }
       return same()
     }
@@ -222,6 +225,13 @@ export function step(machine: DevServerMachine, event: DevServerEvent): Step {
       if (state.phase !== 'starting' || !current(event.runId)) return same()
       return crash(state.run, 'spawn', [event.error])
 
+    case 'ask-again':
+      if (state.phase !== 'needs-command' || state.proposal?.state === 'asking') return same()
+      return to({ phase: 'needs-command', reason: state.reason, serverScripts: state.serverScripts }, [{ type: 'ask-agent' }])
+
+    case 'proposal':
+      return state.phase === 'needs-command' ? to({ ...state, proposal: event.proposal }) : same()
+
     case 'command-forgotten':
       return state.phase === 'blocked' || state.phase === 'crashed' || state.phase === 'stopped'
         ? to({ phase: 'stopped' })
@@ -270,7 +280,12 @@ export function toWire(state: DevServerState): DevServerWire {
     case 'external':
       return { phase: 'external', origin: state.origin }
     case 'needs-command':
-      return { phase: 'needs-command', reason: state.reason, serverScripts: [...state.serverScripts] }
+      return {
+        phase: 'needs-command',
+        reason: state.reason,
+        serverScripts: [...state.serverScripts],
+        ...(state.proposal ? { proposal: state.proposal } : {}),
+      }
     case 'blocked':
       return { phase: 'blocked', command: commandWire(state.command), missing: [...state.missing] }
     case 'stopped':

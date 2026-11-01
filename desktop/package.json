@@ -10,12 +10,16 @@
     "stage": "node scripts/stage-package.mjs",
     "start": "npm run build && electron .",
     "typecheck": "tsc -p . --noEmit",
-    "dist": "npm run stage && npm run build && electron-builder --mac --dir --publish never"
+    "dist": "npm run stage && npm run build && electron-builder --mac --publish never",
+    "release": "npm run stage && npm run build && electron-builder --mac --publish always",
+    "dist:adhoc": "npm run stage && npm run build && electron-builder --mac --publish never -c.mac.identity=- -c.mac.hardenedRuntime=false -c.mac.notarize=false",
+    "release:adhoc": "npm run stage && npm run build && electron-builder --mac --publish always -c.mac.identity=- -c.mac.hardenedRuntime=false -c.mac.notarize=false"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
     "electron": "45.2.1",
     "electron-builder": "^26.0.12",
+    "electron-updater": "^6.6.2",
     "esbuild": "^0.25.0",
     "typescript": "^5.7.0"
   }

@@ -14,6 +14,8 @@
  *    MODEPUSH  push a bare `current_mode_update`, then end the turn
  *    REFUSEHAIKU  from here on, take the request to switch to haiku and decline it
  *    PAGESTATE  reply with the page-state url and token ezdesign put in its environment
+ *    (the dev command question)  ask permission for Bash, then answer with
+ *              EZ_FAKE_PROPOSAL (default a command) in a fenced json block
  *
  *  Env: EZ_FAKE_NO_RESUME     do not advertise session/resume
  *       EZ_FAKE_REFUSE_RESUME advertise it, then refuse every resume
@@ -430,6 +432,14 @@ const app = agent({ name: 'fake-acp-agent' })
       // variants on the page, the agent still going - and it is the state the one
       // end a round's own turn never reports happens in: the review leaving.
       if (text.includes('SLOW')) return await park(turn.signal)
+      return { stopReason: 'end_turn' }
+    }
+    if (text.includes("propose the command that starts this project's dev server")) {
+      prompts.push({ sessionId, text })
+      const decided = await askPermission(ctx, sessionId, 'Bash')
+      const answer =
+        process.env.EZ_FAKE_PROPOSAL ?? JSON.stringify({ command: 'npm run dev:web', cwd: '.', reason: `dev:web serves the site; Bash was ${decided}` })
+      await say(`Read package.json. Bash was ${decided}.\n\n\`\`\`json\n${answer}\n\`\`\``)
       return { stopReason: 'end_turn' }
     }
     // Ask permission for a tool - `Bash` unless `EZ_FAKE_PERMISSION_TOOL` names

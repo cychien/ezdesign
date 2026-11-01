@@ -2,9 +2,11 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
 import {
+  DESKTOP_ICON,
   EXTENSION_ICONS,
   README_LOCKUPS,
   SOURCE_KEY,
+  desktopIconSourceHash,
   iconSourceHash,
   lockupSource,
   readPngSize,
@@ -30,4 +32,10 @@ test('the extension icons were rendered from the mark brand.ts draws today, at t
     assert.deepEqual(readPngSize(png), { width: icon.size, height: icon.size }, icon.path)
     assert.equal(readPngText(png, SOURCE_KEY), iconSourceHash(icon), `${icon.path} is ${REGENERATE}`)
   }
+})
+
+test('the macOS app icon was rendered from the mark brand.ts draws today', () => {
+  const png = readFileSync(DESKTOP_ICON.path)
+  assert.deepEqual(readPngSize(png), { width: 1024, height: 1024 })
+  assert.equal(readPngText(png, SOURCE_KEY), desktopIconSourceHash(), `${DESKTOP_ICON.path} is ${REGENERATE}`)
 })

@@ -16,12 +16,13 @@ import {
   toWire,
 } from './lifecycle.js'
 import { LogRing, ManagedProcess, listenerCwd, originAnswers } from './process.js'
-import { projectRelativePath } from './proposal.js'
+import { type CommandProposal, askAgentForCommand, projectRelativePath } from './proposal.js'
 import type { DevCommandChoice, DevCommandWire, DevServerLogWire, DevServerSummaryWire, DevServerWire } from './wire.js'
 
 export type { DevCommandChoice, DevServerLogWire, DevServerWire } from './wire.js'
 export type { Initiator } from './lifecycle.js'
 export { devServerApiRouter, initiator } from './routes.js'
+export { proposingAgent } from './proposal.js'
 
 export interface DevServerDeps {
   project: string
@@ -31,6 +32,8 @@ export interface DevServerDeps {
   attach(origin: string): void
   detachLeavingRecord(origin: string): void
   environmentReady(): Promise<unknown>
+  /** `null` when no agent can be asked: the user types the command instead. */
+  proposingAgent(): string | null
   onChange(): void
 }
 
@@ -41,6 +44,17 @@ interface DevServerRecord {
 
 export type SaveCommandOutcome = 'started' | 'invalid-cwd' | 'invalid-line'
 
+/** The question out to the agent, and its answer once there is one. */
+interface AgentAsk {
+  live: CommandProposal | null
+  abort: AbortController
+}
+
+/** Confirmed exactly as the agent proposed it; an edit makes it the user's. */
+function isTheAgentsProposal(offered: CommandProposal | null | undefined, proposalId: string | undefined, line: string, cwd: string): boolean {
+  return !!offered && proposalId === offered.id && offered.line === line && offered.cwd === cwd
+}
+
 const CRASH_TAIL_LINES = 30
 const PORT_SCAN_EVERY_MS = 1_000
 const MAX_LINE = 500
@@ -49,6 +63,7 @@ export class DevServer {
   private machine: DevServerMachine = INITIAL
   private live: { runId: number; process: ManagedProcess } | null = null
   private readonly log = new LogRing()
+  private proposal: AgentAsk | null = null
   private startPreview: { command: DevCommandWire | null; runnable: boolean } | null = null
 
   constructor(private readonly deps: DevServerDeps) {}
@@ -112,9 +127,14 @@ export class DevServer {
     if (!line || line.length > MAX_LINE || /[\0\r\n]/.test(line)) return 'invalid-line'
     const cwd = projectRelativePath(this.deps.project, choice.cwd.trim() || '.')
     if (cwd === null) return 'invalid-cwd'
-    this.writeRecord({ ...this.readRecord(), command: { line, cwd, source: 'user', decidedAt: Date.now() } })
+    const source = isTheAgentsProposal(this.proposal?.live, choice.proposalId, line, cwd) ? 'agent' : 'user'
+    this.writeRecord({ ...this.readRecord(), command: { line, cwd, source, decidedAt: Date.now() } })
     this.dispatch({ type: 'confirmed', now: Date.now(), by })
     return 'started'
+  }
+
+  askAgentAgain(): void {
+    this.dispatch({ type: 'ask-again' })
   }
 
   forgetCommand(): void {
@@ -146,6 +166,10 @@ export class DevServer {
 
   private dispatch(event: DevServerEvent): void {
     const { machine, effects, stateChanged } = step(this.machine, event)
+    if (this.proposal && machine.state.phase !== 'needs-command') {
+      this.proposal.abort.abort()
+      this.proposal = null
+    }
     this.machine = machine
     if (stateChanged) this.startPreview = null
     for (const effect of effects) this.perform(effect)
@@ -220,6 +244,34 @@ export class DevServer {
         return this.deps.attach(effect.origin)
       case 'detach':
         return this.deps.detachLeavingRecord(effect.origin)
+      case 'ask-agent': {
+        this.proposal?.abort.abort()
+        this.proposal = null
+        const agent = this.deps.proposingAgent()
+        if (!agent) return
+        const asking: AgentAsk = { live: null, abort: new AbortController() }
+        this.proposal = asking
+        this.dispatchAfterThisStep({ type: 'proposal', proposal: { state: 'asking', agent } })
+        const facts = readProjectFacts(this.deps.project)
+        const undecided = detectDevCommand(facts)
+        if (undecided.kind !== 'undecided') return
+        void askAgentForCommand({ agent, project: this.deps.project, facts, undecided, signal: asking.abort.signal }).then(
+          (outcome) => {
+            if (this.proposal !== asking) return
+            if (outcome.kind === 'proposed') asking.live = outcome.proposal
+            this.dispatch({
+              type: 'proposal',
+              proposal:
+                outcome.kind === 'proposed'
+                  ? { state: 'proposed', ...outcome.proposal }
+                  : outcome.kind === 'none-found'
+                    ? { state: 'none-found', agent, reason: outcome.reason }
+                    : { state: 'failed', agent, error: outcome.error },
+            })
+          },
+        )
+        return
+      }
       case 'persist-resume': {
         const { resume: _, ...rest } = this.readRecord()
         this.writeRecord(effect.resume ? { ...rest, resume: effect.resume } : rest)

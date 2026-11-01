@@ -241,3 +241,30 @@ test('forgetting the stored command drops it from a card that showed it', () => 
   const running = run([...started, { type: 'origins', runId: RUN, origins: [ORIGIN] }]).machine
   assert.equal(step(running, { type: 'command-forgotten' }).stateChanged, false, 'a live run keeps the command it runs')
 })
+
+test('an undecided project asks the agent; a second ask waits for the first', () => {
+  const undecided = run([
+    { type: 'ensure', now: 1, by: 'browser' },
+    { type: 'resolved', attempt: 1, resolution: { kind: 'undecided', reason: 'no-script', serverScripts: [] }, now: 2 },
+  ])
+  assert.deepEqual(undecided.effects.at(-1), { type: 'ask-agent' })
+  const asking = step(undecided.machine, { type: 'proposal', proposal: { state: 'asking', agent: 'claude' } }).machine
+  assert.equal(step(asking, { type: 'ask-again' }).stateChanged, false)
+  const failed = step(asking, { type: 'proposal', proposal: { state: 'failed', agent: 'claude', error: 'timeout' } })
+  assert.deepEqual(toWire(failed.machine.state), {
+    phase: 'needs-command',
+    reason: 'no-script',
+    serverScripts: [],
+    proposal: { state: 'failed', agent: 'claude', error: 'timeout' },
+  })
+  assert.deepEqual(step(failed.machine, { type: 'ask-again' }).effects, [{ type: 'ask-agent' }])
+})
+
+test('a proposal that lands after the user moved on is dropped', () => {
+  const stopped = run([
+    { type: 'ensure', now: 1, by: 'browser' },
+    { type: 'resolved', attempt: 1, resolution: { kind: 'undecided', reason: 'no-script', serverScripts: [] }, now: 2 },
+    { type: 'stop' },
+  ]).machine
+  assert.equal(step(stopped, { type: 'proposal', proposal: { state: 'asking', agent: 'claude' } }).stateChanged, false)
+})

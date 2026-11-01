@@ -33,18 +33,23 @@ export const UNREACHABLE_HEADER = 'x-ezdesign-unreachable'
  *  once the server is back, so restarting it is all the user has to do. */
 const unreachable = (origin: string) => `<!doctype html><meta charset="utf-8"><title>連不上 App</title>
 <style>
-  html { height: 100%; }
-  body { display: grid; place-content: center; height: 100%; margin: 0; padding: 0 24px; background: #f9f8f5;
-    color: #1c1b19; font: 13.5px/1.55 -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans TC', sans-serif; }
-  h1 { margin: 0; font-size: 16px; font-weight: 600; }
-  p { margin: 6px 0 18px; color: #6d6a63; }
+  /* The shell's dev-server prompt, in its tokens' values: this page is served without the shell's CSS. */
+  body { margin: 0; background: #faf9f6; -webkit-font-smoothing: antialiased;
+    color: #171717; font: 13.5px/1.55 -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans TC', sans-serif; }
+  main { display: grid; width: min(520px, calc(100% - 48px)); margin: max(48px, 12vh) auto 48px; }
+  h1 { margin: 0; font-size: 16px; font-weight: 600; line-height: 1.4; }
+  p { margin: 6px 0 18px; color: #676767; }
   code { font: 12.5px ui-monospace, SFMono-Regular, Menlo, monospace; }
-  button { justify-self: start; height: 32px; padding: 0 14px; border: none; border-radius: 8px; background: #1c1b19;
-    color: #fff; font: inherit; font-weight: 600; cursor: pointer; }
+  button { justify-self: start; height: 32px; padding: 0 14px; border: 1px solid #171717; border-radius: 7px;
+    background: #171717; color: #fff; box-shadow: inset 0 1px 0 0 rgb(255 255 255 / 0.14);
+    font: 600 13px -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans TC', sans-serif; cursor: pointer; }
+  button:hover { opacity: 0.88; }
 </style>
+<main>
 <h1>連不上 App</h1>
-<p><code>${origin.replace(/^https?:\/\//, '')}</code> 沒有回應，dev server 可能停了。它回來時這頁會自動重新載入。</p>
+<p><code>${origin.replace(/^https?:\/\//, '')}</code> 沒有回應，dev server 可能停了。</p>
 <button type="button" onclick="location.reload()">重新整理</button>
+</main>
 <script>
   setInterval(() => fetch(location.href, { method: 'HEAD', cache: 'no-store' })
     .then((r) => { if (!r.headers.has('${UNREACHABLE_HEADER}')) location.reload() }, () => {}), 1500)

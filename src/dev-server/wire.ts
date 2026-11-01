@@ -31,7 +31,7 @@ export type DevServerWire =
   /** Nothing asked for yet in this daemon's life; `command` is what a start
    *  would run, when that is already known. */
   | { phase: 'idle'; command?: DevCommandWire }
-  | { phase: 'needs-command'; reason: UndecidedReason; serverScripts: string[] }
+  | { phase: 'needs-command'; reason: UndecidedReason; serverScripts: string[]; proposal?: ProposalWire }
   | { phase: 'blocked'; command: DevCommandWire; missing: MissingToolWire[] }
   /** Spawned and not yet reachable - or, with no `command` yet, still deciding
    *  what to run (probing a recorded origin, reading `package.json`). */
@@ -72,10 +72,17 @@ export interface DevServerLogWire {
   dropped: number
 }
 
+export type ProposalWire =
+  | { state: 'asking'; agent: string }
+  | { state: 'proposed'; id: string; agent: string; line: string; cwd: string; reason: string }
+  | { state: 'none-found'; agent: string; reason: string }
+  | { state: 'failed'; agent: string; error: string }
+
 /** `POST /dev-server/command`: the user's own command for the project. */
 export interface DevCommandChoice {
   line: string
   cwd: string
+  proposalId?: string
 }
 
 /** `POST /dev-server/origin`: the App tab's pick among several printed URLs. */

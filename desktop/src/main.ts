@@ -2,7 +2,8 @@ import { join } from 'node:path'
 import { app, dialog } from 'electron'
 import { type AttachedDaemon, type PackageSource, attachDaemon, currentDaemon, homeUrlFor } from '../../src/desktop-host.js'
 import { SELF_NODE } from '../../src/self-node.js'
-import { installMenu } from './menu.js'
+import { type MenuActions, installMenu } from './menu.js'
+import { startAutoUpdate } from './updates.js'
 import { ProjectWindow } from './window.js'
 
 declare const __EZDESIGN_PACKAGE_VERSION__: string
@@ -24,16 +25,25 @@ const pendingOpens: string[] = []
 let appRunsStopped = false
 
 async function launch(): Promise<void> {
+  // A development run is Electron's own bundle, whose Dock icon is Electron's.
+  if (!app.isPackaged) app.dock?.setIcon(join(app.getAppPath(), 'build', 'icon.png'))
   daemon = await attachDaemon({ source: packageSource(), runtime: SELF_NODE })
   const shown = new ProjectWindow({ preload: join(import.meta.dirname, 'preload.cjs'), homeUrl: daemon.homeUrl })
   projectWindow = shown
   shown.onClosed(() => app.quit())
-  installMenu({
+  const menu: MenuActions = {
     toggleSidebar: () => shown.toggleSidebar(),
     addFolder: () => void shown.pickFolder().then((path: string | null) => (path ? openFolder(path) : undefined)),
     reload: () => shown.reloadShown(),
     toggleDevTools: () => shown.toggleDevTools(),
+    checkForUpdates: () => updates.checkNow(),
+    takeUpdate: () => updates.take(),
+    update: null,
+  }
+  const updates = startAutoUpdate({
+    onOffer: (version, by) => installMenu({ ...menu, update: { version, by } }),
   })
+  installMenu(menu)
   for (const path of pendingOpens.splice(0)) await openFolder(path)
   setInterval(() => void watchDaemon(), WATCH_EVERY_MS).unref()
 }
