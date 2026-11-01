@@ -54,7 +54,7 @@ export function readPngSize(bytes) {
   return { width: bytes.readUInt32BE(16), height: bytes.readUInt32BE(20) }
 }
 
-function withPngText(bytes, keyword, text) {
+export function withPngText(bytes, keyword, text) {
   const body = Buffer.concat([Buffer.from('tEXt', 'latin1'), Buffer.from(`${keyword}\0${text}`, 'latin1')])
   const chunk = Buffer.alloc(body.length + 8)
   chunk.writeUInt32BE(body.length - 4, 0)
@@ -71,7 +71,7 @@ const CHROME_CANDIDATES = [
   '/usr/bin/chromium',
 ]
 
-function renderPng(html, size) {
+export function renderPng(html, width, height = width) {
   const chrome = CHROME_CANDIDATES.find((path) => path && existsSync(path))
   if (!chrome) throw new Error('no Chrome found; set CHROME_PATH')
   const dir = mkdtempSync(join(tmpdir(), 'ezdesign-brand-'))
@@ -89,7 +89,7 @@ function renderPng(html, size) {
         '--hide-scrollbars',
         '--force-device-scale-factor=1',
         '--default-background-color=00000000',
-        `--window-size=${size},${size}`,
+        `--window-size=${width},${height}`,
         `--screenshot=${out}`,
         pathToFileURL(page).href,
       ],
@@ -97,8 +97,8 @@ function renderPng(html, size) {
     )
     const png = readFileSync(out)
     const actual = readPngSize(png)
-    if (actual.width !== size || actual.height !== size) {
-      throw new Error(`Chrome rendered ${actual.width}x${actual.height}, wanted ${size}x${size}`)
+    if (actual.width !== width || actual.height !== height) {
+      throw new Error(`Chrome rendered ${actual.width}x${actual.height}, wanted ${width}x${height}`)
     }
     return png
   } finally {

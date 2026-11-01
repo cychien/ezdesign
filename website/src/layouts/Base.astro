@@ -3,6 +3,7 @@ import '@fontsource-variable/geist'
 import '@fontsource-variable/geist-mono'
 import '../styles/global.css'
 import { DEFAULT_LOCALE, LOCALE_COOKIE, MESSAGES, isLocale, localeUrls } from '../i18n'
+import { OG_IMAGE, ogImagePath } from '../lib/og'
 
 interface Props {
   title: string
@@ -13,6 +14,8 @@ const { title, description } = Astro.props
 const locale = isLocale(Astro.currentLocale) ? Astro.currentLocale : DEFAULT_LOCALE
 const urls = localeUrls(Astro.url.pathname, locale)
 const absolute = (path: string) => new URL(path, Astro.site).href
+const { meta } = MESSAGES[locale]
+const image = absolute(ogImagePath(locale))
 ---
 
 <!doctype html>
@@ -31,10 +34,19 @@ const absolute = (path: string) => new URL(path, Astro.site).href
     <link rel="canonical" href={absolute(urls[locale])} />
     {Object.entries(MESSAGES).map(([code, { lang }]) => <link rel="alternate" hreflang={lang} href={absolute(urls[code as keyof typeof urls])} />)}
     <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="ezdesign" />
     <meta property="og:url" content={absolute(urls[locale])} />
     <meta property="og:title" content={title} />
     <meta property="og:description" content={description} />
-    <meta name="twitter:card" content="summary" />
+    <meta property="og:locale" content={meta.ogLocale} />
+    {Object.entries(MESSAGES).filter(([code]) => code !== locale).map(([, other]) => <meta property="og:locale:alternate" content={other.meta.ogLocale} />)}
+    <meta property="og:image" content={image} />
+    <meta property="og:image:type" content={OG_IMAGE.type} />
+    <meta property="og:image:width" content={String(OG_IMAGE.width)} />
+    <meta property="og:image:height" content={String(OG_IMAGE.height)} />
+    <meta property="og:image:alt" content={meta.ogImageAlt} />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:image:alt" content={meta.ogImageAlt} />
     <meta name="theme-color" content="#faf9f6" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
   </head>

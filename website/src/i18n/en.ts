@@ -5,6 +5,9 @@ export const en = {
     title: 'ezdesign - The best way to design with AI agents',
     description:
       'Click anything in your running app and your AI agent edits the exact line of code. Open source, runs on your machine, no API key.',
+    ogLocale: 'en_US',
+    ogTagline: 'Local agent, no API key',
+    ogImageAlt: 'ezdesign: The best way to design with AI agents. Install with npx -y @cychien/ezdesign@latest. Local agent, no API key.',
   },
   nav: {
     label: 'Main',

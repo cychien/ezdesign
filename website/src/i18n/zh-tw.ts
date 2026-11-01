@@ -6,6 +6,9 @@ export const zhTw: Messages = {
   meta: {
     title: 'ezdesign - 與 AI agent 協作設計的最好工具',
     description: '在跑起來的 app 上點一下，AI agent 就會改到對應的那行程式碼。開源、在本機執行，不用 API key。',
+    ogLocale: 'zh_TW',
+    ogTagline: '本機 agent，不用 API key',
+    ogImageAlt: 'ezdesign：與 AI agent 協作設計的最好工具。用 npx -y @cychien/ezdesign@latest 安裝，本機 agent，不用 API key。',
   },
   nav: {
     label: '主選單',
