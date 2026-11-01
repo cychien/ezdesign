@@ -4,7 +4,8 @@ import {
   PlayIcon,
   StopIcon,
 } from '@hugeicons/core-free-icons'
-import type { DevCommandWire, DevServerLogWire, DevServerWire, InstallPart, UndecidedReason } from '../dev-server/wire.js'
+import { agentProfileFor } from '../agents.js'
+import type { DevCommandWire, DevServerLogWire, DevServerWire, InstallPart, ProposalWire, UndecidedReason } from '../dev-server/wire.js'
 import { host } from './host.js'
 import { type IconNode, icon } from './icon.js'
 
@@ -65,6 +66,8 @@ function installLine(parts: readonly InstallPart[]): HTMLElement {
   return span
 }
 
+const agentName = (command: string) => agentProfileFor(command)?.name ?? 'agent'
+
 function crashLine(state: Extract<DevServerWire, { phase: 'crashed' }>): string {
   if (state.cause === 'no-url') return '60 秒內沒有印出網址，也沒有開啟任何 port，已停止它。'
   if (state.cause === 'spawn') return '指令沒辦法執行。'
@@ -72,7 +75,7 @@ function crashLine(state: Extract<DevServerWire, { phase: 'crashed' }>): string 
   return state.exitCode !== undefined ? `Dev server 結束了（exit code ${state.exitCode}）。` : 'Dev server 結束了。'
 }
 
-export function installDevServerPanel(api: string): DevServerPanel {
+export function installDevServerPanel(api: string, opts: { openCanvas(): void }): DevServerPanel {
   const card = h('section', 'ez-devserver-card')
   card.dataset.testid = DEV_SERVER_TEST_IDS.card
   card.setAttribute('aria-live', 'polite')
@@ -123,7 +126,7 @@ export function installDevServerPanel(api: string): DevServerPanel {
     return block
   }
 
-  function commandForm(initial: DevCommandWire | undefined, cancellable: boolean): HTMLFormElement {
+  function commandForm(initial: DevCommandWire | undefined, cancellable: boolean, proposalId?: string): HTMLFormElement {
     const form = h('form', 'ez-devserver-form')
     const lineLabel = h('label', 'ez-devserver-label', '啟動指令')
     const lineInput = h('input', 'ez-devserver-input')
@@ -166,13 +169,40 @@ export function installDevServerPanel(api: string): DevServerPanel {
     form.append(lineLabel, cwdLabel, actions)
     form.onsubmit = (e) => {
       e.preventDefault()
-      void post('command', { line: lineInput.value, cwd: cwdInput.value }).then((ok) => {
+      void post('command', { line: lineInput.value, cwd: cwdInput.value, ...(proposalId ? { proposalId } : {}) }).then((ok) => {
         if (ok) editing = false
         repaint()
       })
     }
     queueMicrotask(() => lineInput.focus({ preventScroll: true }))
     return form
+  }
+
+  function canvasOnly(): HTMLButtonElement {
+    const b = button('ez-devserver-secondary', '只用 canvas')
+    b.onclick = () => opts.openCanvas()
+    return b
+  }
+
+  function proposalBlock(offer: Extract<ProposalWire, { state: 'proposed' }>): HTMLElement {
+    const block = commandBlock({ line: offer.line, cwd: offer.cwd, source: 'agent' })
+    block.querySelector('.ez-devserver-source')!.textContent = `${agentName(offer.agent)} 的建議${offer.cwd ? ` · 在 ${offer.cwd}/ 執行` : ''}`
+    if (offer.reason) block.append(h('span', 'ez-devserver-reason', offer.reason))
+    return block
+  }
+
+  function proposalNote(offer: ProposalWire): HTMLElement {
+    const name = agentName(offer.agent)
+    switch (offer.state) {
+      case 'asking':
+        return h('p', 'ez-devserver-asking', `正在請 ${name} 看看這個專案…`)
+      case 'none-found':
+        return h('p', 'ez-devserver-hint', `${name} 看過了，沒找到可以啟動的網頁${offer.reason ? `：${offer.reason}` : '。'}`)
+      case 'failed':
+        return h('p', 'ez-devserver-error', `沒辦法取得 ${name} 的建議：${offer.error}`)
+      case 'proposed':
+        return h('p', 'ez-devserver-hint', `${name} 建議的指令，可以先修改再執行。`)
+    }
   }
 
   function logBlock(lines: number): HTMLElement {
@@ -203,7 +233,7 @@ export function installDevServerPanel(api: string): DevServerPanel {
     }
     const command = 'command' in s ? s.command : undefined
 
-    if (editing && s.phase !== 'starting') {
+    if (editing && s.phase !== 'starting' && s.phase !== 'needs-command') {
       title.textContent = 'Dev server 的啟動指令'
       body.push(h('p', 'ez-devserver-text', '指令會在專案資料夾裡用 shell 執行，之後每次都用它啟動。'), commandForm(command, true))
     } else {
@@ -216,7 +246,9 @@ export function installDevServerPanel(api: string): DevServerPanel {
             start('啟動')
             edit()
           } else {
-            body.push(h('p', 'ez-devserver-text', '輸入專案的啟動指令。'), commandForm(undefined, false))
+            body.push(h('p', 'ez-devserver-text', 'ezdesign 判斷不出啟動指令，會請 agent 看看這個專案，你確認之後才會執行。'))
+            start('啟動')
+            edit('自己輸入指令')
           }
           break
         case 'starting': {
@@ -229,12 +261,38 @@ export function installDevServerPanel(api: string): DevServerPanel {
           actions.append(stop)
           break
         }
-        case 'needs-command':
+        case 'needs-command': {
           title.textContent = '需要一個啟動指令'
           body.push(h('p', 'ez-devserver-text', REASON[s.reason]))
+          const offer = s.proposal
+          if (offer?.state === 'proposed' && !editing) {
+            body.push(proposalBlock(offer))
+            const run = button('ez-devserver-go', '執行', PlayIcon as IconNode)
+            run.disabled = busy
+            run.onclick = () => void post('command', { line: offer.line, cwd: offer.cwd, proposalId: offer.id })
+            const change = button('ez-devserver-secondary', '修改')
+            change.onclick = () => {
+              editing = true
+              repaint()
+            }
+            actions.append(run, change, canvasOnly())
+            break
+          }
+          if (offer) body.push(proposalNote(offer))
           if (s.serverScripts.length) body.push(h('p', 'ez-devserver-hint', `看起來像 dev server 的 script：${s.serverScripts.join('、')}`))
-          body.push(commandForm(undefined, false))
+          body.push(
+            offer?.state === 'proposed'
+              ? commandForm({ line: offer.line, cwd: offer.cwd, source: 'agent' }, true, offer.id)
+              : commandForm(undefined, false),
+          )
+          if (offer?.state === 'failed' || offer?.state === 'none-found') {
+            const again = button('ez-devserver-secondary', '再問一次')
+            again.onclick = () => void post('propose')
+            actions.append(again)
+          }
+          if (offer && offer.state !== 'asking') actions.append(canvasOnly())
           break
+        }
         case 'blocked': {
           title.textContent = '缺少啟動需要的工具'
           body.push(commandBlock(s.command))

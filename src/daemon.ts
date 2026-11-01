@@ -787,6 +787,7 @@ class SessionRuntime implements ProjectRuntime {
       attach: (origin) => services.attachOrigin(this, origin),
       detachLeavingRecord: (origin) => this.detachDevServerApp(origin),
       environmentReady: services.environmentReady,
+      proposingAgent: () => this.store.session.agent ?? rememberedLastAgent() ?? AGENT_PROFILES[0]!.command,
       onChange: () => {
         this.showAppWhenServed()
         this.broadcast()

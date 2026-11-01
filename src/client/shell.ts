@@ -842,7 +842,7 @@ function paintAnnotateMode(): void {
   canvasUi?.setAnnotating(annotateMode)
 }
 
-const devServerPanel = installDevServerPanel(API)
+const devServerPanel = installDevServerPanel(API, { openCanvas: () => canvasUi?.openCanvas() })
 
 const sideHead = h('div', 'ez-side-head')
 sideHead.append(headRow, target, devServerPanel.strip, deviceRow, annotateGroup)

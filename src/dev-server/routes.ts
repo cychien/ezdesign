@@ -36,7 +36,9 @@ export function devServerApiRouter(devServer: DevServer): Router {
     if (typeof line !== 'string' || typeof cwd !== 'string') {
       return void res.status(400).json({ error: 'line and cwd must be strings' })
     }
-    const outcome = devServer.saveCommandAndRun({ line, cwd }, initiator(req))
+    const proposalId = field(req, 'proposalId')
+    const choice = { line, cwd, ...(typeof proposalId === 'string' ? { proposalId } : {}) }
+    const outcome = devServer.saveCommandAndRun(choice, initiator(req))
     if (outcome === 'invalid-line') return void res.status(400).json({ error: 'the command must be one line of 1-500 characters' })
     if (outcome === 'invalid-cwd') return void res.status(400).json({ error: 'the folder must be inside the project' })
     res.status(202).json({ ok: true })
@@ -45,6 +47,11 @@ export function devServerApiRouter(devServer: DevServer): Router {
   router.delete('/dev-server/command', (_req, res) => {
     devServer.forgetCommand()
     res.json({ ok: true })
+  })
+
+  router.post('/dev-server/propose', (_req, res) => {
+    devServer.askAgentAgain()
+    res.status(202).json({ ok: true })
   })
 
   router.post('/dev-server/origin', (req, res) => {

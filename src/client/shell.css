@@ -1663,6 +1663,24 @@ body.ez-arranging .ez-frame {
   cursor: default;
 }
 
+.ez-devserver-reason {
+  font-size: 12.5px;
+  color: var(--foreground);
+}
+
+.ez-devserver-asking {
+  margin: 10px 0 0;
+  font-size: 12.5px;
+  color: var(--muted-foreground);
+  animation: ez-devserver-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes ez-devserver-pulse {
+  50% {
+    opacity: 0.45;
+  }
+}
+
 .ez-devserver-error {
   margin: 10px 0 0;
   font-size: 12.5px;
