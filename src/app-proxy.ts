@@ -34,7 +34,7 @@ export const UNREACHABLE_HEADER = 'x-ezdesign-unreachable'
 const unreachable = (origin: string) => `<!doctype html><meta charset="utf-8"><title>連不上 App</title>
 <style>
   /* The shell's dev-server prompt, in its tokens' values: this page is served without the shell's CSS. */
-  body { margin: 0; background: #faf9f6;
+  body { margin: 0; background: #faf9f6; -webkit-font-smoothing: antialiased;
     color: #171717; font: 13.5px/1.55 -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans TC', sans-serif; }
   main { display: grid; width: min(520px, calc(100% - 48px)); margin: max(48px, 12vh) auto 48px; }
   h1 { margin: 0; font-size: 16px; font-weight: 600; line-height: 1.4; }
