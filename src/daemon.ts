@@ -929,6 +929,7 @@ class SessionRuntime implements ProjectRuntime {
     const resumes = !live && (this.store.currentChat.agent ?? command) === command
     if (!(resumes ? this.attachAcpAgent(command) : this.switchAcpAgent(command))) return false
     this.acpBy = by
+    this.store.setAgentBy(by)
     this.broadcast()
     return true
   }
@@ -954,8 +955,10 @@ class SessionRuntime implements ProjectRuntime {
   }
 
   resumeAgent(): void {
-    const agent = this.store.session.agent
-    if (agent) this.restoreAcpAgent(agent)
+    const { agent, agentBy } = this.store.session
+    if (!agent) return
+    this.restoreAcpAgent(agent)
+    this.acpBy = agentBy ?? null
   }
 
   /** Off the live agent, not the record: the record holds what was asked for. */
