@@ -35,7 +35,7 @@ function iconPage({ size, art }) {
   return `<!doctype html><html><body style="margin:0;background:transparent"><div style="width:${art}px;height:${art}px;margin:${inset}px">${brandMarkSvg()}</div></body></html>`
 }
 
-const ICON_GRID = { canvas: 1024, tile: 824, radius: 185, mark: 460 }
+const ICON_GRID = { canvas: 1024, tile: 824, radius: 185, mark: 620 }
 
 export function desktopIconPage() {
   const { canvas, tile, radius, mark } = ICON_GRID

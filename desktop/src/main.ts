@@ -25,6 +25,8 @@ const pendingOpens: string[] = []
 let appRunsStopped = false
 
 async function launch(): Promise<void> {
+  // A development run is Electron's own bundle, whose Dock icon is Electron's.
+  if (!app.isPackaged) app.dock?.setIcon(join(app.getAppPath(), 'build', 'icon.png'))
   daemon = await attachDaemon({ source: packageSource(), runtime: SELF_NODE })
   const shown = new ProjectWindow({ preload: join(import.meta.dirname, 'preload.cjs'), homeUrl: daemon.homeUrl })
   projectWindow = shown
