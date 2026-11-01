@@ -14,7 +14,6 @@ export interface HubRuntime extends ProjectRuntime {
     readonly external: boolean
   }
   shellUrl(path?: string): string
-  ensureAgent(fallback: string): void
 }
 
 export interface HubSessions<R> {
@@ -26,7 +25,6 @@ export interface ProjectHubDeps<R extends HubRuntime> {
   sessions: HubSessions<R>
   book: ProjectBook
   version: string
-  defaultAgent(): string
   projectRoot(path: string): string
   restored(): Promise<void>
 }
@@ -70,7 +68,6 @@ export class ProjectHub<R extends HubRuntime> {
     if (!opened.ok) return { ok: false, status: 404, error: 'the review could not be opened' }
     const { runtime } = opened
     runtime.devServer.ensure(by)
-    runtime.ensureAgent(this.deps.defaultAgent())
     this.changed()
     return { project, shellUrl: runtime.shellUrl() }
   }
