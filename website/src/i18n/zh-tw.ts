@@ -31,6 +31,18 @@ export const zhTw: Messages = {
     worksWith: '支援',
     noKey: '不用 API key，直接用你電腦上的 agent',
   },
+  macTrust: {
+    kicker: '下載已開始',
+    title: '使用前，先讓 macOS 信任 ezdesign',
+    body: 'ezdesign 沒有使用 Apple 簽章（需付年費），第一次打開時 macOS 會擋下來。照下面做一次，之後就能正常打開。',
+    steps: [
+      '打開 ezdesign 看到 macOS 說無法驗證開發者時，按<b>完成</b>。',
+      '到<b>系統設定 → 隱私權與安全性</b>，捲到 ezdesign 的提示，按<b>強制打開</b>。',
+    ],
+    terminal: '熟悉 Terminal 的話，也可以執行這指令：',
+    done: '知道了',
+    close: '關閉',
+  },
   demo: {
     label: 'ezdesign 示範：在跑起來的 app 上點選按鈕、留言送出，agent 就去改程式碼',
     replay: '重播示範',

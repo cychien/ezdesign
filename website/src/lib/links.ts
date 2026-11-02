@@ -15,6 +15,8 @@ export const DOWNLOAD = {
   x64: `${REPO}/releases/latest/download/ezdesign-x64.dmg`,
 }
 
+export const TRUST_MAC_APP = 'xattr -dr com.apple.quarantine /Applications/ezdesign.app'
+
 export const INSTALL = 'npx -y @cychien/ezdesign@latest'
 export const INSTALL_WITH_URL = `${INSTALL} http://localhost:5173`
 export const SKILL_INSTALL = 'npx skills add cychien/ezdesign --skill ezdesign'

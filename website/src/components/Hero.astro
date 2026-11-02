@@ -1,5 +1,6 @@
 ---
 import Command from './Command.astro'
+import MacTrustDialog from './MacTrustDialog.astro'
 import { messages } from '../i18n'
 import { AGENT_LOGOS } from '../lib/agents'
 import { DOWNLOAD, INSTALL } from '../lib/links'
@@ -15,6 +16,7 @@ const t = messages(Astro.currentLocale).hero
     <Command command={INSTALL} />
     <a class="btn ghost docs" href={DOWNLOAD.arm64} data-intel-href={DOWNLOAD.x64}>{t.download}</a>
   </div>
+  <MacTrustDialog />
   <div class="perks">
     <span class="perk">
       <span class="ok"><svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="var(--faint)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 6.2l2.3 2.3 4.7-5"></path></svg></span>
@@ -168,8 +170,20 @@ const t = messages(Astro.currentLocale).hero
     return !!gl && !!info && /intel|amd|radeon/i.test(String(gl.getParameter(info.UNMASKED_RENDERER_WEBGL)))
   }
 
-  const link = document.querySelector<HTMLAnchorElement>('a[data-intel-href]')
-  if (link && /Macintosh/.test(navigator.userAgent)) {
+  const link = document.querySelector<HTMLAnchorElement>('a[data-intel-href]')!
+  const trust = document.querySelector<HTMLDialogElement>('#mac-trust')!
+
+  // No event says a download began, but a link that ends on a page instead unloads this one.
+  link.addEventListener('click', () => {
+    const show = window.setTimeout(() => {
+      if (trust.open) return
+      trust.showModal()
+      trust.focus()
+    }, 1000)
+    window.addEventListener('pagehide', () => clearTimeout(show), { once: true })
+  })
+
+  if (/Macintosh/.test(navigator.userAgent)) {
     isIntelMac().then(
       (intel) => {
         if (intel && link.dataset.intelHref) link.href = link.dataset.intelHref

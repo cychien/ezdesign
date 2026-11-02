@@ -6,7 +6,7 @@ import { messages } from '../i18n'
 
 interface Props {
   command: string
-  size?: 'md' | 'lg'
+  size?: 'sm' | 'md' | 'lg'
 }
 
 const { command, size = 'md' } = Astro.props
@@ -50,6 +50,21 @@ const t = messages(Astro.currentLocale).command
     background: var(--ink);
     color: #e9e6dd;
     font-size: 15px;
+  }
+
+  .cmd.sm {
+    display: flex;
+    gap: 10px;
+    height: 40px;
+    padding: 0 5px 0 14px;
+    border-radius: 8px;
+    font-size: 12.5px;
+  }
+
+  .cmd.sm .copy {
+    width: 30px;
+    height: 30px;
+    border-radius: 6px;
   }
 
   .cmd.lg {

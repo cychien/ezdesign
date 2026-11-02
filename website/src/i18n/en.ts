@@ -30,6 +30,18 @@ export const en = {
     worksWith: 'Works with',
     noKey: 'No API key, uses your local agent',
   },
+  macTrust: {
+    kicker: 'Your download has started',
+    title: 'Let macOS trust ezdesign before you use it',
+    body: "ezdesign doesn't use Apple's app signing (it costs a yearly fee), so macOS stops it the first time. Do this once and it opens normally after that.",
+    steps: [
+      'Open ezdesign. When macOS says it cannot verify the developer, choose <b>Done</b>.',
+      'Open <b>System Settings → Privacy & Security</b>, scroll to the note about ezdesign, and choose <b>Open Anyway</b>.',
+    ],
+    terminal: 'If you use Terminal, you can also run this command:',
+    done: 'Got it',
+    close: 'Close',
+  },
   demo: {
     label: 'ezdesign demo: select a button on the running app, write a comment, send it, and the agent edits the code',
     replay: 'Replay demo',
