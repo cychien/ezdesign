@@ -178,7 +178,7 @@ export class DaemonWorld {
 
   async openSession(
     controlPort: number,
-    body: { url?: string; project: string; agent?: string; reopen?: boolean },
+    body: { url?: string; project: string; agent?: string; connectAgent?: boolean; reopen?: boolean },
   ): Promise<{ port: number; shellUrl: string; shellOpen: boolean; agent?: string; app?: string }> {
     const res = await this.control(controlPort, '/control/sessions', {
       method: 'POST',

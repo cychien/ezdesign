@@ -145,6 +145,11 @@ function agentInstalled(profile: AgentProfile, env = process.env): boolean {
   return findExecutable(profile.binary, env.PATH) !== null
 }
 
+/** The agent a review connects when nothing names one: the user's last, else the first installed. */
+function defaultAgent(): string | null {
+  return proposingAgent([rememberedLastAgent()], (p) => agentInstalled(p))
+}
+
 const distDir = dirname(fileURLToPath(import.meta.url))
 const SKILL_DIR = skillDir(distDir)
 
@@ -924,12 +929,13 @@ class SessionRuntime implements ProjectRuntime {
     this.lastDevServerPhase = phase
   }
 
-  /** Opening the project: the agent it was on, else the user's last, unless they disconnected it here. */
-  ensureAgent(fallback: string, by: Initiator): void {
+  /** Opening the project: the agent it was on, else `fallback`, unless they disconnected it here. */
+  ensureAgent(fallback: string | null, by: Initiator): void {
     const live = !!this.acp && this.acp.snapshot().state !== 'exited'
     const { agent, agentDeclined } = this.store.session
     if (live || agentDeclined || this.pollWaiters.size > 0) return
-    this.connectAgent(agent ?? this.store.currentChat.agent ?? fallback, by)
+    const command = agent ?? this.store.currentChat.agent ?? fallback
+    if (command) this.connectAgent(command, by)
   }
 
   /** A shell's pick. The chat carries on when this agent can resume it; otherwise,
@@ -2712,7 +2718,7 @@ export async function daemonMain(version: string, opts: DaemonOptions = {}): Pro
     book,
     version,
     account: () => account.snapshot(),
-    defaultAgent: () => rememberedLastAgent() ?? AGENT_PROFILES[0]!.command,
+    defaultAgent,
     projectRoot,
     restored: () => restored,
   })
@@ -2814,10 +2820,11 @@ export async function daemonMain(version: string, opts: DaemonOptions = {}): Pro
   })
 
   /** Open or resume the project's session; with `url`, attach that origin to
-   *  it. Body `{project, url?, reopen?, agent?, devServer?}`. `devServer: true`
-   *  asks for the project's dev server. */
+   *  it. Body `{project, url?, reopen?, agent?, connectAgent?, devServer?}`.
+   *  `connectAgent: true` connects the agent the app would, when `agent` names
+   *  none. `devServer: true` asks for the project's dev server. */
   control.post('/control/sessions', async (req, res) => {
-    const { url, reopen, project, agent, devServer } = req.body ?? {}
+    const { url, reopen, project, agent, connectAgent, devServer } = req.body ?? {}
     if (typeof project !== 'string' || !project) {
       return res.status(400).json({ error: 'missing project' })
     }
@@ -2856,6 +2863,8 @@ export async function daemonMain(version: string, opts: DaemonOptions = {}): Pro
         return res.status(409).json({ error: 'that agent cannot be started right now' })
       }
       runtime.broadcast()
+    } else if (connectAgent === true) {
+      runtime.ensureAgent(defaultAgent(), 'cli')
     }
     res.json({
       port: runtime.port,

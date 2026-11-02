@@ -380,7 +380,7 @@ function runCli(state, args, { capture = false } = {}) {
 }
 
 function openSession(state) {
-  const r = runCli(state, [`${state.fixtureOrigin}/`], { capture: true })
+  const r = runCli(state, [`${state.fixtureOrigin}/`, '--no-agent'], { capture: true })
   if (r.status !== 0) die(`ezdesign open failed (${r.status}):\n${r.stdout}${r.stderr}`)
   const shell = /shell:\s+(\S+)/.exec(r.stdout)?.[1]
   if (!shell) die(`ezdesign open printed no shell url:\n${r.stdout}`)
