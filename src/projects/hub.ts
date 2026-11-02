@@ -16,7 +16,7 @@ export interface HubRuntime extends ProjectRuntime {
   }
   shellUrl(path?: string): string
   readonly agentWorking: boolean
-  ensureAgent(fallback: string, by: Initiator): void
+  ensureAgent(fallback: string | null, by: Initiator): void
   disconnectAgentOf(by: Initiator): boolean
 }
 
@@ -30,7 +30,7 @@ export interface ProjectHubDeps<R extends HubRuntime> {
   book: ProjectBook
   version: string
   account(): AccountWire
-  defaultAgent(): string
+  defaultAgent(): string | null
   projectRoot(path: string): string
   restored(): Promise<void>
 }

@@ -164,6 +164,9 @@ hard part of a review and back again. Switching agents starts a new conversation
 | `codex` | Codex |
 | `gemini` | Gemini CLI |
 
+Without `--agent`, ezdesign connects the agent the project had, else the one you used last, else
+the first of these it finds installed. One you disconnect in the shell stays off for that project.
+
 ezdesign talks to agents over the [Agent Client Protocol](https://agentclientprotocol.com). Any
 other value is run as an ACP server command, so a custom agent works too:
 `--agent 'my-acp-agent --flag'`.
@@ -224,7 +227,7 @@ using whatever version npx cached. Update the skill with `npx skills update ezde
 ## CLI
 
 ```
-ezdesign [<url>] --agent <name>   open or resume this project's review
+ezdesign [<url>] [--agent <name>] open or resume this project's review
 ezdesign status                   show running sessions
 ezdesign stop                     stop the background daemon
 ezdesign extension install        set up the Chrome extension

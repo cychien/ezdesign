@@ -126,7 +126,7 @@ $T -- node $CLI --version
 $T --expect 'inspiration token:' --send 'tok-123\n' -- node $CLI login
 ```
 
-Run `ezdesign <url>` itself from `fixtures/playground` (`cd fixtures/playground` first): a session is scoped to the project the CLI runs from, and run from the repo root it replaces the fixture's session on that origin with a fresh one scoped to the ezdesign repo. There is no tmux on this machine; `term.py` stands in for it.
+Run `ezdesign <url> --no-agent` itself from `fixtures/playground` (`cd fixtures/playground` first): a session is scoped to the project the CLI runs from, and run from the repo root it replaces the fixture's session on that origin with a fresh one scoped to the ezdesign repo. There is no tmux on this machine; `term.py` stands in for it.
 
 ### Package: consumer install
 
@@ -175,6 +175,6 @@ npx -y chrome-devtools-axi stop          # with the same CHROME_DEVTOOLS_AXI_SES
 
 - `pnpm install` exits 1 on this repo (`ERR_PNPM_IGNORED_BUILDS`): `pnpm-workspace.yaml` carries the placeholder `allowBuilds: esbuild: set this to true or false`. `--config.strict-dep-builds=false` installs fine; esbuild works from its platform package without its postinstall.
 - `vz.mjs consumer` rebuilds `dist/`; a running daemon keeps the node bundle it started with (client assets are re-read per request). `doctor` still passes, but restart with `down`/`up` before proving daemon-side changes.
-- A session ended by the agent reopens with a plain `ezdesign <url>`; one ended by the user needs `--reopen`.
+- A session ended by the agent reopens with `ezdesign <url> --no-agent`; one ended by the user needs `--reopen`.
 - The daemon stops itself after 30 minutes idle with sessions open (`IDLE_STOP_MS`).
-- ACP mode (`--agent claude|codex|gemini`) needs a real agent login and edits the fixture. This driver proves poll mode; ACP-only UI (`/new`, `/resume`, the model pill, 增強設計) is not covered.
+- ACP mode (`--agent claude|codex|gemini`) needs a real agent login and edits the fixture. Without `--agent` or `--no-agent` an open connects one as the app does, so the driver opens with `--no-agent` and proves poll mode; ACP-only UI (`/new`, `/resume`, the model pill, 增強設計) is not covered.

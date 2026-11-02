@@ -57,15 +57,18 @@ const EXTENSION_HELP = `  ${APP_NAME} extension install [--user-data-dir <dir>] 
 const HELP = `${APP_NAME} - annotate your live dev app, feedback flows to your local agent
 
 Usage:
-  ${APP_NAME} [<url>] [--reopen] [--agent <name|command>]
+  ${APP_NAME} [<url>] [--reopen] [--agent <name|command> | --no-agent]
       open (or resume) this project's review session. With <url>, that dev
       server is on its App tab (a dev server that moved ports keeps the
       conversation); without one, its App tab offers to start the project's
       dev server, or the shell opens on its canvases when there is none.
-      --agent (SPIKE) drives the agent over ACP: the session spawns it, feedback
-      goes straight to it, and its stream, questions and permission prompts all
-      surface in the review shell - no terminal needed. Profiles: claude, gemini,
-      codex; anything else is run as an ACP agent command line.
+      The session drives its agent over ACP: it spawns it, feedback goes
+      straight to it, and its stream, questions and permission prompts all
+      surface in the review shell - no terminal needed. Without --agent it
+      connects the agent this project had, else your last one, else the first
+      installed of claude, codex and gemini; one you disconnected in the shell
+      stays off. --agent picks one: claude, codex, gemini, or any ACP agent
+      command line. --no-agent connects none, for an agent working it with poll.
   ${APP_NAME} poll [<url>] [--agent-reply <msg>]
       block until the user sends feedback; prints JSON, then exits
   ${APP_NAME} progress [<url>] <msg>
@@ -267,7 +270,7 @@ async function cmdOpen(
       ...(target ? { url: target.href } : {}),
       reopen: flags.has('--reopen'),
       project,
-      ...(agentArg ? { agent: agentCommand(agentArg) } : {}),
+      ...(agentArg ? { agent: agentCommand(agentArg) } : { connectAgent: !flags.has('--no-agent') }),
     }),
   })
   const body = (await res.json()) as {
@@ -286,8 +289,10 @@ async function cmdOpen(
   // The daemon's answer, not the flag: a restored session keeps its agent.
   if (body.agent) {
     console.log(`agent:   ${body.agent} (ACP) - review runs in the shell`)
-  } else {
+  } else if (flags.has('--no-agent')) {
     console.log(`next:    run \`${APP_NAME} poll\` in this project and wait for feedback`)
+  } else {
+    console.log(`next:    pick an agent in the shell, or run again with --agent claude|codex|gemini`)
   }
 }
 
@@ -595,6 +600,7 @@ async function main(): Promise<void> {
       const agentIdx = argv.indexOf('--agent')
       const agentArg = agentIdx >= 0 ? argv[agentIdx + 1] : undefined
       if (agentIdx >= 0 && !agentArg) fail('missing value for --agent', 'e.g. --agent claude')
+      if (agentArg && flags.has('--no-agent')) fail('--agent and --no-agent cannot be used together')
       // A first argument that is a flag, or none, is an open with no url.
       return cmdOpen(first === undefined || first.startsWith('--') ? undefined : first, flags, agentArg)
     }

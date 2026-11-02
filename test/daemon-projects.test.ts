@@ -147,6 +147,23 @@ test('a CLI open lists the project', async () => {
   assert.equal((await list()).projects.some((p) => p.project === dir), true)
 })
 
+test('a CLI open connects the agent the app would, unless it asks for none or the user disconnected it', async () => {
+  const agent = async (port: number) => ((await world.state(port)) as { acp?: { agent: string } }).acp?.agent
+
+  const bare = await world.openSession(daemon.port, { project: project() })
+  assert.equal(await agent(bare.port), undefined, 'an open that asks for nothing connects nothing')
+
+  const dir = project()
+  const opened = await world.openSession(daemon.port, { project: dir, connectAgent: true })
+  assert.equal(opened.agent, FAKE_AGENT, 'the last agent the user picked')
+  assert.equal(await agent(opened.port), FAKE_AGENT)
+
+  await post(`http://127.0.0.1:${opened.port}/__ezdesign/api/acp/disconnect`, {})
+  const reopened = await world.openSession(daemon.port, { project: dir, connectAgent: true })
+  assert.equal(reopened.agent, undefined, 'reopening respects the disconnect')
+  assert.equal(await agent(reopened.port), undefined)
+})
+
 test('other sites and other builds are refused', async () => {
   const site = await post(API, { path: '/tmp' }, { ...VERSIONED, origin: 'https://example.com', 'sec-fetch-site': 'cross-site' })
   assert.equal(site.status, 403)
