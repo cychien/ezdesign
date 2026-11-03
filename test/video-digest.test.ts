@@ -223,6 +223,8 @@ test('a ready video reaches the agent with how to read it and the paths of its s
     { from: 1.2, to: 1.4, region: { x: 1140, y: 780, width: 540, height: 300 }, frames: 12, shown: 12, sheet: '/tmp/session/attachments/a1b2c3d4e5f6.sheet-2.jpg' },
   ])
   assert.match(agent.video.read, /^A recording you cannot open: do not read `path`\./)
+  assert.match(agent.video.read, /put the first and last frame of each stretch and of the clip side by side/)
+  assert.match(agent.video.read, /If what was recorded loops/)
   assert.match(agent.video.read, /It has sound you cannot hear/)
 })
 

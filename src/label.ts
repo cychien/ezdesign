@@ -43,7 +43,10 @@ const READ_FRAMES =
   'labelled with its time in seconds; a motion sheet is cropped to `region` (pixels of the video) and ' +
   'starts with the frame before the motion, so consecutive labels give you its timing and easing. ' +
   'A long motion runs on over consecutive stretches with the same `region`, each starting where the last ended. ' +
-  '`shown` < `frames` means only that many of its changed frames are on the sheet, evenly spaced.'
+  '`shown` < `frames` means only that many of its changed frames are on the sheet, evenly spaced. ' +
+  'To rebuild a motion, put the first and last frame of each stretch and of the clip side by side: a slow ' +
+  'change in size or position, such as a whole element growing a few percent, does not show from one cell to ' +
+  'the next. If what was recorded loops, its last frame jumps back to its first, and that jump is part of the motion.'
 
 const READ_AUDIO = ' It has sound you cannot hear: if it may matter, ask the user what is said.'
 
