@@ -268,6 +268,8 @@ interface SnapshotWire {
   designHarness?: boolean
   devServer: DevServerWire
   appTab: boolean
+  /** The attached app stopped answering the proxy. */
+  appDown?: true
   project: string
 }
 
@@ -802,9 +804,13 @@ class SessionRuntime implements ProjectRuntime {
     })
     // Starts detached: which origin this runtime shows is the directory's call,
     // because only it can see who else holds it.
-    this.appProxy = new AppProxy(`${URL_PREFIX}/shell`, (req) => {
-      this.pageCookies = req.headers.cookie ?? null
-    })
+    this.appProxy = new AppProxy(
+      `${URL_PREFIX}/shell`,
+      (req) => {
+        this.pageCookies = req.headers.cookie ?? null
+      },
+      () => this.broadcast(),
+    )
     this.canvases = openCanvasWorkspace({
       project,
       view: this.store,
@@ -1056,6 +1062,7 @@ class SessionRuntime implements ProjectRuntime {
       ...(this.canExplore ? { canExplore: true as const } : {}),
       devServer: this.devServer.snapshot(),
       appTab: this.app.kind === 'attached' || this.devServer.offersApp(),
+      ...(this.appProxy.appDown ? { appDown: true as const } : {}),
       project: this.project,
     }
   }

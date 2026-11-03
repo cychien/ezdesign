@@ -59,25 +59,30 @@ function opensTrigger(prev: string): boolean {
 
 let menuCount = 0
 
-/** Where the menu's top-left goes for a trigger at `at`, all in viewport pixels.
- *  `box` is the menu as drawn, `scale` times its layout size. */
+/** Where the menu's top-left goes for a trigger at `at`, and how tall it may be,
+ *  all in viewport pixels. `box` is the menu as drawn at its natural height,
+ *  `scale` times its layout size. A menu taller than either side has room for is
+ *  capped to the roomier side, and its list scrolls. */
 export function menuPosition(
   at: { left: number; top: number; bottom: number },
   box: { width: number; height: number },
   view: { width: number; height: number },
   scale: number,
-): { left: number; top: number } {
+): { left: number; top: number; maxHeight: number } {
   const margin = 8 * scale
   const gap = 6 * scale
   const left = Math.max(margin, Math.min(at.left, view.width - box.width - margin))
-  const below = at.bottom + gap
-  const above = at.top - box.height - gap
+  const roomBelow = view.height - margin - (at.bottom + gap)
+  const roomAbove = at.top - gap - margin
   // Fitting inside the window is not the whole question: a composer parked at
   // the bottom has its own send button just below it, and a menu that merely
   // fits would open right on top of it. Low anchors open upward.
-  const crowded = below + box.height > view.height - margin || at.top > view.height * 0.6
-  const top = crowded && above >= margin ? above : Math.min(below, view.height - box.height - margin)
-  return { left, top }
+  const low = at.top > view.height * 0.6
+  const fitsBelow = box.height <= roomBelow
+  const fitsAbove = box.height <= roomAbove
+  const up = fitsAbove && (low || !fitsBelow) ? true : fitsBelow ? false : roomAbove > roomBelow
+  const height = Math.min(box.height, Math.max(0, up ? roomAbove : roomBelow))
+  return { left, top: up ? at.top - gap - height : at.bottom + gap, maxHeight: height }
 }
 
 /** Where the caret's own text run turns into a command, if it does. `before` is
@@ -198,12 +203,35 @@ export function attachSlashMenu(
     if (!menu || !view) return
     const at = slashRect()
     if (!at) return
+    // Measured at its natural height: the cap from the last placement would
+    // otherwise be read back as the size it needs.
+    menu.style.maxHeight = ''
     const box = menu.getBoundingClientRect()
     // Drawn scaled inside a zoomed canvas frame, so its gaps are scaled to match.
     const scale = box.width / menu.offsetWidth || 1
-    const { left, top } = menuPosition(at, box, { width: view.innerWidth, height: view.innerHeight }, scale)
+    const { left, top, maxHeight } = menuPosition(
+      at,
+      box,
+      { width: view.innerWidth, height: view.innerHeight },
+      scale,
+    )
     menu.style.left = `${left}px`
     menu.style.top = `${top}px`
+    menu.style.maxHeight = `${maxHeight / scale}px`
+    revealActive()
+  }
+
+  /** The highlighted row, kept inside the list's scrolled window. By hand rather
+   *  than `scrollIntoView`, which would also scroll the page the menu sits on. */
+  function revealActive(): void {
+    const list = menu?.querySelector<HTMLElement>('.ez-slash-list')
+    const item = list?.querySelector<HTMLElement>('.ez-slash-item[data-active]')
+    if (!list || !item) return
+    const top = item.offsetTop - list.offsetTop
+    if (top < list.scrollTop) list.scrollTop = top
+    else if (top + item.offsetHeight > list.scrollTop + list.clientHeight) {
+      list.scrollTop = top + item.offsetHeight - list.clientHeight
+    }
   }
 
   function paintActive(): void {
@@ -366,6 +394,7 @@ export function attachSlashMenu(
       const step = e.key === 'ArrowDown' ? 1 : shown.length - 1
       active = (active + step) % shown.length
       paintActive()
+      revealActive()
       return
     }
     if (e.key === 'Enter' || e.key === 'Tab') {

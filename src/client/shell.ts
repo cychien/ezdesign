@@ -215,6 +215,8 @@ interface SnapshotWire {
   designEffort?: DesignEffort
   devServer: DevServerWire
   appTab: boolean
+  /** The attached app stopped answering the proxy. */
+  appDown?: true
   project: string
 }
 
@@ -339,6 +341,8 @@ let canvasUi: CanvasUi | null = null
 let stagedApp: string | null = (document.currentScript as HTMLScriptElement | null)?.dataset.app || null
 
 let annotateMode: Mode = 'off'
+/** The App was down at the last paint, so its previews reload when it is back. */
+let wasDown = false
 /** The daemon's stream has been down longer than a restart takes. Every request
  *  would fail, so the review says why once instead of each control on its own. */
 let daemonGone = false
@@ -1852,7 +1856,7 @@ function rebuildStage(): void {
   grid.replaceChildren()
   frames.clearApps()
   const showing = stagedApp !== null
-  grid.hidden = !showing
+  grid.hidden = !showing || appDown()
   paintShown()
   if (!showing) {
     // The overlays that reported the mode are gone with their frames.
@@ -4554,9 +4558,25 @@ function paintAnnotateAvailability(): void {
   }
 }
 
+/** Hoisted: `rebuildStage` asks while this module is still initialising. */
+function appDown(): boolean {
+  return stagedApp !== null && snapshot?.appDown === true
+}
+
+/** A dead app's previews give way to the dev server card, which can start it
+ *  again; once it answers they come back, reloaded off the error page. */
 function paintDevServer(): void {
   if (!snapshot) return
-  devServerPanel.update(snapshot.devServer, { shown: stagedApp !== null, onAppTab: canvasUi?.activeTab === 'app' })
+  const down = appDown()
+  devServerPanel.update(snapshot.devServer, {
+    shown: stagedApp !== null,
+    onAppTab: canvasUi?.activeTab === 'app',
+    appDown: down,
+    origin: snapshot.app ?? '',
+  })
+  grid.hidden = stagedApp === null || down
+  if (wasDown && !down) for (const guest of frames.apps()) guest.iframe.contentWindow?.location.reload()
+  wasDown = down
 }
 
 function render(): void {

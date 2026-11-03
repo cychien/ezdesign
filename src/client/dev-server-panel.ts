@@ -9,9 +9,19 @@ export const DEV_SERVER_TEST_IDS = {
   log: 'ez-devserver-log',
 } as const
 
+/** What the stage is showing around the card. */
+export interface PanelPage {
+  /** An app is attached, so its previews are up instead. */
+  shown: boolean
+  onAppTab: boolean
+  /** The attached app stopped answering: the card stands in for its previews. */
+  appDown: boolean
+  origin: string
+}
+
 export interface DevServerPanel {
   readonly card: HTMLElement
-  update(state: DevServerWire, page: { shown: boolean; onAppTab: boolean }): void
+  update(state: DevServerWire, page: PanelPage): void
 }
 
 const LOG_POLL_MS = 700
@@ -201,8 +211,21 @@ export function installDevServerPanel(api: string): DevServerPanel {
       actions.append(b)
     }
     const command = 'command' in s ? s.command : undefined
+    // Phases that think the app is up. Every other one draws its own card.
+    const unanswered = lastPage.appDown && (s.phase === 'idle' || s.phase === 'running' || s.phase === 'external')
 
-    if (editing && s.phase !== 'starting' && s.phase !== 'needs-command') {
+    if (unanswered && !editing) {
+      title.textContent = '連不上 App'
+      const line = h('p', 'ez-devserver-text')
+      line.append(h('code', 'ez-devserver-inline', lastPage.origin.replace(/^https?:\/\//, '')), ' 沒有回應，dev server 可能停了。')
+      body.push(line)
+      if (command) body.push(commandBlock(command))
+      const go = button('ez-devserver-go', s.phase === 'running' ? '重新啟動' : '啟動 dev server', PlayIcon as IconNode)
+      go.disabled = busy
+      go.onclick = () => void post('restart')
+      actions.append(go)
+      edit()
+    } else if (editing && s.phase !== 'starting' && s.phase !== 'needs-command') {
       title.textContent = 'dev server 的啟動指令'
       body.push(commandForm(command, true))
     } else {
@@ -303,20 +326,21 @@ export function installDevServerPanel(api: string): DevServerPanel {
     if (error) card.append(h('p', 'ez-devserver-error', error))
   }
 
-  let lastPage = { shown: false, onAppTab: false }
+  let lastPage: PanelPage = { shown: false, onAppTab: false, appDown: false, origin: '' }
 
   /** The rules found no command: ask the agent at once rather than wait for a click. */
   let detecting = false
 
-  function paint(s: DevServerWire, page: { shown: boolean; onAppTab: boolean }): void {
-    const showCard = page.onAppTab && !page.shown
-    if (showCard && s.phase === 'idle' && !s.command && !detecting) {
+  function paint(s: DevServerWire, page: PanelPage): void {
+    const showCard = page.onAppTab && (!page.shown || page.appDown)
+    // Only with no app at all: a dead one waits for the user to say start.
+    if (showCard && !page.shown && s.phase === 'idle' && !s.command && !detecting) {
       detecting = true
       void post('start')
     }
     card.hidden = !showCard
     log.feedCard(showCard && s.phase === 'starting')
-    const key = JSON.stringify([s, showCard, editing, busy, error])
+    const key = JSON.stringify([s, page, editing, busy, error])
     if (key === drawnFor) return
     drawnFor = key
     if (showCard) paintCard(s)

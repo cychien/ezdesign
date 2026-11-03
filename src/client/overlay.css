@@ -402,6 +402,8 @@
 .ez-slash-menu {
   position: fixed;
   z-index: 2147483604;
+  display: flex;
+  flex-direction: column;
   min-width: 240px;
   max-width: 300px;
   padding: 4px 4px 5px;
@@ -424,6 +426,14 @@
   font-weight: 500;
   line-height: 1.4;
   color: var(--ez-ink-faint);
+}
+
+/* Capped to the room beside its trigger in JS; past that the list scrolls and
+   the caption stays put. */
+.ez-slash-list {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .ez-slash-item {

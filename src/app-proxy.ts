@@ -29,6 +29,9 @@ const NO_APP = `<!doctype html><meta charset="utf-8"><title>ezdesign</title>
 
 export const UNREACHABLE_HEADER = 'x-ezdesign-unreachable'
 
+/** What a connect to an app that is not there fails with. */
+const NOT_LISTENING = new Set(['ECONNREFUSED', 'EHOSTUNREACH', 'ENETUNREACH', 'ENOTFOUND', 'EADDRNOTAVAIL'])
+
 /** The app's server stopped answering. The page retries on its own and reloads
  *  once the server is back, so restarting it is all the user has to do. */
 const unreachable = (origin: string) => `<!doctype html><meta charset="utf-8"><title>連不上 App</title>
@@ -57,6 +60,9 @@ const unreachable = (origin: string) => `<!doctype html><meta charset="utf-8"><t
 
 export class AppProxy {
   private current: AppAttachment = { kind: 'none' }
+  /** The attached app stopped answering: set by a request the proxy could not
+   *  deliver, cleared by the next one that got a response. */
+  private unreachable = false
   private readonly upgraded = new Set<Socket>()
   private readonly htmlProxy: ProxyHandler<Request, Response>
   private readonly rawProxy: ProxyHandler<Request, Response>
@@ -67,30 +73,57 @@ export class AppProxy {
     /** Cookie capture, kept out of here: the proxy forwards, the runtime
      *  remembers. */
     private readonly onRequest: (req: IncomingMessage) => void,
+    /** `appDown` changed. */
+    private readonly onReachability: () => void = () => {},
   ) {
     const router = () => (this.current.kind === 'attached' ? this.current.origin : undefined)
-    const error = (_err: Error, req: IncomingMessage, res: ServerResponse | Socket) => {
+    const answered = () => this.setUnreachable(false)
+    const error = (err: Error, req: IncomingMessage, res: ServerResponse | Socket) => {
+      // Only a refused connect says the app is gone. A websocket reset by a
+      // reloading page, or a request the browser gave up on, does not. The HMR
+      // socket reconnecting is often the first to find out.
+      if (NOT_LISTENING.has((err as NodeJS.ErrnoException).code ?? '')) this.setUnreachable(true)
       if (!('writeHead' in res) || res.headersSent) return void res.end()
       const origin = this.current.kind === 'attached' ? this.current.origin : ''
       res.writeHead(502, { 'content-type': wantsHtml(req.headers.accept) ? 'text/html; charset=utf-8' : 'text/plain', [UNREACHABLE_HEADER]: '1' })
       res.end(wantsHtml(req.headers.accept) ? unreachable(origin) : '')
     }
+    const intercept = responseInterceptor(async (buffer, proxyRes, _req, res) => {
+      res.removeHeader('content-security-policy')
+      res.removeHeader('x-frame-options')
+      const type = String(proxyRes.headers['content-type'] ?? '')
+      if (!type.includes('text/html')) return buffer
+      return injectOverlay(buffer.toString('utf8'))
+    })
     this.htmlProxy = createProxyMiddleware<Request, Response>({
       router,
       changeOrigin: true,
       selfHandleResponse: true,
       on: {
         error,
-        proxyRes: responseInterceptor(async (buffer, proxyRes, _req, res) => {
-          res.removeHeader('content-security-policy')
-          res.removeHeader('x-frame-options')
-          const type = String(proxyRes.headers['content-type'] ?? '')
-          if (!type.includes('text/html')) return buffer
-          return injectOverlay(buffer.toString('utf8'))
-        }),
+        proxyRes: (proxyRes, req, res) => {
+          answered()
+          return intercept(proxyRes, req, res)
+        },
       },
     })
-    this.rawProxy = createProxyMiddleware<Request, Response>({ router, changeOrigin: true, ws: true, on: { error } })
+    this.rawProxy = createProxyMiddleware<Request, Response>({
+      router,
+      changeOrigin: true,
+      ws: true,
+      on: { error, proxyRes: answered, open: answered },
+    })
+  }
+
+  /** Whether the attached app is answering, as of the last request sent its way. */
+  get appDown(): boolean {
+    return this.current.kind === 'attached' && this.unreachable
+  }
+
+  private setUnreachable(next: boolean): void {
+    if (this.unreachable === next) return
+    this.unreachable = next
+    if (this.current.kind === 'attached') this.onReachability()
   }
 
   get attachment(): AppAttachment {
@@ -103,6 +136,8 @@ export class AppProxy {
     if (this.current.kind === 'attached' && this.current.origin !== app.origin) {
       this.destroyUpgraded()
     }
+    // Attached is a claim that it answers: a dev server is attached once its port does.
+    this.unreachable = false
     this.current = app
   }
 
@@ -110,6 +145,7 @@ export class AppProxy {
   detach(): void {
     this.destroyUpgraded()
     this.current = { kind: 'none' }
+    this.unreachable = false
   }
 
   /** The catch-all mounted after the `/__ezdesign` router. */
