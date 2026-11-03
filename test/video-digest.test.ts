@@ -89,36 +89,55 @@ test('a toast while the pointer moves elsewhere is two episodes, and only the to
   assert.deepEqual(plan.motion[0]!.region, { x: 1140, y: 780, width: 540, height: 300 })
 })
 
-test('a looping video in the page is ambient and loses its sheet to any event', () => {
+test('a looping video in the page is ambient: it keeps one sheet and events take the rest', () => {
   const corners = [box(1, 1, 3, 3), box(10, 1, 12, 3), box(1, 10, 3, 12), box(28, 1, 30, 3), box(28, 10, 30, 12)]
   const events = (i: number) => corners.flatMap((b, k) => (i >= 20 + k * 30 && i < 32 + k * 30 ? [b] : []))
   const loop = (i: number) => [box(14, 6, 18, 9)].filter(() => i % 2 === 0)
   const plan = planDigest(clip(240, (i) => [...events(i), ...loop(i)]))
   assert.equal(plan.sheets.length, 6)
-  const ambient = plan.motion.find((m) => m.frames > 100)!
-  assert.equal(ambient.sheet, null)
-  assert.equal(ambient.shown, 0)
+  assert.notEqual(plan.motion.find((m) => m.frames > 100)!.sheet, null)
+  assert.deepEqual(plan.motion.filter((m) => m.sheet === null).map((m) => m.fromMs), [2_317])
+})
+
+test('a recorded glow animation: the flickers it starts with are part of it, and it runs on over every spare sheet', () => {
+  const recorded = JSON.parse(readFileSync(new URL('./fixtures/video-digest/glow-button.json', import.meta.url), 'utf8'))
+  const plan = planDigest({ ...recorded, grid: signatureGrid(recorded) })
+  const region = { x: 480, y: 320, width: 1600, height: 720 }
+  assert.deepEqual(
+    plan.motion.map((m) => [m.fromMs, m.toMs, m.sheet]),
+    [[0, 633, 2], [633, 1233, 3], [1233, 1867, 4], [1867, 2467, 5], [2467, 3100, 6]],
+  )
+  for (const m of plan.motion) {
+    assert.deepEqual(m.region, region)
+    assert.equal(m.shown, m.frames)
+  }
+  assert.equal(plan.motion.reduce((sum, m) => sum + m.frames, 0), 93)
+  assert.match(plan.sheets[3]!.header, /^sheet 4 · motion 1\.233-1\.867 s · part 3 of 5 · x 480 y 320, 1600x720 · every changed frame \(19\)$/)
+  assert.deepEqual(plan.sheets[0]!.cells.flatMap((c) => c.marks.map((m) => m.text)), ['2-6'])
 })
 
 test('a 60 s clip that never stops changing yields at most 6 sheets and 24 cells each, first and last frames kept', () => {
   const plan = planDigest(clip(3600, () => [box(0, 0, 31, 17)]))
   assert.ok(plan.sheets.length <= 6)
   for (const sheet of plan.sheets.slice(1)) assert.ok(sheet.cells.length <= 24)
-  const motionCells = plan.sheets[1]!.cells
-  assert.equal(motionCells[0]!.label, '0.000 s · before')
-  assert.equal(motionCells.at(-1)!.t, 3599 * FRAME_US)
+  assert.equal(plan.sheets[1]!.cells[0]!.label, '0.000 s · before')
+  assert.equal(plan.sheets.at(-1)!.cells.at(-1)!.t, 3599 * FRAME_US)
+  assert.match(plan.sheets[1]!.header, /part 1 of 5 · .* · 23 of 720 changed frames, evenly spaced$/)
 })
 
-test('a long transition is sampled evenly in time and reports shown < frames', () => {
+test('a long transition runs on over spare sheets until every changed frame is shown, each part starting where the last ended', () => {
   const plan = planDigest(clip(180, (i) => (i >= 50 && i < 110 ? [TOAST] : [])))
-  assert.equal(plan.motion[0]!.frames, 60)
-  assert.equal(plan.motion[0]!.shown, 23)
-  assert.match(plan.sheets[1]!.header, /23 of 60 changed frames, evenly spaced$/)
+  assert.deepEqual(
+    plan.motion.map((m) => [m.fromMs, m.toMs, m.frames, m.shown, m.sheet]),
+    [[817, 1150, 20, 20, 2], [1150, 1483, 20, 20, 3], [1483, 1817, 20, 20, 4]],
+  )
+  assert.match(plan.sheets[2]!.header, /^sheet 3 · motion 1\.150-1\.483 s · part 2 of 3 · /)
+  assert.equal(plan.sheets[2]!.cells[0]!.label, '1.150 s · before')
 })
 
 test('a variable-rate recording is planned by timestamps, not frame counts', () => {
   const times = (i: number) => (i < 40 ? i * FRAME_US : 40 * FRAME_US + (i - 40) * 100_000)
-  const plan = planDigest(clip(140, (i) => (i >= 20 ? [TOAST] : []), times))
+  const plan = planDigest(clip(400, (i) => (i >= 20 ? [TOAST] : []), times))
   const t = plan.sheets[1]!.cells.slice(1).map((c) => c.t)
   const gaps = t.slice(1).map((x, i) => x - t[i]!)
   assert.ok(Math.max(...gaps) < 4 * Math.min(...gaps.filter((g) => g > FRAME_US)), `uneven gaps ${gaps}`)
