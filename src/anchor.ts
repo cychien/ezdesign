@@ -2,6 +2,7 @@
  *  we do not control. Pure, so the rules are testable without a server. */
 
 import { MAX_VARIANT_HTML, MAX_VARIANT_NAME } from './explore.js'
+import { MAX_GROUP_MEMBERS } from './label.js'
 import type { Anchor, BatchView, ChosenVariant, ExploreCapture, Reference } from './protocol.js'
 import { asCanvasId } from './canvas/types.js'
 
@@ -98,7 +99,7 @@ export function sanitizeAnchor(raw: unknown): Anchor | null {
   if (selector) out.selector = selector
   const text = str(v.text, 200)
   if (text) out.text = text
-  const contains = strings(v.contains, 16, 120)
+  const contains = strings(v.contains, MAX_GROUP_MEMBERS, 120)
   if (contains) out.contains = contains
   const page = str(v.page, 300)
   if (page) out.page = page

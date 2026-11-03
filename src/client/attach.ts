@@ -285,6 +285,7 @@ export function attachify({
     chip.querySelector('.ez-chip-name')!.textContent = name
     if (attr === REF_ATTR) chip.classList.add('ez-chip-ref')
     if (attr === SKILL_ATTR) chip.classList.add('ez-chip-skill')
+    if (attr === PICK_ATTR) chip.classList.add('ez-chip-library')
     if (!value) chip.classList.add('ez-chip-pending')
     return chip
   }

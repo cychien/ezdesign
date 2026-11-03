@@ -1,6 +1,6 @@
 /** The markdown an agent's reply actually uses, and nothing more: paragraphs,
- *  headings, lists, fenced code, and the inline trio (bold, italic, code) plus
- *  links. Parsed to a tree and rendered by building DOM nodes - never markup
+ *  headings, lists, fenced code, tables, and the inline trio (bold, italic,
+ *  code) plus links. Parsed to a tree and rendered by building DOM nodes - never markup
  *  strings - so agent output cannot smuggle HTML into the shell.
  *
  *  The parser is pure and total: any string parses, including one cut off
@@ -19,11 +19,58 @@ export type MdBlock =
   | { t: 'heading'; level: number; children: MdInline[] }
   | { t: 'list'; ordered: boolean; items: MdInline[][] }
   | { t: 'fence'; text: string }
+  | { t: 'table'; align: TableAlign[]; head: MdInline[][]; rows: MdInline[][][] }
+
+export type TableAlign = 'left' | 'center' | 'right' | null
 
 const BULLET = /^\s{0,3}[-*+]\s+(.*)$/
 const NUMBERED = /^\s{0,3}\d{1,3}[.)]\s+(.*)$/
 const HEADING = /^(#{1,4})\s+(.*)$/
 const FENCE = /^\s{0,3}```/
+const DELIMITER_CELL = /^:?-+:?$/
+
+/** A GFM row's cells: outer pipes optional, `\|` a literal pipe. */
+function splitRow(line: string): string[] {
+  let body = line.trim()
+  if (body.startsWith('|')) body = body.slice(1)
+  if (body.endsWith('|') && !body.endsWith('\\|')) body = body.slice(0, -1)
+  const cells: string[] = []
+  let cell = ''
+  for (let i = 0; i < body.length; i++) {
+    if (body[i] === '\\' && body[i + 1] === '|') {
+      cell += '|'
+      i++
+    } else if (body[i] === '|') {
+      cells.push(cell.trim())
+      cell = ''
+    } else {
+      cell += body[i]
+    }
+  }
+  cells.push(cell.trim())
+  return cells
+}
+
+/** The column alignments, when `line` is a delimiter row for a header of `columns`. */
+function delimiterRow(line: string, columns: number): TableAlign[] | null {
+  if (!line.includes('-')) return null
+  const cells = splitRow(line)
+  if (cells.length !== columns || !cells.every((c) => DELIMITER_CELL.test(c))) return null
+  return cells.map((c) => {
+    const left = c.startsWith(':')
+    const right = c.endsWith(':')
+    return left && right ? 'center' : right ? 'right' : left ? 'left' : null
+  })
+}
+
+/** A header row with its delimiter right under it. Until the delimiter has fully
+ *  streamed in, the header is just a paragraph line. */
+function tableAt(lines: string[], i: number): TableAlign[] | null {
+  const header = lines[i]!
+  const next = lines[i + 1]
+  if (!header.includes('|') || next === undefined) return null
+  return delimiterRow(next, splitRow(header).length)
+}
 
 /** Inline tokens, longest-wins at each position. Emphasis marks must sit flush
  *  against their content, or a bare `*` in prose would swallow the paragraph.
@@ -85,6 +132,20 @@ export function parseMarkdown(text: string): MdBlock[] {
       blocks.push({ t: 'fence', text: body.join('\n') })
       continue
     }
+    const align = tableAt(lines, i)
+    if (align) {
+      const width = align.length
+      const cellsOf = (row: string): MdInline[][] =>
+        Array.from({ length: width }, (_, c) => parseInline(splitRow(row)[c] ?? ''))
+      const head = cellsOf(line)
+      i += 2
+      const rows: MdInline[][][] = []
+      while (i < lines.length && lines[i]!.trim() && lines[i]!.includes('|') && !FENCE.test(lines[i]!)) {
+        rows.push(cellsOf(lines[i++]!))
+      }
+      blocks.push({ t: 'table', align, head, rows })
+      continue
+    }
     const heading = HEADING.exec(line)
     if (heading) {
       blocks.push({ t: 'heading', level: heading[1]!.length, children: parseInline(heading[2]!) })
@@ -121,7 +182,14 @@ export function parseMarkdown(text: string): MdBlock[] {
     const parts: string[] = []
     while (i < lines.length) {
       const l = lines[i]!
-      if (!l.trim() || FENCE.test(l) || HEADING.test(l) || BULLET.test(l) || NUMBERED.test(l)) {
+      if (
+        !l.trim() ||
+        FENCE.test(l) ||
+        HEADING.test(l) ||
+        BULLET.test(l) ||
+        NUMBERED.test(l) ||
+        (parts.length > 0 && tableAt(lines, i))
+      ) {
         break
       }
       parts.push(l)
@@ -203,6 +271,34 @@ export function markdownEl(text: string, className: string): HTMLElement {
         pre.className = 'ez-md-pre'
         pre.textContent = block.text
         box.append(pre)
+        break
+      }
+      case 'table': {
+        // Scrolls on its own: a wide table must not widen the thread.
+        const wrap = document.createElement('div')
+        wrap.className = 'ez-md-table'
+        const table = document.createElement('table')
+        const row = (cells: MdInline[][], tag: 'th' | 'td'): HTMLTableRowElement => {
+          const tr = document.createElement('tr')
+          cells.forEach((cell, c) => {
+            const el = document.createElement(tag)
+            const align = block.align[c]
+            if (align) el.style.textAlign = align
+            renderInline(el, cell)
+            tr.append(el)
+          })
+          return tr
+        }
+        const thead = document.createElement('thead')
+        thead.append(row(block.head, 'th'))
+        table.append(thead)
+        if (block.rows.length) {
+          const tbody = document.createElement('tbody')
+          for (const cells of block.rows) tbody.append(row(cells, 'td'))
+          table.append(tbody)
+        }
+        wrap.append(table)
+        box.append(wrap)
         break
       }
     }

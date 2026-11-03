@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { referenceLabel, toConversationItem } from '../src/label.js'
+import { MAX_GROUP_MEMBERS, groupLines, referenceLabel, toConversationItem } from '../src/label.js'
 import type { Annotation, Reference } from '../src/protocol.js'
 import { agentItem } from './helpers/files.js'
 
@@ -198,6 +198,16 @@ test('a framed region says so, and names what it framed', () => {
     referenceLabel(
       ref({ source: 'src/pricing.tsx:8', contains: ['<Card> · src/card.tsx:3', '<Card> · src/card.tsx:3'] }),
     ),
-    'src/pricing.tsx:8 · [framed 2: <Card> · src/card.tsx:3; <Card> · src/card.tsx:3]',
+    'src/pricing.tsx:8 · [group of 2: <Card> · src/card.tsx:3; <Card> · src/card.tsx:3]',
   )
+})
+
+test('a group past the cap says how many members did not fit', () => {
+  const lines = Array.from({ length: MAX_GROUP_MEMBERS + 4 }, (_, i) => `<Item> · "${i + 1}"`)
+  const capped = groupLines(lines)
+  assert.equal(capped.length, MAX_GROUP_MEMBERS)
+  assert.equal(capped.at(-2), `<Item> · "${MAX_GROUP_MEMBERS - 1}"`)
+  assert.equal(capped.at(-1), '+5 more')
+  const fits = lines.slice(0, MAX_GROUP_MEMBERS)
+  assert.deepEqual(groupLines(fits), fits)
 })

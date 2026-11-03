@@ -154,8 +154,11 @@ function banner(state: PickState | null): PickEffect {
  *  once an overlay is listening, so a page that cannot answer does not ask. */
 export function pickHint(state: PickState | null, mod: string, onBoard = false): string | null {
   if (!state?.armed || state.phase !== 'picking') return null
-  if (state.returnTo) return `${mod} + 點擊元素或直接拖曳框選・完成後回到 ${state.returnTo}`
-  return onBoard ? `${mod} + 點擊元素或拖曳框選・點標題選整個 frame` : `${mod} + 點擊元素，或拖曳框選範圍`
+  const many = `加 ${mod === '⌘' ? '⇧' : 'Shift'} 選多個`
+  if (state.returnTo) return `${mod} + 點擊元素或直接拖曳框選・${many}・完成後回到 ${state.returnTo}`
+  return onBoard
+    ? `${mod} + 點擊元素或拖曳框選・${many}・點標題選整個 frame`
+    : `${mod} + 點擊元素，或拖曳框選範圍・${many}`
 }
 
 export function reducePick(state: PickState | null, e: PickEvent): Result {

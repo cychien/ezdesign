@@ -8,6 +8,7 @@ import ChevronRightIcon from '@hugeicons/core-free-icons/ChevronRightIcon'
 import MagicWand01Icon from '@hugeicons/core-free-icons/MagicWand01Icon'
 import SparklesIcon from '@hugeicons/core-free-icons/SparklesIcon'
 import ArrowRight02Icon from '@hugeicons/core-free-icons/ArrowRight02Icon'
+import ArrowDown02Icon from '@hugeicons/core-free-icons/ArrowDown02Icon'
 import Grid02Icon from '@hugeicons/core-free-icons/Grid02Icon'
 import ChatGptIcon from '@hugeicons/core-free-icons/ChatGptIcon'
 import CheckIcon from '@hugeicons/core-free-icons/CheckIcon'
@@ -100,6 +101,7 @@ import { subscribeEvents } from './event-stream.js'
 import { markdownEl } from './markdown.js'
 import { reduceNav } from './nav.js'
 import { threadOrder } from './thread.js'
+import { type ThreadChange, followBottom } from './follow-bottom.js'
 import type { NavEffect, NavEvent, NavState } from './nav.js'
 import { modLabel, pickHint, reducePick } from './pick.js'
 import type { PickEffect, PickEvent, PickState } from './pick.js'
@@ -125,6 +127,8 @@ interface AnnotationWire {
     text?: string
     page?: string
     viewport?: { width?: number; preset?: string }
+    /** One line per member of a framed or Shift-gathered group. */
+    contains?: string[]
     /** Made inside a canvas frame; named by the frame's title in the queue. */
     frame?: { canvasId: string; frameId: string }
   }
@@ -297,14 +301,14 @@ const ANNOTATE_MODES: {
   {
     id: 'element',
     label: '元素',
-    hint: '點一下元素或反白文字來留言',
+    hint: '點一下元素或反白文字來留言，按住 Shift 可連續選取多個',
     key: 'E',
     svg: CursorMagicSelection02Icon as IconNode,
   },
   {
     id: 'region',
     label: '範圍',
-    hint: '拖曳框出一塊範圍來留言，框到的元素都會帶給 agent',
+    hint: '拖曳框出一塊範圍來留言，按住 Shift 可連續框選多塊',
     key: 'R',
     svg: Select01Icon as IconNode,
   },
@@ -2716,6 +2720,17 @@ const convList = h('div', 'ez-conv')
 const convScroll = h('div', 'ez-fade ez-conv-scroll')
 convScroll.appendChild(convList)
 
+const newMessagesPill = h('button', 'ez-new-messages')
+newMessagesPill.type = 'button'
+newMessagesPill.hidden = true
+newMessagesPill.append(icon(ArrowDown02Icon as IconNode, 13), h('span', undefined, '新訊息'))
+const threadFollow = followBottom(convList, (unread) => {
+  newMessagesPill.hidden = !unread
+})
+newMessagesPill.onclick = () => threadFollow.jump(!matchMedia('(prefers-reduced-motion: reduce)').matches)
+new ResizeObserver(() => threadFollow.resized()).observe(convList)
+const convFoot = h('div', 'ez-conv-foot')
+
 const forkSep = h('span', 'ez-fork-sep')
 forkSep.append(icon(ChevronRightIcon as IconNode, 10))
 forkBar.append(forkRoot, forkSep, forkChip)
@@ -2724,7 +2739,8 @@ if (morePicker) forkBar.append(forkMore, morePicker.menu)
 // Above the thread and in the flow, so the conversation starts below it rather
 // than under it: a breadcrumb is where you *are*, which is part of the page
 // rather than something floating over it.
-convSection.append(forkBar, convScroll, notices)
+convFoot.append(newMessagesPill, notices)
+convSection.append(forkBar, convScroll, convFoot)
 
 const resizer = h('div', 'ez-resizer')
 resizer.tabIndex = 0
@@ -3187,7 +3203,7 @@ resizer.addEventListener('keydown', (e) => {
 // ---------------------------------------------------------------- behavior
 
 function sendMode(mode: Mode): void {
-  if ((stagedApp === null || daemonGone) && mode !== 'off') return
+  if (mode !== 'off' && !canAnnotate()) return
   // A pick and a mode change cannot both be in flight: `setMode` in the overlay
   // tears the popup down, and the pick is what would be answering into it.
   abortPick('mode')
@@ -3390,6 +3406,7 @@ function canvasPorts(): Parameters<typeof installCanvas>[0] {
     api,
     onTabShown: (tab) => {
       deviceRow.hidden = stagedApp === null || tab !== 'app'
+      paintAnnotateAvailability()
       paintDevServer()
       if (tab === 'app') paintFrames()
       paintPage()
@@ -4182,7 +4199,9 @@ function paintQueue(annotations: AnnotationWire[]): void {
   annotations.forEach((a, i) => {
     const li = h('li', 'ez-queue-item')
     const head = h('div', 'ez-qi-head')
-    head.append(h('span', 'ez-qi-num', String(i + 1)), h('span', 'ez-qi-label', annotationLabel(a)))
+    const label = h('span', 'ez-qi-label', annotationLabel(a))
+    if (a.anchor.contains?.length) label.title = a.anchor.contains.join('\n')
+    head.append(h('span', 'ez-qi-num', String(i + 1)), label)
     // A chip, not part of the label: the label ellipsizes, and the width is the
     // one detail that must never be the thing that gets cut off.
     const vp = a.anchor.viewport
@@ -4242,6 +4261,7 @@ function paintQueue(annotations: AnnotationWire[]): void {
 
 function annotationLabel(a: AnnotationWire): string {
   const parts: string[] = []
+  if (a.anchor.contains?.length) parts.push(`選取 ${a.anchor.contains.length} 項`)
   // In a canvas frame the source is a long path into `.ezdesign/`: the frame's
   // title and the line say the same thing in fewer characters.
   const frame = a.anchor.frame && canvasUi?.frameTitle(a.anchor.frame)
@@ -4327,7 +4347,7 @@ function buildSaid(entry: ConversationWire, isUser: boolean): HTMLElement {
 function chipEl(
   name: string,
   glyph: IconNode | null,
-  kind?: 'ref' | 'skill',
+  kind?: 'ref' | 'skill' | 'library',
   title?: string,
 ): HTMLElement {
   const chip = h('span', kind ? `ez-chip ez-chip-${kind}` : 'ez-chip')
@@ -4391,7 +4411,7 @@ function commentEl(
     }
     if (part.t === 'pick') {
       for (const n of part.files) placedFiles.add(n)
-      const chip = chipEl(pickChipText(++picks), Album02Icon as IconNode)
+      const chip = chipEl(pickChipText(++picks), Album02Icon as IconNode, 'library')
       chip.title = part.files.map((n) => names[n - 1]).join('\n')
       box.appendChild(chip)
       continue
@@ -4515,9 +4535,23 @@ function paintStatus(): void {
   if (text) statusPill.textContent = text
 }
 
+/** Something on screen to annotate: the App's previews, or a canvas's frames
+ *  - which need no app at all. */
+function canAnnotate(): boolean {
+  if (snapshot?.state === 'ended' || daemonGone) return false
+  const tab = canvasUi?.activeTab
+  return stagedApp !== null || (tab != null && tab !== 'app')
+}
+
 function paintAnnotateAvailability(): void {
-  const off = snapshot?.state === 'ended' || daemonGone || stagedApp === null
+  const off = !canAnnotate()
   for (const { btn } of annotateBtns) btn.disabled = off
+  if (off && annotateMode !== 'off') {
+    sendMode('off')
+    // The guests that armed it may be gone, and with them the report of `off`.
+    annotateMode = 'off'
+    paintAnnotateMode()
+  }
 }
 
 function paintDevServer(): void {
@@ -4598,6 +4632,39 @@ function render(): void {
   digests.observe(s.pendingVideos ?? [])
   paintVideos()
 
+  threadFollow.rerender(() => paintThread(s), threadChange(s))
+  paintConvFades()
+}
+
+interface ThreadSeen {
+  chat: string | undefined
+  entries: number
+  lastSent: number | undefined
+  ask: string | undefined
+}
+
+/** What the thread last showed, so a re-render can tell what it brought. */
+let threadSeen: ThreadSeen | null = null
+
+function threadChange(s: SnapshotWire): ThreadChange {
+  let lastSent: number | undefined
+  for (const entry of s.conversation) if (entry.role === 'user') lastSent = entry.ts
+  const seen: ThreadSeen = {
+    chat: s.chats?.find((c) => c.current)?.id,
+    entries: s.conversation.length,
+    lastSent,
+    ask: s.acp?.ask?.id,
+  }
+  const was = threadSeen
+  threadSeen = seen
+  // The daemon logs a user entry the moment it is sent, so a new one is the
+  // user's own message - which they expect to see land.
+  if (!was || was.chat !== seen.chat || was.lastSent !== seen.lastSent) return 'follow'
+  if (seen.entries > was.entries || (seen.ask && seen.ask !== was.ask)) return 'arrived'
+  return 'same'
+}
+
+function paintThread(s: SnapshotWire): void {
   convList.textContent = ''
   let prevRole: string | null = null
   // Placed where the log says, except that an answer goes under its own question -
@@ -4652,9 +4719,6 @@ function render(): void {
       h('div', 'ez-msg-system ez-msg-system-plain', `agent 已離線：${s.acp.error}`),
     )
   }
-
-  convList.scrollTop = convList.scrollHeight
-  paintConvFades()
 }
 
 /** The turn in flight, drawn where its finished reply will be - so the reply does
@@ -5164,7 +5228,13 @@ document.addEventListener('keydown', (e) => {
   if (runShortcut(e, typing)) e.preventDefault()
   else if (!typing && !libraryShown && canvasUi?.onKeyDown(e)) e.preventDefault()
 })
-document.addEventListener('keyup', (e) => canvasUi?.onKeyUp(e))
+document.addEventListener('keyup', (e) => {
+  // A Shift+click on the page does not take focus from the shell, so the overlay
+  // gathering under it never hears the key come up.
+  // A pick from the note box runs with no mode armed.
+  if (e.key === 'Shift' && (annotateMode !== 'off' || pickState)) frames.postAll({ type: 'ez:shift-up' })
+  canvasUi?.onKeyUp(e)
+})
 
 /** The version of the daemon this page's scripts came from. The shell's assets
  *  are the daemon's, so a snapshot from another version means the port changed

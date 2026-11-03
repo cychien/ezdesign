@@ -27,8 +27,8 @@ test('truncates long text and returns empty for a bare anchor', () => {
 test('a framed region leads with what it framed', () => {
   assert.equal(
     shortAnchor({ contains: ['<Card>', '<Card>', '<Card>'], text: '方案 A / 方案 B' }),
-    '框選 3 項 · 方案 A / 方案 B',
+    '選取 3 項 · 方案 A / 方案 B',
   )
-  assert.equal(shortAnchor({ contains: ['<Card>'], source: 'src/pricing.tsx:12' }), '框選 1 項 · pricing.tsx:12')
+  assert.equal(shortAnchor({ contains: ['<Card>'], source: 'src/pricing.tsx:12' }), '選取 1 項 · pricing.tsx:12')
   assert.equal(shortAnchor({ contains: [] }), '', 'an empty list is not a region')
 })

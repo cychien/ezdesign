@@ -88,6 +88,8 @@ export const GUEST_PROTOCOL = {
   // ------------------------------------------------------------ shell -> guest
   'ez:set-mode': down(BOTH),
   'ez:escape': down(BOTH),
+  /** Shift came up while focus was in the shell: a Shift-gathered group opens. */
+  'ez:shift-up': down(BOTH),
   /** `{preset, zoom, scoped}`; for a canvas frame `zoom` is the board's. */
   'ez:viewport': down(BOTH),
   'ez:pick': down(BOTH),
