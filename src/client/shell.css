@@ -130,6 +130,13 @@
      --update-ink so the two are not one value under two names. */
   --skill-ink: #1a6aa8;
 
+  /* Where the result goes, `#App`. A bare token like a skill, so its hue sits
+     furthest from the two bare inks already in a message: --skill-ink's blue
+     and --code-ink's rust. The greens it shares a family with are filled chips,
+     a different shape. Weighted like --skill-ink: 5.02:1 on the bubble, 5.72:1
+     on the composer's white. */
+  --target-ink: #2a743f;
+
   /* A saved reference's tags: the brown the capture dialog gives them, so a tag
      looks the same where it was written and where it is read back. */
   --tag: #ece3d6;
@@ -2990,20 +2997,17 @@ body.ez-arranging .ez-frame {
 }
 
 /* Where the result goes - `#App`, `#Design system` - typed into the sentence
-   like a skill and drawn the same way: a token, not an object. Every accent
-   already means something here, and a destination is not any of them, so it
-   takes the ink of the text around it and is told apart by the monospace and
-   the weight. */
+   like a skill and drawn the same way: a token, not an object. */
 .ez-chip-target {
   display: inline;
   max-width: none;
   padding: 0;
   border-radius: 0;
   background: none;
-  color: var(--ink);
+  color: var(--target-ink);
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 0.92em;
-  font-weight: 600;
+  font-weight: 400;
 }
 
 /* Still uploading. Dimmed rather than spinner'd: it resolves in a blink on a

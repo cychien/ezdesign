@@ -25,6 +25,7 @@ import BubbleChatOutcomeIcon from '@hugeicons/core-free-icons/BubbleChatOutcomeI
 import Edit02Icon from '@hugeicons/core-free-icons/Edit02Icon'
 import Album02Icon from '@hugeicons/core-free-icons/Album02Icon'
 import DollarSquareIcon from '@hugeicons/core-free-icons/DollarSquareIcon'
+import HashtagIcon from '@hugeicons/core-free-icons/HashtagIcon'
 import type { SessionConfigOption } from '@agentclientprotocol/sdk'
 import type { AcpAskAnswer, AcpAskField, AcpAskOption } from '../acp-ask.js'
 import { askComplete, askSendsOnPick } from '../acp-ask.js'
@@ -1946,6 +1947,15 @@ const noteAttach = attachify({
       // only knows `/` finds it. Typed rather than inserted, so it opens there.
       enabled: () => !!snapshot?.acp,
       run: () => document.execCommand('insertText', false, '$'),
+    },
+    {
+      id: 'target',
+      label: 'Place',
+      hint: '輸入 # 指定結果放到哪',
+      keywords: ['place', 'target', 'destination', 'app', 'canvas', '#', '放到', '位置', '畫布'],
+      icon: HashtagIcon as IconNode,
+      enabled: () => targetCommands().length > 0,
+      run: () => document.execCommand('insertText', false, '#'),
     },
   ],
   skills: () => fetchSkills(),
