@@ -1,0 +1,233 @@
+name: Release
+
+# Manual only until the first canary is out: merging this file is itself a push to
+# main, and it already changes the package, so a push trigger would publish at once.
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Run every check and build, publish nothing
+        type: boolean
+        default: true
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  release-please:
+    if: ${{ !inputs.dry_run }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: googleapis/release-please-action@v5
+
+  # Asks the registry and GitHub what is already out rather than trusting this
+  # run's events, so a run that failed half-way is finished by the next one.
+  pending:
+    needs: release-please
+    if: ${{ !cancelled() && needs.release-please.result != 'failure' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.stable.outputs.version }}
+      stable: ${{ steps.stable.outputs.publish }}
+      canary: ${{ steps.canary.outputs.publish }}
+      desktop: ${{ steps.desktop.outputs.build }}
+      desktop-tag: ${{ steps.desktop.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - id: stable
+        run: |
+          version=$(node -p "require('./package.json').version")
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if npm view "@cychien/ezdesign@$version" version > /dev/null 2>&1; then publish=false; else publish=true; fi
+          echo "publish=$publish" >> "$GITHUB_OUTPUT"
+          echo "stable $version: publish=$publish"
+      - id: canary
+        env:
+          EVENT: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
+        run: |
+          if [ "$EVENT" = push ] && git diff --quiet "$BEFORE" HEAD -- src scripts/build.mjs skills/ezdesign package.json pnpm-lock.yaml README.md LICENSE; then
+            publish=false
+          else
+            publish=true
+          fi
+          echo "publish=$publish" >> "$GITHUB_OUTPUT"
+          echo "canary: publish=$publish"
+      # A draft is invisible to this token, so a draft and no release at all both
+      # read as not out yet, which is the answer either way.
+      - id: desktop
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="desktop-v$(node -p "require('./desktop/package.json').version")"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          draft=$(gh release view "$tag" --json isDraft --jq .isDraft 2> /dev/null || echo missing)
+          if [ "$draft" = false ]; then build=false; else build=true; fi
+          echo "build=$build" >> "$GITHUB_OUTPUT"
+          echo "desktop $tag: build=$build"
+
+  stable:
+    needs: pending
+    if: ${{ !cancelled() && needs.pending.result == 'success' && needs.pending.outputs.stable == 'true' }}
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: write
+      id-token: write
+    env:
+      VERSION: ${{ needs.pending.outputs.version }}
+      DRY_RUN: ${{ inputs.dry_run && '--dry-run' || '' }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 11
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+      - run: pnpm install --frozen-lockfile
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+      - name: Check npm can publish with OIDC
+        run: |
+          node -e "const [a, b, c] = process.argv[1].split('.').map(Number); if (a * 1e6 + b * 1e3 + c < 11005001) { console.error('npm ' + process.argv[1] + ' is older than 11.5.1, which trusted publishing needs'); process.exit(1) }" "$(npm --version)"
+      - name: Publish to npm
+        run: |
+          if npm view "@cychien/ezdesign@$VERSION" version > /dev/null 2>&1; then
+            echo "$VERSION is already on npm"
+          else
+            npm publish $DRY_RUN
+          fi
+      # Published only once npm has the version, and never as Latest: the site's
+      # download links and the app's update check read the Latest release.
+      - name: Publish the GitHub release
+        if: ${{ !inputs.dry_run }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "$(gh release view "v$VERSION" --json isDraft --jq .isDraft 2> /dev/null)" = true ]; then
+            gh release edit "v$VERSION" --draft=false --latest=false
+          fi
+
+  canary:
+    needs: pending
+    if: ${{ !cancelled() && needs.pending.result == 'success' && (inputs.dry_run || needs.pending.outputs.canary == 'true') }}
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      DRY_RUN: ${{ inputs.dry_run && '--dry-run' || '' }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 11
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+      - run: pnpm install --frozen-lockfile
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+      - name: Check npm can publish with OIDC
+        run: |
+          node -e "const [a, b, c] = process.argv[1].split('.').map(Number); if (a * 1e6 + b * 1e3 + c < 11005001) { console.error('npm ' + process.argv[1] + ' is older than 11.5.1, which trusted publishing needs'); process.exit(1) }" "$(npm --version)"
+      - run: npm version prepatch --preid "canary.$GITHUB_RUN_NUMBER" --no-git-tag-version
+      - name: Publish to npm under next
+        run: |
+          version=$(node -p "require('./package.json').version")
+          if npm view "@cychien/ezdesign@$version" version > /dev/null 2>&1; then
+            echo "$version is already on npm"
+          else
+            npm publish --tag next $DRY_RUN
+          fi
+
+  desktop:
+    needs: pending
+    if: ${{ !cancelled() && needs.pending.result == 'success' && (inputs.dry_run || needs.pending.outputs.desktop == 'true') }}
+    runs-on: macos-15
+    environment: release
+    permissions:
+      contents: write
+    env:
+      TAG: ${{ needs.pending.outputs.desktop-tag }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 11
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          package-manager-cache: false
+      - run: pnpm install --frozen-lockfile
+      - run: npm run typecheck
+      - run: npm test
+      # release-please opens the draft when it bumps the app. Opened here when it
+      # did not, before the build: electron-builder uploads its files at once, and
+      # left to open the release itself, the uploads race and all but one fail.
+      - name: Open the draft release
+        if: ${{ !inputs.dry_run }}
+        run: |
+          if ! gh release view "$TAG" > /dev/null 2>&1; then
+            gh release create "$TAG" --draft --target "$GITHUB_SHA" --title "ezdesign ${TAG#desktop-v}" \
+              --notes "ezdesign for Mac ${TAG#desktop-v}: ezdesign-arm64.dmg for Apple silicon, ezdesign-x64.dmg for Intel. Opening it the first time: https://github.com/cychien/ezdesign#or-use-the-mac-app"
+          fi
+      # With a Developer ID the release is signed, notarized and updates itself.
+      # Without one it is ad-hoc signed: users allow it once in System Settings.
+      - name: Pick signing
+        id: signing
+        run: echo "developer-id=${{ secrets.MAC_CERT_P12_BASE64 != '' }}" >> "$GITHUB_OUTPUT"
+      - name: Write the notarization key
+        if: steps.signing.outputs.developer-id == 'true'
+        run: echo "$APPLE_API_KEY_P8" > "$RUNNER_TEMP/notary.p8"
+        env:
+          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+      - name: Build, signed and notarized
+        if: steps.signing.outputs.developer-id == 'true'
+        run: pnpm --filter @cychien/ezdesign-desktop run ${{ inputs.dry_run && 'dist' || 'release' }}
+        env:
+          EZDESIGN_SIGNED_RELEASE: '1'
+          CSC_LINK: ${{ secrets.MAC_CERT_P12_BASE64 }}
+          CSC_KEY_PASSWORD: ${{ secrets.MAC_CERT_PASSWORD }}
+          APPLE_API_KEY: ${{ runner.temp }}/notary.p8
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+      - name: Build, ad-hoc signed
+        if: steps.signing.outputs.developer-id != 'true'
+        run: pnpm --filter @cychien/ezdesign-desktop run ${{ inputs.dry_run && 'dist:adhoc' || 'release:adhoc' }}
+      - if: ${{ inputs.dry_run }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: desktop
+          path: |
+            desktop/release/*.dmg
+            desktop/release/*.zip
+            desktop/release/latest-mac.yml
+      # The site's download links and every app's update check read the Latest
+      # release, so it is published only whole.
+      - name: Publish the release as Latest
+        if: ${{ !inputs.dry_run }}
+        run: |
+          gh release view "$TAG" --json assets --jq '.assets[].name' > "$RUNNER_TEMP/assets"
+          for name in ezdesign-arm64.dmg ezdesign-x64.dmg latest-mac.yml; do
+            grep -qx "$name" "$RUNNER_TEMP/assets" || { echo "missing $name"; exit 1; }
+          done
+          [ "$(grep -c -- '-mac\.zip$' "$RUNNER_TEMP/assets")" = 2 ] || { echo "missing a zip"; exit 1; }
+          gh release edit "$TAG" --draft=false --latest

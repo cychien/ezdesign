@@ -18,6 +18,7 @@ test('the bundled skill is stamped with the package version', () => {
   const front = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/.exec(skill)
   assert.ok(front, 'SKILL.md has frontmatter')
   assert.match(front[1]!, /^name: ezdesign$/m)
-  const stamped = /^\s+version:\s*([0-9A-Za-z.+-]+)\s*$/m.exec(front[1]!)?.[1]
-  assert.equal(stamped, version, 'run scripts/sync-skill-version.mjs')
+  const line = /^\s+version:\s*([0-9A-Za-z.+-]+)(.*)$/m.exec(front[1]!)
+  assert.equal(line?.[1], version, 'run scripts/sync-skill-version.mjs')
+  assert.equal(line?.[2], ' # x-release-please-version', 'release-please bumps the line by this marker')
 })
