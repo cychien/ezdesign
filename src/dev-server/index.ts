@@ -62,6 +62,7 @@ const MAX_LINE = 500
 export class DevServer {
   private machine: DevServerMachine = INITIAL
   private live: { runId: number; process: ManagedProcess } | null = null
+  private released = false
   private readonly log = new LogRing()
   private proposal: AgentAsk | null = null
   private startPreview: { command: DevCommandWire | null; runnable: boolean } | null = null
@@ -109,8 +110,10 @@ export class DevServer {
   }
 
   /** The daemon is exiting: the group goes, gracefully, and what the record
-   *  says to resume stays for the next daemon. */
+   *  says to resume stays for the next daemon. Nothing is dispatched from here
+   *  on: the group's exit would otherwise read as a crash and clear the resume. */
   async release(): Promise<void> {
+    this.released = true
     if (this.live?.process.running) await this.live.process.stop(DEV_SERVER_STOP_GRACE_MS)
   }
 
@@ -165,6 +168,7 @@ export class DevServer {
   }
 
   private dispatch(event: DevServerEvent): void {
+    if (this.released) return
     const { machine, effects, stateChanged } = step(this.machine, event)
     if (this.proposal && machine.state.phase !== 'needs-command') {
       this.proposal.abort.abort()
