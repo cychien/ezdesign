@@ -64,13 +64,20 @@ test('a release bumps the bundled skill version with the package', () => {
 })
 
 test('a canary goes out when anything the tarball is built from changed', () => {
-  const paths = /git diff --quiet "\$BEFORE" HEAD -- (.+);/.exec(jobs.get('pending')!)?.[1]?.split(' ') ?? []
+  const paths = /git diff --quiet "\$last" HEAD -- (.+);/.exec(jobs.get('pending')!)?.[1]?.split(' ') ?? []
   const { files } = json<{ files: string[] }>('package.json')
   const builtFrom: Record<string, string[]> = { dist: ['src', 'scripts/build.mjs'] }
   for (const entry of files) {
     for (const source of builtFrom[entry] ?? [entry]) assert.ok(paths.includes(source), `${source} (for ${entry})`)
   }
   for (const source of ['package.json', 'pnpm-lock.yaml']) assert.ok(paths.includes(source), source)
+})
+
+// A push releases; a run by hand is a dry run unless told otherwise, since that is
+// how a change to this workflow is tried out.
+test('every push to main releases, and a run by hand defaults to a dry run', () => {
+  assert.match(workflow, /^on:\n {2}push:\n {4}branches: \[main\]\n {2}workflow_dispatch:/m)
+  assert.match(workflow, /dry_run:\n(?: {8}.+\n)*? {8}default: true\n/)
 })
 
 test('only the publishing jobs can ask for an OIDC token, and none of them restores a cache', () => {
