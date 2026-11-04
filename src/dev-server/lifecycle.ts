@@ -127,7 +127,9 @@ export function step(machine: DevServerMachine, event: DevServerEvent): Step {
 
     case 'restart':
       if (liveRun(state)) return restartRun(event.now, event.by)
-      return RESTARTABLE.has(state.phase) ? resolveAfresh(event.now, event.by) : same()
+      // Asked for by hand once the server someone else started stopped answering:
+      // resolving again finds the command, since a dead origin is no longer external.
+      return RESTARTABLE.has(state.phase) || state.phase === 'external' ? resolveAfresh(event.now, event.by) : same()
 
     case 'confirmed':
       return liveRun(state) ? restartRun(event.now, event.by) : resolveAfresh(event.now, event.by)

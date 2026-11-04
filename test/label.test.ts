@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { referenceLabel, toConversationItem } from '../src/label.js'
+import { MAX_GROUP_MEMBERS, groupLines, referenceEcho, referenceLabel, toConversationItem } from '../src/label.js'
 import type { Annotation, Reference } from '../src/protocol.js'
 import { agentItem } from './helpers/files.js'
 
@@ -106,6 +106,17 @@ test('the conversation log echoes attachment names', () => {
 
 const ref = (anchor: Reference['anchor'], n = 1, label = 'x'): Reference => ({ n, anchor, label })
 
+// The chip has to read back as the choice it was, and the thread has no use
+// for the markup itself.
+test('a reference echoes the name of the variant it carries, never its markup', () => {
+  const chosen: Reference = { ...ref({}, 2, 'Hero 按鈕'), variant: { name: '圓角藥丸', html: '<button>…</button>' } }
+  assert.deepEqual(referenceEcho(chosen), { n: 2, label: 'Hero 按鈕', variant: '圓角藥丸' })
+  assert.deepEqual(referenceEcho(ref({}, 1, 'Hero 標題')), { n: 1, label: 'Hero 標題' })
+  assert.deepEqual(toConversationItem({ ...base, references: [chosen] }).references, [
+    { n: 2, label: 'Hero 按鈕', variant: '圓角藥丸' },
+  ])
+})
+
 // References sit after the anchor - which says where the comment is - and before
 // the files, because they are anchors too and the comment's own markers have to
 // resolve against them.
@@ -198,6 +209,16 @@ test('a framed region says so, and names what it framed', () => {
     referenceLabel(
       ref({ source: 'src/pricing.tsx:8', contains: ['<Card> · src/card.tsx:3', '<Card> · src/card.tsx:3'] }),
     ),
-    'src/pricing.tsx:8 · [framed 2: <Card> · src/card.tsx:3; <Card> · src/card.tsx:3]',
+    'src/pricing.tsx:8 · [group of 2: <Card> · src/card.tsx:3; <Card> · src/card.tsx:3]',
   )
+})
+
+test('a group past the cap says how many members did not fit', () => {
+  const lines = Array.from({ length: MAX_GROUP_MEMBERS + 4 }, (_, i) => `<Item> · "${i + 1}"`)
+  const capped = groupLines(lines)
+  assert.equal(capped.length, MAX_GROUP_MEMBERS)
+  assert.equal(capped.at(-2), `<Item> · "${MAX_GROUP_MEMBERS - 1}"`)
+  assert.equal(capped.at(-1), '+5 more')
+  const fits = lines.slice(0, MAX_GROUP_MEMBERS)
+  assert.deepEqual(groupLines(fits), fits)
 })

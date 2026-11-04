@@ -10,6 +10,7 @@ import type {
   DigestFailure,
   FrameRef,
   Reference,
+  ReferenceEcho,
   VideoDigest,
 } from './protocol.js'
 
@@ -110,10 +111,10 @@ function anchorParts(
   if (anchor.section) parts.push(`[section: ${anchor.section}]`)
   if (anchor.text) parts.push(`"${truncate(anchor.text, textMax)}"`)
   // After the anchor's own fields, because those describe the common ancestor
-  // and this is what says the user drew a box around a group rather than
-  // pointing at that ancestor.
+  // and this is what says the user meant a group - framed, or Shift-picked -
+  // rather than that ancestor.
   if (anchor.contains?.length) {
-    parts.push(`[framed ${anchor.contains.length}: ${anchor.contains.join('; ')}]`)
+    parts.push(`[group of ${anchor.contains.length}: ${anchor.contains.join('; ')}]`)
   }
   if (withViewport && anchor.viewport) {
     const { width, height, preset } = anchor.viewport
@@ -174,6 +175,19 @@ export function toAgentItem(a: Annotation, files: AttachmentLocator, frames?: Fr
   }
 }
 
+/** How many members a group names; the daemon keeps no more than this. Every
+ *  Shift-picked element was chosen one by one, so the cap sits well past any
+ *  real selection rather than at the region walk's 16. */
+export const MAX_GROUP_MEMBERS = 40
+
+/** A group's member lines within the cap. Past it the last line says how many
+ *  did not fit, so a long Shift selection is never cut short in silence. */
+export function groupLines(lines: string[]): string[] {
+  if (lines.length <= MAX_GROUP_MEMBERS) return lines
+  const kept = lines.slice(0, MAX_GROUP_MEMBERS - 1)
+  return [...kept, `+${lines.length - kept.length} more`]
+}
+
 /** Where the user pointed, in the terms they'd recognise. The text they clicked
  *  beats structural names, which beat the filename — the reverse of the agent's
  *  ordering, which wants the most machine-precise anchor first. */
@@ -181,7 +195,7 @@ export function shortAnchor(anchor: Anchor): string {
   // A framed region is a group, and naming one member of it - which is what the
   // fields below would do - reads as a pick of that member. The count leads, and
   // the ancestor's own name still follows it as context.
-  const framed = anchor.contains?.length ? `框選 ${anchor.contains.length} 項` : ''
+  const framed = anchor.contains?.length ? `選取 ${anchor.contains.length} 項` : ''
   const what =
     (anchor.text && truncate(anchor.text, 22)) ||
     anchor.section ||
@@ -204,9 +218,13 @@ export function attachmentEcho(a: Attachment): AttachmentEcho {
   return a.origin ? { name: a.name, pick: a.origin.pick } : a.name
 }
 
+export function referenceEcho(r: Reference): ReferenceEcho {
+  return { n: r.n, label: r.label, ...(r.variant ? { variant: r.variant.name } : {}) }
+}
+
 export function toConversationItem(a: Annotation): ConversationItem {
   const attachments = a.attachments?.map(attachmentEcho)
-  const references = a.references?.map((r) => ({ n: r.n, label: r.label }))
+  const references = a.references?.map(referenceEcho)
   return {
     comment: a.comment,
     where: shortAnchor(a.anchor),

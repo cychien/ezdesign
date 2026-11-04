@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { attachmentIds, parseReferences, sanitizeAnchor, sanitizeCapture } from '../src/anchor.js'
+import { MAX_GROUP_MEMBERS } from '../src/label.js'
 
 test('an absent field means none, a malformed one is an error', () => {
   assert.deepEqual(attachmentIds(undefined), [])
@@ -156,8 +157,8 @@ test('more references than a person would pick is refused', () => {
 // The framed list is a label per element and lands in the agent's prompt, so it
 // is bounded the same way every other string here is.
 test('the framed list is bounded in length and in width', () => {
-  const many = Array.from({ length: 30 }, (_, i) => `<C${i}>`)
-  assert.equal(sanitizeAnchor({ contains: many })?.contains?.length, 16)
+  const many = Array.from({ length: MAX_GROUP_MEMBERS + 10 }, (_, i) => `<C${i}>`)
+  assert.equal(sanitizeAnchor({ contains: many })?.contains?.length, MAX_GROUP_MEMBERS)
   assert.equal(sanitizeAnchor({ contains: ['x'.repeat(500)] })?.contains?.[0]?.length, 120)
   assert.equal(sanitizeAnchor({ contains: [] })?.contains, undefined)
   assert.equal(sanitizeAnchor({ contains: '<Card>' })?.contains, undefined)

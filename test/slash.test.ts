@@ -154,11 +154,21 @@ test('the same word-boundary rule applies to any trigger', () => {
 test('the menu opens under its trigger, or over it when the trigger sits low', () => {
   const view = { width: 1000, height: 800 }
   const at = { left: 100, top: 100, bottom: 120 }
-  assert.deepEqual(menuPosition(at, { width: 240, height: 120 }, view, 1), { left: 100, top: 126 })
+  assert.deepEqual(menuPosition(at, { width: 240, height: 120 }, view, 1), { left: 100, top: 126, maxHeight: 120 })
   assert.deepEqual(
     menuPosition({ left: 950, top: 700, bottom: 720 }, { width: 240, height: 120 }, view, 1),
-    { left: 752, top: 574 },
+    { left: 752, top: 574, maxHeight: 120 },
   )
+})
+
+// A long skill list used to open past the top of the window, its first rows
+// out of reach.
+test('a menu taller than either side takes the roomier one and scrolls', () => {
+  const view = { width: 1000, height: 800 }
+  const low = menuPosition({ left: 100, top: 700, bottom: 720 }, { width: 240, height: 1700 }, view, 1)
+  assert.deepEqual(low, { left: 100, top: 8, maxHeight: 686 })
+  const high = menuPosition({ left: 100, top: 100, bottom: 120 }, { width: 240, height: 1700 }, view, 1)
+  assert.deepEqual(high, { left: 100, top: 126, maxHeight: 666 })
 })
 
 // In a canvas frame the menu is drawn at the inverse of the board's zoom, so its
@@ -166,9 +176,9 @@ test('the menu opens under its trigger, or over it when the trigger sits low', (
 test('a scaled menu keeps its gaps in step with its scale', () => {
   const view = { width: 1000, height: 800 }
   const at = { left: 100, top: 100, bottom: 120 }
-  assert.deepEqual(menuPosition(at, { width: 120, height: 60 }, view, 0.5), { left: 100, top: 123 })
+  assert.deepEqual(menuPosition(at, { width: 120, height: 60 }, view, 0.5), { left: 100, top: 123, maxHeight: 60 })
   assert.deepEqual(
     menuPosition({ left: 950, top: 700, bottom: 720 }, { width: 480, height: 240 }, view, 2),
-    { left: 504, top: 448 },
+    { left: 504, top: 448, maxHeight: 240 },
   )
 })

@@ -8,6 +8,7 @@ import ChevronRightIcon from '@hugeicons/core-free-icons/ChevronRightIcon'
 import MagicWand01Icon from '@hugeicons/core-free-icons/MagicWand01Icon'
 import SparklesIcon from '@hugeicons/core-free-icons/SparklesIcon'
 import ArrowRight02Icon from '@hugeicons/core-free-icons/ArrowRight02Icon'
+import ArrowDown02Icon from '@hugeicons/core-free-icons/ArrowDown02Icon'
 import Grid02Icon from '@hugeicons/core-free-icons/Grid02Icon'
 import ChatGptIcon from '@hugeicons/core-free-icons/ChatGptIcon'
 import CheckIcon from '@hugeicons/core-free-icons/CheckIcon'
@@ -24,6 +25,7 @@ import BubbleChatOutcomeIcon from '@hugeicons/core-free-icons/BubbleChatOutcomeI
 import Edit02Icon from '@hugeicons/core-free-icons/Edit02Icon'
 import Album02Icon from '@hugeicons/core-free-icons/Album02Icon'
 import DollarSquareIcon from '@hugeicons/core-free-icons/DollarSquareIcon'
+import HashtagIcon from '@hugeicons/core-free-icons/HashtagIcon'
 import type { SessionConfigOption } from '@agentclientprotocol/sdk'
 import type { AcpAskAnswer, AcpAskField, AcpAskOption } from '../acp-ask.js'
 import { askComplete, askSendsOnPick } from '../acp-ask.js'
@@ -46,7 +48,8 @@ import { ANNOUNCEMENTS } from './announcements/index.js'
 import { LIBRARY_TEST_IDS } from './library/names.js'
 import { chooseLibraryAttachments } from './library/picker.js'
 import { videoDigests } from './video-digest/runner.js'
-import type { DigestFailure } from '../protocol.js'
+import type { BatchTarget, DigestFailure, ReferenceEcho, SentNoteWire } from '../protocol.js'
+import { referenceEcho, shortAnchor } from '../label.js'
 import type { DevServerWire } from '../dev-server/wire.js'
 import { installDevServerPanel } from './dev-server-panel.js'
 import { host } from './host.js'
@@ -83,7 +86,16 @@ import {
   toggleDevice,
 } from './grid-layout.js'
 import type { GridMetrics, Layout } from './grid-layout.js'
-import type { AnchorWire, DraftWire, NumberedRef, RefWire } from './draft.js'
+import type { AnchorWire, DraftNode, DraftWire, NumberedRef, RefWire } from './draft.js'
+import {
+  RECALL_START,
+  type RecallState,
+  draftKey,
+  isBlankDraft,
+  recallHistory,
+  recallMove,
+  showingRecalled,
+} from './recall.js'
 import {
   bodyFromComment,
   fileMarker,
@@ -94,12 +106,14 @@ import {
   refMarker,
   skillMarker,
   splitComment,
+  targetMarker,
 } from './draft.js'
 import { STREAM_STATE, type StreamState } from './event-hub.js'
 import { subscribeEvents } from './event-stream.js'
 import { markdownEl } from './markdown.js'
 import { reduceNav } from './nav.js'
 import { threadOrder } from './thread.js'
+import { type ThreadChange, followBottom } from './follow-bottom.js'
 import type { NavEffect, NavEvent, NavState } from './nav.js'
 import { modLabel, pickHint, reducePick } from './pick.js'
 import type { PickEffect, PickEvent, PickState } from './pick.js'
@@ -125,6 +139,8 @@ interface AnnotationWire {
     text?: string
     page?: string
     viewport?: { width?: number; preset?: string }
+    /** One line per member of a framed or Shift-gathered group. */
+    contains?: string[]
     /** Made inside a canvas frame; named by the frame's title in the queue. */
     frame?: { canvasId: string; frameId: string }
   }
@@ -141,7 +157,7 @@ interface AnnotationWire {
 
 /** A bare string is what logs written before references carried a number hold.
  *  It has no marker to sit in, so it is appended rather than inlined. */
-type RefEcho = string | { n: number; label: string }
+type RefEcho = string | ReferenceEcho
 
 /** A file as the log keeps it. A bare string is a paste; a library pick's files
  *  carry the pick, which is what folds them back into one chip. */
@@ -157,6 +173,8 @@ interface ConversationWire {
   /** The skills this batch named, in the order they were written. `[skill n]`
    *  in the text is `skills[n-1]`. */
   skills?: string[]
+  /** Where the batch said its result goes. `[target 1]` in the text is it. */
+  target?: BatchTarget
   items?: {
     comment: string
     where: string
@@ -207,10 +225,14 @@ interface SnapshotWire {
   account: AccountWire
   explores?: ExploreWire[]
   canExplore?: true
+  /** One asked for now would start now: the main line has nothing in hand. */
+  exploreFree?: true
   designHarness?: boolean
   designEffort?: DesignEffort
   devServer: DevServerWire
   appTab: boolean
+  /** The attached app stopped answering the proxy. */
+  appDown?: true
   project: string
 }
 
@@ -297,14 +319,14 @@ const ANNOTATE_MODES: {
   {
     id: 'element',
     label: '元素',
-    hint: '點一下元素或反白文字來留言',
+    hint: '點一下元素或反白文字來留言，按住 Shift 可連續選取多個',
     key: 'E',
     svg: CursorMagicSelection02Icon as IconNode,
   },
   {
     id: 'region',
     label: '範圍',
-    hint: '拖曳框出一塊範圍來留言，框到的元素都會帶給 agent',
+    hint: '拖曳框出一塊範圍來留言，按住 Shift 可連續框選多塊',
     key: 'R',
     svg: Select01Icon as IconNode,
   },
@@ -335,6 +357,8 @@ let canvasUi: CanvasUi | null = null
 let stagedApp: string | null = (document.currentScript as HTMLScriptElement | null)?.dataset.app || null
 
 let annotateMode: Mode = 'off'
+/** The App was down at the last paint, so its previews reload when it is back. */
+let wasDown = false
 /** The daemon's stream has been down longer than a restart takes. Every request
  *  would fail, so the review says why once instead of each control on its own. */
 let daemonGone = false
@@ -1034,6 +1058,111 @@ function stripNotice(text: string): void {
   }, 4000)
 }
 
+/** An explore asked for while the main line still had work in hand. A round moves
+ *  the one agent onto a branch, so it waits here until the daemon says the main
+ *  line is free, and the element is captured again when it starts: the turn it
+ *  waited on may well have rewritten it. */
+interface ExploreRequest {
+  anchor: AnchorWire
+  capture: unknown
+  direction: string
+  attachments: string[]
+  references: RefWire[]
+}
+
+let exploreWaiting: { frame: string; request: ExploreRequest; starting?: boolean } | null = null
+
+/** The explore that is visibly waiting: only while the main line is actually at work. One
+ *  that is merely starting - recapturing, forking - or held up by something momentary like a
+ *  session still opening shows nothing, the way an explore that never waited does. */
+function shownWaiting(): { request: ExploreRequest } | null {
+  if (!exploreWaiting || exploreWaiting.starting) return null
+  const mainLineRunning =
+    !!snapshot?.agentBusy || !!snapshot?.agentQueued || snapshot?.acp?.state === 'working'
+  return mainLineRunning ? exploreWaiting : null
+}
+
+function waitingPill(waiting: { request: ExploreRequest }): HTMLElement {
+  const pill = h('div', 'ez-strip-pill')
+  const label = shortAnchor(waiting.request.anchor)
+  pill.title = `agent 做完手上的工作，就開始探索「${label}」`
+  pill.setAttribute('role', 'group')
+  pill.setAttribute('aria-label', `探索 ${label}`)
+  pill.append(icon(MagicWand01Icon as IconNode, 14), h('div', 'ez-strip-pending', '等候中'))
+  const actions = h('div', 'ez-strip-actions')
+  const cancel = h('button', 'ez-strip-action', '取消')
+  cancel.title = '不探索了，留言放回原處'
+  cancel.onclick = cancelWaitingExplore
+  actions.append(cancel)
+  pill.append(actions)
+  return pill
+}
+
+function cancelWaitingExplore(): void {
+  if (!exploreWaiting || exploreWaiting.starting) return
+  exploreWaiting = null
+  paintCanExplore()
+  paintStrip()
+  endExploreIn()
+}
+
+/** Whether the page may offer `/explore`: one at a time, so not while one waits. */
+function paintCanExplore(): void {
+  frames.postAll({ type: 'ez:can-explore', on: snapshot?.canExplore === true && !exploreWaiting })
+}
+
+const recaptures = new Map<string, (capture: unknown) => void>()
+
+/** The element as it is now, from the frame it was picked in; null when that frame
+ *  or the element has gone, or the page does not answer. */
+function recapture(frame: string, anchor: AnchorWire): Promise<unknown> {
+  if (!frames.has(frame)) return Promise.resolve(null)
+  const reqId = crypto.randomUUID()
+  return new Promise((resolve) => {
+    const settle = (capture: unknown) => {
+      recaptures.delete(reqId)
+      clearTimeout(timer)
+      resolve(capture)
+    }
+    const timer = setTimeout(() => settle(null), 2000)
+    recaptures.set(reqId, settle)
+    frames.post(frame, { type: 'ez:recapture', reqId, anchor })
+  })
+}
+
+/** Start the waiting explore if the main line is free. Run on every snapshot. */
+async function pumpExplore(): Promise<void> {
+  const waiting = exploreWaiting
+  if (!waiting || waiting.starting || !snapshot?.exploreFree) return
+  waiting.starting = true
+  paintStrip()
+  const capture = (await recapture(waiting.frame, waiting.request.anchor)) ?? waiting.request.capture
+  await reportPageStorage()
+  const res = await api('/explore/start', {
+    method: 'POST',
+    body: JSON.stringify({ ...waiting.request, capture }),
+  })
+  const body = (await res.json().catch(() => ({}))) as { exploreId?: string; busy?: boolean }
+  if (res.status === 409 && body.busy) {
+    // Something reached the main line first; the next free snapshot tries again.
+    waiting.starting = false
+    paintStrip()
+    return
+  }
+  exploreWaiting = null
+  paintCanExplore()
+  paintStrip()
+  if (!res.ok) {
+    // Nothing to wait for, so the comment comes straight back rather than
+    // staying hidden behind a round that never started.
+    stripNotice('這個 agent 現在無法執行探索')
+    endExploreIn()
+    return
+  }
+  // What the held comment is waiting on, so any ending at all can release it.
+  if (exploreHold && body.exploreId) exploreHold = { ...exploreHold, round: body.exploreId }
+}
+
 /** What each frame currently has standing in it, so a repaint only posts the
  *  swaps that actually changed. Without it every snapshot - and they arrive on
  *  every keystroke the agent streams - would re-swap the page under the user. */
@@ -1092,15 +1221,24 @@ let stripDrawn: string | null = null
 
 function paintStrip(): void {
   const rounds = liveExplores()
-  strip.hidden = rounds.length === 0
-  const signature = JSON.stringify([currentChatId(), snapshot?.agentBusy ?? false, rounds])
+  const waiting = shownWaiting()
+  strip.hidden = rounds.length === 0 && !waiting
+  const signature = JSON.stringify([
+    currentChatId(),
+    snapshot?.agentBusy ?? false,
+    rounds,
+    waiting?.request.anchor ?? null,
+  ])
   if (signature === stripDrawn) return
   stripDrawn = signature
   const focused = document.activeElement
   const chip = focused instanceof HTMLElement && strip.contains(focused) ? focused : null
   const heldRound = chip?.closest<HTMLElement>('[data-round]')?.dataset.round
   const heldChoice = chip?.dataset.choice
-  strip.replaceChildren(...rounds.map((round) => roundPill(round)))
+  strip.replaceChildren(
+    ...rounds.map((round) => roundPill(round)),
+    ...(waiting ? [waitingPill(waiting)] : []),
+  )
   // Rebuilt whole, so the chip being chosen with the arrow keys has to be handed focus back.
   if (heldRound === undefined || heldChoice === undefined) return
   strip
@@ -1848,7 +1986,7 @@ function rebuildStage(): void {
   grid.replaceChildren()
   frames.clearApps()
   const showing = stagedApp !== null
-  grid.hidden = !showing
+  grid.hidden = !showing || appDown()
   paintShown()
   if (!showing) {
     // The overlays that reported the mode are gone with their frames.
@@ -1927,12 +2065,64 @@ const noteAttach = attachify({
       enabled: () => !!snapshot?.acp,
       run: () => document.execCommand('insertText', false, '$'),
     },
+    {
+      id: 'target',
+      label: 'Place',
+      hint: '輸入 # 指定結果放到哪',
+      keywords: ['place', 'target', 'destination', 'app', 'canvas', '#', '放到', '位置', '畫布'],
+      icon: HashtagIcon as IconNode,
+      enabled: () => targetCommands().length > 0,
+      run: () => document.execCommand('insertText', false, '#'),
+    },
   ],
   skills: () => fetchSkills(),
+  targets: () => targetCommands(),
   chooseLibrary: () => chooseLibraryAttachments(API),
 })
 const note = noteAttach.editable
 note.title = '寫補充說明（N）'
+
+/** Up and Down in the note box, through what was sent from it - see `recall.ts`. */
+let recall: RecallState = RECALL_START
+/** What was sent, newest first. Asked for on the way into the box and dropped on
+ *  every send, so the first Up always finds the message just sent. */
+let recalled: Promise<DraftNode[][]> | null = null
+
+function loadRecalled(): Promise<DraftNode[][]> {
+  recalled ??= api('/sent-notes')
+    .then((res) => (res.ok ? (res.json() as Promise<SentNoteWire[]>) : []))
+    .then(recallHistory)
+    .catch(() => {
+      recalled = null
+      return []
+    })
+  return recalled
+}
+
+note.addEventListener('focus', () => void loadRecalled())
+note.addEventListener('keydown', (e) => {
+  if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return
+  if (e.defaultPrevented || e.isComposing || e.shiftKey || e.altKey || e.metaKey || e.ctrlKey) return
+  const key = e.key === 'ArrowUp' ? 'up' : 'down'
+  const box = noteAttach.snapshot()
+  // Up leaves the box from its first line and Down from its last, so a long
+  // message is still walked line by line. A recalled one untouched is not the
+  // user's to walk, and goes on through the history from anywhere in it.
+  if (key === 'down' && recall.at < 0) return
+  const edge = noteAttach.caretOnEdgeLine(key === 'up' ? 'first' : 'last')
+  if (!edge && !showingRecalled(recall, box)) return
+  e.preventDefault()
+  void loadRecalled().then((history) => {
+    // Typed into while the list was on its way: that press is stale.
+    if (draftKey(noteAttach.snapshot()) !== draftKey(box)) return
+    const move = recallMove(recall, box, key, history)
+    if (!move) return
+    if (isBlankDraft(move.body)) noteAttach.reset()
+    else noteAttach.restore(move.body)
+    recall = move.state.at < 0 ? move.state : { ...move.state, shown: draftKey(noteAttach.snapshot()) }
+  })
+})
+
 /** The sidebar composer a pick started from is waiting in: the note box, or the
  *  queued annotation being edited. */
 let pickComposer: AttachController = noteAttach
@@ -2104,9 +2294,10 @@ async function openResume(): Promise<void> {
     row.addEventListener('pointerenter', () => pointAtResumeRow(row))
     row.addEventListener('focus', () => pointAtResumeRow(row))
     row.title = chat.entries ? `${chat.entries} 則` : '尚無內容'
-    row.onclick = () => {
+    row.onclick = async () => {
       closeResume()
-      if (!chat.current) void switchChat(chat.id)
+      if (chat.current || !(await confirmLeaveBranch('確定要離開探索？', '切換對話'))) return
+      await switchChat(chat.id)
     }
     resumeList.append(row)
     return row
@@ -2610,18 +2801,24 @@ const morePicker = BRANCHES_REACHABLE ? branchPicker(forkMore, 'ez-fork-more-men
  *  choice is the user's: they can see the turn running, and leaving it is a
  *  perfectly ordinary thing to decide. */
 async function leaveBranch(toChatId: string): Promise<void> {
-  const ok = await askConfirm({
+  if (!(await confirmLeaveBranch('確定要回主對話？', '回主對話'))) return
+  await switchChat(toChatId)
+}
+
+/** Every way off a branch asks this, `/new` and `/resume` included: each one
+ *  ends the round and takes its variants with it. Nothing to ask on the main line. */
+async function confirmLeaveBranch(title: string, go: string): Promise<boolean> {
+  if (!onBranch) return true
+  return await askConfirm({
     // Keyed on the act. The body says one clause more when a turn is running,
     // but it is the same decision either way, so answering it once answers it.
     key: 'leave-branch',
-    title: '確定要回主對話？',
+    title,
     body: snapshot?.agentBusy
-      ? '回去會立刻停下 agent，這一輪探索就此結束，之後無法再回到這個對話。'
-      : '這一輪探索就此結束，之後無法再回到這個對話。',
-    go: '回主對話',
+      ? '離開會立刻停下 agent，這一輪探索的結果會消失，之後也無法再回到這個對話。'
+      : '這一輪探索的結果會消失，之後也無法再回到這個對話。',
+    go,
   })
-  if (!ok) return
-  await switchChat(toChatId)
 }
 
 forkRoot.onclick = () => {
@@ -2716,6 +2913,17 @@ const convList = h('div', 'ez-conv')
 const convScroll = h('div', 'ez-fade ez-conv-scroll')
 convScroll.appendChild(convList)
 
+const newMessagesPill = h('button', 'ez-new-messages')
+newMessagesPill.type = 'button'
+newMessagesPill.hidden = true
+newMessagesPill.append(icon(ArrowDown02Icon as IconNode, 13), h('span', undefined, '新訊息'))
+const threadFollow = followBottom(convList, (unread) => {
+  newMessagesPill.hidden = !unread
+})
+newMessagesPill.onclick = () => threadFollow.jump(!matchMedia('(prefers-reduced-motion: reduce)').matches)
+new ResizeObserver(() => threadFollow.resized()).observe(convList)
+const convFoot = h('div', 'ez-conv-foot')
+
 const forkSep = h('span', 'ez-fork-sep')
 forkSep.append(icon(ChevronRightIcon as IconNode, 10))
 forkBar.append(forkRoot, forkSep, forkChip)
@@ -2724,7 +2932,8 @@ if (morePicker) forkBar.append(forkMore, morePicker.menu)
 // Above the thread and in the flow, so the conversation starts below it rather
 // than under it: a breadcrumb is where you *are*, which is part of the page
 // rather than something floating over it.
-convSection.append(forkBar, convScroll, notices)
+convFoot.append(newMessagesPill, notices)
+convSection.append(forkBar, convScroll, convFoot)
 
 const resizer = h('div', 'ez-resizer')
 resizer.tabIndex = 0
@@ -3187,7 +3396,7 @@ resizer.addEventListener('keydown', (e) => {
 // ---------------------------------------------------------------- behavior
 
 function sendMode(mode: Mode): void {
-  if ((stagedApp === null || daemonGone) && mode !== 'off') return
+  if (mode !== 'off' && !canAnnotate()) return
   // A pick and a mode change cannot both be in flight: `setMode` in the overlay
   // tears the popup down, and the pick is what would be answering into it.
   abortPick('mode')
@@ -3390,6 +3599,7 @@ function canvasPorts(): Parameters<typeof installCanvas>[0] {
     api,
     onTabShown: (tab) => {
       deviceRow.hidden = stagedApp === null || tab !== 'app'
+      paintAnnotateAvailability()
       paintDevServer()
       if (tab === 'app') paintFrames()
       paintPage()
@@ -3516,6 +3726,7 @@ async function sendBatch(): Promise<void> {
   const references = noteAttach.refs()
   const text = noteAttach.text()
   const skills = noteAttach.skills()
+  const target = noteAttach.target()
   // A skill on its own is a request: "run this over what you can see" needs no
   // annotation and no note.
   if (
@@ -3541,13 +3752,18 @@ async function sendBatch(): Promise<void> {
         attachments,
         references,
         ...(skills.length ? { skills } : {}),
+        ...(target ? { target } : {}),
         ...(canvasUi ? { view: canvasUi.batchView(nav.url) } : {}),
       }),
     })
     // Reset, not discard: the batch owns these files now. The skill chip goes
     // with the rest of the box - it was this batch's, and a later one that wants
     // it can say so.
-    if (res.ok) noteAttach.reset()
+    if (res.ok) {
+      noteAttach.reset()
+      recalled = null
+      recall = RECALL_START
+    }
   } finally {
     // Restored even when the request threw: the note and its chips are still
     // there, so the send has to stay retryable.
@@ -3655,11 +3871,12 @@ async function cancelTurn(): Promise<void> {
 }
 
 /** Throw away the agent's context and carry on in a fresh session. No
- *  confirmation: the thread keeps every word of the review either way, and what
- *  is being dropped is the agent's memory of it - which is what the user just
- *  asked to drop. */
+ *  confirmation on the main line: the thread keeps every word of the review either
+ *  way, and what is being dropped is the agent's memory of it - which is what the
+ *  user just asked to drop. On a branch it also ends the round, so that asks. */
 async function newChat(): Promise<void> {
   if (!snapshot?.acp) return
+  if (!(await confirmLeaveBranch('確定要離開探索？', '開新對話'))) return
   await api('/acp/new', { method: 'POST' })
 }
 
@@ -3903,6 +4120,33 @@ async function fetchSkills(): Promise<SlashCommand[]> {
     description: skill.description,
     run: () => noteAttach.insertSkill(skill.name),
   }))
+}
+
+/** What `#` offers: the places a batch's result can go. Only with canvas tools -
+ *  without them the app is the only place there is, and a choice of one is not
+ *  a choice. Asked on every keystroke behind the `#`, so a canvas made a moment
+ *  ago is already on the list. */
+function targetCommands(): SlashCommand[] {
+  if (!snapshot?.canvas.agentHasTools) return []
+  const offer = (target: BatchTarget, hint: string, keywords: string[]): SlashCommand => ({
+    // Never the canvas id: it is hex, and `#a1b2c3` typed as a colour would
+    // match the canvas whose id happens to start that way.
+    id: target.kind === 'canvas' ? target.label : target.kind,
+    label: target.label,
+    hint,
+    keywords,
+    run: () => noteAttach.insertTarget(target),
+  })
+  const canvases = snapshot.canvas.canvases
+    .filter((c) => !c.archived)
+    .sort((a, b) => a.createdAt - b.createdAt)
+  return [
+    ...(snapshot.app ? [offer({ kind: 'app', label: 'App' }, '改到實際的 app', ['app', '網站', '頁面', '程式'])] : []),
+    ...canvases.map((c) =>
+      offer({ kind: 'canvas', canvasId: c.id, label: c.name }, 'canvas', ['canvas', '畫布']),
+    ),
+    offer({ kind: 'new-canvas', label: '新 canvas' }, '建立新的 canvas', ['new', 'canvas', '新', '畫布']),
+  ]
 }
 
 // --------------------------------------------------------------- chat picker
@@ -4182,7 +4426,9 @@ function paintQueue(annotations: AnnotationWire[]): void {
   annotations.forEach((a, i) => {
     const li = h('li', 'ez-queue-item')
     const head = h('div', 'ez-qi-head')
-    head.append(h('span', 'ez-qi-num', String(i + 1)), h('span', 'ez-qi-label', annotationLabel(a)))
+    const label = h('span', 'ez-qi-label', annotationLabel(a))
+    if (a.anchor.contains?.length) label.title = a.anchor.contains.join('\n')
+    head.append(h('span', 'ez-qi-num', String(i + 1)), label)
     // A chip, not part of the label: the label ellipsizes, and the width is the
     // one detail that must never be the thing that gets cut off.
     const vp = a.anchor.viewport
@@ -4222,7 +4468,7 @@ function paintQueue(annotations: AnnotationWire[]): void {
     li.append(head)
     const row = commentEl(
       a.comment,
-      a.references,
+      a.references?.map(referenceEcho),
       a.attachments?.map((f) => (f.origin ? { name: f.name, pick: f.origin.pick } : f.name)),
       'ez-qi-comment',
     )
@@ -4242,6 +4488,7 @@ function paintQueue(annotations: AnnotationWire[]): void {
 
 function annotationLabel(a: AnnotationWire): string {
   const parts: string[] = []
+  if (a.anchor.contains?.length) parts.push(`選取 ${a.anchor.contains.length} 項`)
   // In a canvas frame the source is a long path into `.ezdesign/`: the frame's
   // title and the line say the same thing in fewer characters.
   const frame = a.anchor.frame && canvasUi?.frameTitle(a.anchor.frame)
@@ -4312,6 +4559,7 @@ function buildSaid(entry: ConversationWire, isUser: boolean): HTMLElement {
     entry.attachments,
     items.length ? 'ez-bubble-note' : undefined,
     entry.skills,
+    entry.target,
   )
   if (entry.text || entry.references?.length || entry.attachments?.length) {
     said.appendChild(note.box)
@@ -4327,7 +4575,7 @@ function buildSaid(entry: ConversationWire, isUser: boolean): HTMLElement {
 function chipEl(
   name: string,
   glyph: IconNode | null,
-  kind?: 'ref' | 'skill',
+  kind?: 'ref' | 'skill' | 'library' | 'target',
   title?: string,
 ): HTMLElement {
   const chip = h('span', kind ? `ez-chip ez-chip-${kind}` : 'ez-chip')
@@ -4337,12 +4585,22 @@ function chipEl(
   return chip
 }
 
-const refChipEl = (n: number, label: string) =>
-  chipEl(refChipText(n), AlignSelectionIcon as IconNode, 'ref', label)
+/** Drawn as the composer drew it - see `refChip` in `attach.ts`. */
+function refChipEl(ref: ReferenceEcho): HTMLElement {
+  const chip = chipEl(
+    refChipText(ref.n, !!ref.variant),
+    (ref.variant ? MagicWand01Icon : AlignSelectionIcon) as IconNode,
+    'ref',
+    [ref.variant, ref.label].filter(Boolean).join(' · '),
+  )
+  if (ref.variant) chip.classList.add('ez-chip-chosen')
+  return chip
+}
 
 /** The same token the composer writes into the box, read back. No glyph, because
  *  it is the same thing it was when it was typed - and the `$` is what says so. */
 const skillChipEl = (name: string) => chipEl(`$${name}`, null, 'skill')
+const targetChipEl = (target: BatchTarget) => chipEl(`#${target.label}`, null, 'target')
 
 /** Only for files the comment did not place - see `commentEl`. */
 function fileChips(names: string[]): HTMLElement | null {
@@ -4370,10 +4628,11 @@ function commentEl(
   files: FileEcho[] | undefined,
   className?: string,
   skills?: string[],
+  target?: BatchTarget,
 ): { box: HTMLElement; unplacedFiles: string[] } {
   const box = h('div', className)
   const numbered = new Map(
-    (refs ?? []).flatMap((r) => (typeof r === 'string' ? [] : [[r.n, r.label] as const])),
+    (refs ?? []).flatMap((r) => (typeof r === 'string' ? [] : [[r.n, r] as const])),
   )
   const echoes = files ?? []
   const names = echoes.map(echoName)
@@ -4391,9 +4650,15 @@ function commentEl(
     }
     if (part.t === 'pick') {
       for (const n of part.files) placedFiles.add(n)
-      const chip = chipEl(pickChipText(++picks), Album02Icon as IconNode)
+      const chip = chipEl(pickChipText(++picks), Album02Icon as IconNode, 'library')
       chip.title = part.files.map((n) => names[n - 1]).join('\n')
       box.appendChild(chip)
+      continue
+    }
+    if (part.t === 'target') {
+      box.appendChild(
+        target && part.n === 1 ? targetChipEl(target) : document.createTextNode(targetMarker(part.n)),
+      )
       continue
     }
     if (part.t === 'skill') {
@@ -4415,15 +4680,15 @@ function commentEl(
       box.appendChild(chipEl(name, File02Icon as IconNode))
       continue
     }
-    const label = numbered.get(part.n)
+    const ref = numbered.get(part.n)
     // A marker naming nothing stays as it was written: silently dropping it
     // would lose the fact that the user pointed at something here.
-    if (label === undefined) {
+    if (ref === undefined) {
       box.appendChild(document.createTextNode(refMarker(part.n)))
       continue
     }
     placedRefs.add(part.n)
-    box.appendChild(refChipEl(part.n, label))
+    box.appendChild(refChipEl(ref))
   }
   // Anything the text did not name still has to be seen. A legacy echo has no
   // number to read, so it falls back to the label it does have.
@@ -4431,7 +4696,7 @@ function commentEl(
     if (typeof r === 'string') {
       box.appendChild(chipEl(r, AlignSelectionIcon as IconNode, 'ref'))
     } else if (!placedRefs.has(r.n)) {
-      box.appendChild(refChipEl(r.n, r.label))
+      box.appendChild(refChipEl(r))
     }
   }
   return {
@@ -4515,14 +4780,44 @@ function paintStatus(): void {
   if (text) statusPill.textContent = text
 }
 
-function paintAnnotateAvailability(): void {
-  const off = snapshot?.state === 'ended' || daemonGone || stagedApp === null
-  for (const { btn } of annotateBtns) btn.disabled = off
+/** Something on screen to annotate: the App's previews, or a canvas's frames
+ *  - which need no app at all. */
+function canAnnotate(): boolean {
+  if (snapshot?.state === 'ended' || daemonGone) return false
+  const tab = canvasUi?.activeTab
+  return stagedApp !== null || (tab != null && tab !== 'app')
 }
 
+function paintAnnotateAvailability(): void {
+  const off = !canAnnotate()
+  for (const { btn } of annotateBtns) btn.disabled = off
+  if (off && annotateMode !== 'off') {
+    sendMode('off')
+    // The guests that armed it may be gone, and with them the report of `off`.
+    annotateMode = 'off'
+    paintAnnotateMode()
+  }
+}
+
+/** Hoisted: `rebuildStage` asks while this module is still initialising. */
+function appDown(): boolean {
+  return stagedApp !== null && snapshot?.appDown === true
+}
+
+/** A dead app's previews give way to the dev server card, which can start it
+ *  again; once it answers they come back, reloaded off the error page. */
 function paintDevServer(): void {
   if (!snapshot) return
-  devServerPanel.update(snapshot.devServer, { shown: stagedApp !== null, onAppTab: canvasUi?.activeTab === 'app' })
+  const down = appDown()
+  devServerPanel.update(snapshot.devServer, {
+    shown: stagedApp !== null,
+    onAppTab: canvasUi?.activeTab === 'app',
+    appDown: down,
+    origin: snapshot.app ?? '',
+  })
+  grid.hidden = stagedApp === null || down
+  if (wasDown && !down) for (const guest of frames.apps()) guest.iframe.contentWindow?.location.reload()
+  wasDown = down
 }
 
 function render(): void {
@@ -4551,7 +4846,8 @@ function render(): void {
   settleHold()
   paintFork(s)
   pushThread(s)
-  frames.postAll({ type: 'ez:can-explore', on: s.canExplore === true })
+  paintCanExplore()
+  void pumpExplore()
   // The page is standing in an explore rather than showing the review's own
   // line. The page is told because it withdraws `/explore` while it is true; the
   // line that says so is drawn out here, on the frame's own edge.
@@ -4598,6 +4894,39 @@ function render(): void {
   digests.observe(s.pendingVideos ?? [])
   paintVideos()
 
+  threadFollow.rerender(() => paintThread(s), threadChange(s))
+  paintConvFades()
+}
+
+interface ThreadSeen {
+  chat: string | undefined
+  entries: number
+  lastSent: number | undefined
+  ask: string | undefined
+}
+
+/** What the thread last showed, so a re-render can tell what it brought. */
+let threadSeen: ThreadSeen | null = null
+
+function threadChange(s: SnapshotWire): ThreadChange {
+  let lastSent: number | undefined
+  for (const entry of s.conversation) if (entry.role === 'user') lastSent = entry.ts
+  const seen: ThreadSeen = {
+    chat: s.chats?.find((c) => c.current)?.id,
+    entries: s.conversation.length,
+    lastSent,
+    ask: s.acp?.ask?.id,
+  }
+  const was = threadSeen
+  threadSeen = seen
+  // The daemon logs a user entry the moment it is sent, so a new one is the
+  // user's own message - which they expect to see land.
+  if (!was || was.chat !== seen.chat || was.lastSent !== seen.lastSent) return 'follow'
+  if (seen.entries > was.entries || (seen.ask && seen.ask !== was.ask)) return 'arrived'
+  return 'same'
+}
+
+function paintThread(s: SnapshotWire): void {
   convList.textContent = ''
   let prevRole: string | null = null
   // Placed where the log says, except that an answer goes under its own question -
@@ -4652,9 +4981,6 @@ function render(): void {
       h('div', 'ez-msg-system ez-msg-system-plain', `agent 已離線：${s.acp.error}`),
     )
   }
-
-  convList.scrollTop = convList.scrollHeight
-  paintConvFades()
 }
 
 /** The turn in flight, drawn where its finished reply will be - so the reply does
@@ -5048,29 +5374,23 @@ window.addEventListener('message', (e: MessageEvent) => {
     // variants. The shell owns the request because it is the one holding the
     // session's api - and the one that can say why it was refused.
     case 'ez:explore':
-      void (async () => {
-        await reportPageStorage()
-        const res = await api('/explore/start', {
-          method: 'POST',
-          body: JSON.stringify({
-            anchor: msg.anchor,
-            capture: msg.capture,
-            direction: msg.direction,
-            attachments: msg.attachments,
-            references: msg.references,
-          }),
-        })
-        if (!res.ok) {
-          // Nothing to wait for, so the comment comes straight back rather than
-          // staying hidden behind a round that never started.
-          stripNotice('這個 agent 現在無法執行探索')
-          endExploreIn()
-          return
-        }
-        // What the held comment is waiting on, so any ending at all can release it.
-        const { exploreId } = (await res.json()) as { exploreId?: string }
-        if (exploreHold && exploreId) exploreHold = { ...exploreHold, round: exploreId }
-      })()
+      if (exploreWaiting) return
+      exploreWaiting = {
+        frame: from,
+        request: {
+          anchor: msg.anchor as AnchorWire,
+          capture: msg.capture,
+          direction: msg.direction,
+          attachments: msg.attachments,
+          references: msg.references,
+        },
+      }
+      paintCanExplore()
+      paintStrip()
+      void pumpExplore()
+      return
+    case 'ez:recaptured':
+      recaptures.get(msg.reqId)?.(msg.capture)
       return
     case 'ez:ready': {
       // A canvas frame is one document: it has no page for the review to follow.
@@ -5084,7 +5404,7 @@ window.addEventListener('message', (e: MessageEvent) => {
       frames.post(from, { type: 'ez:set-mode', mode: annotateMode })
       // A fresh page has none of this: whether it may offer the command, and what
       // is meant to be standing in place of what.
-      frames.post(from, { type: 'ez:can-explore', on: snapshot?.canExplore === true })
+      frames.post(from, { type: 'ez:can-explore', on: snapshot?.canExplore === true && !exploreWaiting })
       frames.post(from, {
         type: 'ez:in-explore',
         on: !!snapshot?.chats?.find((c) => c.current)?.parentChatId,
@@ -5164,7 +5484,13 @@ document.addEventListener('keydown', (e) => {
   if (runShortcut(e, typing)) e.preventDefault()
   else if (!typing && !libraryShown && canvasUi?.onKeyDown(e)) e.preventDefault()
 })
-document.addEventListener('keyup', (e) => canvasUi?.onKeyUp(e))
+document.addEventListener('keyup', (e) => {
+  // A Shift+click on the page does not take focus from the shell, so the overlay
+  // gathering under it never hears the key come up.
+  // A pick from the note box runs with no mode armed.
+  if (e.key === 'Shift' && (annotateMode !== 'off' || pickState)) frames.postAll({ type: 'ez:shift-up' })
+  canvasUi?.onKeyUp(e)
+})
 
 /** The version of the daemon this page's scripts came from. The shell's assets
  *  are the daemon's, so a snapshot from another version means the port changed

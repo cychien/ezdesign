@@ -8,7 +8,11 @@
  *  Prompt vocabulary:
  *    NOVARIANTS  in an explore turn, send no variant at all
  *    SLOW      park the turn until cancelled, then stop with `cancelled` - in an
- *              explore turn, after its variants have been sent
+ *              explore turn, after its variants have been sent. A steer
+ *              without SLOW in it ends the parked turn instead, with `end_turn`
+ *    LATESTART <ms>  take that long to get the turn under way, during which a
+ *              steer finds nothing to join
+ *    QUIET     say nothing of the prompt itself - with SLOW, a turn parked silent
  *    CHUNKS    stream CHUNK_COUNT message chunks back-to-back, then end the turn
  *    CONFIGPUSH  push a `config_option_update` nobody asked for, then end the turn
  *    MODEPUSH  push a bare `current_mode_update`, then end the turn
@@ -22,6 +26,7 @@
  *       EZ_FAKE_NO_FORK       do not advertise session/fork
  *       EZ_FAKE_REFUSE_FORK   advertise it, then refuse every fork
  *       EZ_FAKE_NO_MCP        do not advertise mcpCapabilities.http
+ *       EZ_FAKE_NO_STEER      do not advertise the `_session/steering` extension
  *    REPORT    reply with {opened, closed, prompts, log} as JSON
  *    else      reply with `<sessionId>:<prompt>` and stop with `end_turn` */
 
@@ -43,6 +48,8 @@ const prompts = []
  *  session, rather than merely at some point during it. */
 const log = []
 const turns = new Map()
+/** The steer handler of the turn each session is parked in, if it is. */
+const parked = new Map()
 
 /** Mirrors the shape a real agent reports: a select whose choice reshapes the
  *  rest, a mode carrying the spec's `mode` category, and a boolean. `fast` is
@@ -74,6 +81,7 @@ const refuseFork = !!process.env.EZ_FAKE_REFUSE_FORK
 /** Whether this agent can reach an HTTP MCP server, which is what decides
  *  whether the client offers it any. */
 const mcpHttp = !process.env.EZ_FAKE_NO_MCP
+const canSteer = !process.env.EZ_FAKE_NO_STEER
 /** Where the sessions this agent has live, when a test wants them to outlast the
  *  process. A real agent keeps transcripts on disk, which is the whole reason a
  *  restarted daemon can resume one; an agent that forgot them on exit would make
@@ -223,6 +231,7 @@ const app = agent({ name: 'fake-acp-agent' })
         },
         ...(mcpHttp ? { mcpCapabilities: { http: true } } : {}),
       },
+      ...(canSteer ? { _meta: { steering: { supported: true } } } : {}),
     }
   })
   .onRequest(methods.agent.session.new, (ctx) => {
@@ -298,6 +307,21 @@ const app = agent({ name: 'fake-acp-agent' })
     // session is still resumable, which is exactly the daemon-restart case.
     return {}
   })
+  // The steering extension as both real adapters answer it. One without the
+  // `promptRequired` opt-in would start a turn of its own, which no client here
+  // could follow, so it is refused outright.
+  .onRequest('_session/steering', { parse: (params) => params }, async (ctx) => {
+    const { sessionId, prompt, _meta } = ctx.params
+    const text = prompt.map((b) => (b.type === 'text' ? b.text : '')).join('')
+    log.push(`steer:${sessionId}`)
+    if (!canSteer) throw new Error('Method not found')
+    if (_meta?.steering?.idleBehavior !== 'promptRequired') throw new Error('no idle fallback asked for')
+    const turn = parked.get(sessionId)
+    if (!turn) return { outcome: 'promptRequired', reason: 'noRunningTurn' }
+    prompts.push({ sessionId, text, steered: true })
+    turn(text)
+    return { outcome: 'injected' }
+  })
   .onNotification(methods.agent.session.cancel, (ctx) => {
     turns.get(ctx.params.sessionId)?.abort()
   })
@@ -310,6 +334,13 @@ const app = agent({ name: 'fake-acp-agent' })
     const turn = new AbortController()
     turns.set(sessionId, turn)
     const text = prompt.map((b) => (b.type === 'text' ? b.text : '')).join('')
+    const lateStart = /LATESTART (\d+)/.exec(text)
+    if (lateStart) {
+      await new Promise((resolve) => {
+        const timer = setTimeout(resolve, Number(lateStart[1]))
+        turn.signal.addEventListener('abort', () => (clearTimeout(timer), resolve()), { once: true })
+      })
+    }
     const say = (t) =>
       ctx.client.notify(methods.client.session.update, {
         sessionId,
@@ -522,17 +553,33 @@ const app = agent({ name: 'fake-acp-agent' })
     prompts.push({ sessionId, text })
     turned.add(sessionId)
     log.push(`prompt:${sessionId}`)
-    await say(`${sessionId}:${text}`)
+    if (!text.includes('QUIET')) await say(`${sessionId}:${text}`)
     if (!text.includes('SLOW')) return { stopReason: 'end_turn' }
-    return await park(turn.signal)
+    return await park(turn.signal, sessionId, say)
   })
 
-/** Hold the turn open until the client cancels it, if it has not already. */
-async function park(signal) {
-  if (!signal.aborted) {
-    await new Promise((resolve) => signal.addEventListener('abort', resolve, { once: true }))
-  }
-  return { stopReason: 'cancelled' }
+/** Hold the turn open until the client cancels it, if it has not already. With
+ *  a session and a way to speak, a steer joins it: the turn answers the steered
+ *  text and ends, unless that text asks for SLOW too. */
+async function park(signal, sessionId, say) {
+  if (signal.aborted) return { stopReason: 'cancelled' }
+  return await new Promise((resolve) => {
+    const done = (stopReason) => {
+      parked.delete(sessionId)
+      resolve({ stopReason })
+    }
+    signal.addEventListener('abort', () => done('cancelled'), { once: true })
+    if (!sessionId) return
+    // Answered after the steer's response has gone out, the way a real agent's
+    // words for it follow the request that put it in.
+    parked.set(sessionId, (text) => {
+      setImmediate(() => {
+        void say(`${sessionId}:steered:${text}`).then(() => {
+          if (!text.includes('SLOW')) done('end_turn')
+        })
+      })
+    })
+  })
 }
 
 const stream = ndJsonStream(Writable.toWeb(process.stdout), Readable.toWeb(process.stdin))

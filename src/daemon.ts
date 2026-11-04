@@ -55,7 +55,9 @@ import { ProjectHub } from './projects/hub.js'
 import { homePageRouter, projectsApiRouter } from './projects/routes.js'
 import { projectRoot } from './project-root.js'
 import {
+  type TargetRequest,
   attachmentIds,
+  parseBatchTarget,
   parseBatchView,
   parseReferences,
   sanitizeAnchor,
@@ -90,7 +92,7 @@ import {
 } from './preferences.js'
 import { readInspireToken } from './credentials.js'
 import type { AttachmentLocator } from './label.js'
-import { attachmentEcho, shortAnchor, toAgentAttachments, toAgentItem, toConversationItem } from './label.js'
+import { attachmentEcho, referenceEcho, shortAnchor, toAgentAttachments, toAgentItem, toConversationItem } from './label.js'
 import { type IncomingVariant, ExploreMcp, MCP_ROUTE, isExploreTool } from './mcp-explore.js'
 import type {
   Anchor,
@@ -100,6 +102,8 @@ import type {
   ExploreCapture,
   ExploreState,
   ExploreStatus,
+  BatchTarget,
+  FeedbackBatch,
   PollResult,
   Reference,
   SessionEndedBy,
@@ -264,10 +268,15 @@ interface SnapshotWire {
    *  advertised, so the page is told rather than left to guess: a command in the
    *  menu that always fails is worse than one that is not offered. */
   canExplore?: true
+  /** One asked for now would start now. A round moves the one agent off the main
+   *  line, so an explore asked for while the main line has work in hand waits. */
+  exploreFree?: true
   /** ACP mode only: the harness reaches the agent through this daemon's prompts. */
   designHarness?: boolean
   devServer: DevServerWire
   appTab: boolean
+  /** The attached app stopped answering the proxy. */
+  appDown?: true
   project: string
 }
 
@@ -323,11 +332,13 @@ async function listenOn(app: express.Express, candidates: number[]): Promise<Ser
   throw lastError instanceof Error ? lastError : new Error('no port available')
 }
 
+type FeedbackPayload = Extract<PollResult, { type: 'feedback' }>
+
 /** The batch as one prompt turn. The JSON is exactly what `poll` prints, so an
  *  agent that knows the skill reads it unchanged; the preamble covers one that
  *  has never seen ezdesign. */
 function acpPrompt(
-  feedback: Extract<PollResult, { type: 'feedback' }>,
+  feedback: FeedbackPayload,
   skills: string[],
   agent: string,
   truth: Truth,
@@ -339,29 +350,8 @@ function acpPrompt(
   canvas: string[] = [],
 ): string {
   if (feedback.setup) return setupPrompt(truth, feedback.url, language)
-  // The markers the composer left behind, spent now that the agent is known. The
-  // record keeps `[skill n]`, which belongs to nobody; what goes over the wire is
-  // the name in the language this agent reads.
-  const named = (text: string | null): string | null =>
-    text === null ? null : spendSkillMarkers(text, skills, agent)
-  const spoken: typeof feedback = {
-    ...feedback,
-    note: named(feedback.note),
-    items: feedback.items.map((item) => ({
-      ...item,
-      comment: named(item.comment) ?? item.comment,
-    })),
-  }
   return [
-    // The first one, hoisted. The agent expands a leading slash command itself,
-    // so this is an invocation rather than a request to consider one - and its
-    // own line, because the expansion takes the rest of the first line as the
-    // command's argument. Only the first: a second leading command is swallowed
-    // as that argument, measured against the real agent, which read two as
-    // "invoke alpha-probe with a `/beta-probe` argument" and ran neither. The
-    // rest still reach the agent, named in the user's own sentence below, where
-    // they read as what they are - something the user asked for.
-    ...(skills.length ? [`${skillPrefix(agent)}${skills[0]}`, ''] : []),
+    ...invokedSkill(skills, agent),
     // Must precede the batch: a missing file's brief says "before you act on the batch below".
     ...(() => {
       const brief = truthBrief(truth, SKILL_DIR, inspireAccess(), effort)
@@ -396,7 +386,64 @@ function acpPrompt(
     'Do not stash, checkout, reset or commit in this repository unless the user asks; verify your',
     'changes in place.',
     '',
-    JSON.stringify(spoken, null, 2),
+    JSON.stringify(spokenFeedback(feedback, skills, agent), null, 2),
+  ].join('\n')
+}
+
+/** The first skill the batch named, hoisted. The agent expands a leading slash
+ *  command itself, so this is an invocation rather than a request to consider
+ *  one - and its own line, because the expansion takes the rest of the first line
+ *  as the command's argument. Only the first: a second leading command is
+ *  swallowed as that argument, measured against the real agent, which read two
+ *  as "invoke alpha-probe with a `/beta-probe` argument" and ran neither. The
+ *  rest still reach the agent, named in the user's own sentence, where they read
+ *  as what they are - something the user asked for. */
+function invokedSkill(skills: string[], agent: string): string[] {
+  return skills.length ? [`${skillPrefix(agent)}${skills[0]}`, ''] : []
+}
+
+/** The batch with the markers the composer left behind spent, now that the
+ *  agent is known. The record keeps `[skill n]`, which belongs to nobody; what
+ *  goes over the wire is the name in the language this agent reads. */
+function spokenFeedback(feedback: FeedbackPayload, skills: string[], agent: string): FeedbackPayload {
+  // `[target 1]` is spent here too, as what the user typed: the brief says what
+  // it asks for, and the sentence reads as they wrote it.
+  const target = feedback.target
+  const named = (text: string | null): string | null =>
+    text === null
+      ? null
+      : spendSkillMarkers(text, skills, agent).replace(TARGET_MARKER, target ? `#${target.label}` : '')
+  return {
+    ...feedback,
+    note: named(feedback.note),
+    items: feedback.items.map((item) => ({
+      ...item,
+      comment: named(item.comment) ?? item.comment,
+    })),
+  }
+}
+
+/** A batch sent while the agent is still on an earlier one, steered into that
+ *  turn. The turn's own prompt already said how to read a batch and what not to
+ *  touch, so this says only what is new: there is more, and it may turn the
+ *  work in another direction. */
+function steerPrompt(
+  feedback: FeedbackPayload,
+  skills: string[],
+  agent: string,
+  language: string,
+  canvas: string[],
+): string {
+  return [
+    ...invokedSkill(skills, agent),
+    'While you were working, the user sent another feedback batch. Read it now, the same way as',
+    'the first. Where it conflicts with what you are doing, it wins: change course rather than',
+    'finishing work it overrides. Then carry on until both batches are handled, and when you are',
+    'done, reply with what you changed for both, item by item, one short line each.',
+    ...canvas,
+    language,
+    '',
+    JSON.stringify(spokenFeedback(feedback, skills, agent), null, 2),
   ].join('\n')
 }
 
@@ -636,14 +683,26 @@ function exploreFollowUpPrompt(
   ].join('\n')
 }
 
-/** Why the turn stopped, for the thread. Only ever shown for a stop the user did
- *  not get a reply out of - `end_turn` is the normal one and says nothing. The
- *  raw reason is kept in the fallback: an unmapped stop is still worth naming. */
 /** A turn that ran to its own end without a word. Not an error - an agent that
  *  only ran tools, or whose skill did its work silently, has finished properly -
  *  so this states what happened rather than reporting a fault. */
 const SAID_NOTHING_NOTE = '這一輪結束了，agent 沒有回覆內容'
 
+/** How far back the note box's Up arrow reaches. */
+const SENT_NOTES_RECALLED = 50
+
+/** Where the `#` sat in the note: the composer's `targetMarker(1)`. */
+const TARGET_MARKER = '[target 1]'
+
+/** What a `#` asking for a fresh canvas reads as, in the chip and to the agent. */
+const NEW_CANVAS_LABEL = '新 canvas'
+
+const STEER_ATTEMPTS = 5
+const STEER_RETRY_MS = 100
+
+/** Why the turn stopped, for the thread. Only ever shown for a stop the user did
+ *  not get a reply out of - `end_turn` is the normal one and says nothing. The
+ *  raw reason is kept in the fallback: an unmapped stop is still worth naming. */
 function turnEndNote(stopReason: string): string {
   switch (stopReason) {
     case 'cancelled':
@@ -723,6 +782,8 @@ class SessionRuntime implements ProjectRuntime {
   /** Where the user was when they sent the batch being answered; see
    *  `activeSkills`. */
   private activeView: BatchView | undefined = undefined
+  /** Where the user said the batch being answered goes, sealed like the view. */
+  private activeTarget: BatchTarget | undefined = undefined
   /** The ask for a round whose branch is still opening. Held rather than sent,
    *  because a prompt to a session that is not up yet is a prompt that is
    *  dropped - see `deliverToAcp`. */
@@ -762,6 +823,20 @@ class SessionRuntime implements ProjectRuntime {
    *  portable CLI contract, and a slash command is meaningless to an agent that
    *  is not the one expanding it. */
   private activeSkills: string[] = []
+  /** The batches the ACP turn in flight has taken: the one it started on and
+   *  each steered into it. Its end acks exactly these - not every batch marked
+   *  delivered, which after a restart mid-turn includes steered ones the new
+   *  turn never saw. */
+  private turnBatches: string[] = []
+  /** The batch a steer is out for, until the agent says whether it went in. */
+  private steeringBatch: string | null = null
+  /** How often the running turn has handed a steer back. A batch sent on the
+   *  heels of the one that started the turn can reach the agent before that turn
+   *  is under way there, so a refusal is retried, further apart each time - and
+   *  only after `STEER_ATTEMPTS` is the batch left for the turn's end. */
+  private steerRefusals = 0
+  /** No steer before this, while a refusal is being waited out. */
+  private steerHeldUntil = 0
   /** The agent-side session this review is on right now, recorded against the
    *  chat only once it has taken a turn. */
   private liveSession: string | null = null
@@ -802,9 +877,13 @@ class SessionRuntime implements ProjectRuntime {
     })
     // Starts detached: which origin this runtime shows is the directory's call,
     // because only it can see who else holds it.
-    this.appProxy = new AppProxy(`${URL_PREFIX}/shell`, (req) => {
-      this.pageCookies = req.headers.cookie ?? null
-    })
+    this.appProxy = new AppProxy(
+      `${URL_PREFIX}/shell`,
+      (req) => {
+        this.pageCookies = req.headers.cookie ?? null
+      },
+      () => this.broadcast(),
+    )
     this.canvases = openCanvasWorkspace({
       project,
       view: this.store,
@@ -1054,8 +1133,10 @@ class SessionRuntime implements ProjectRuntime {
       account: this.account.snapshot(),
       ...(live.length ? { explores: live } : {}),
       ...(this.canExplore ? { canExplore: true as const } : {}),
+      ...(this.exploreFree ? { exploreFree: true as const } : {}),
       devServer: this.devServer.snapshot(),
       appTab: this.app.kind === 'attached' || this.devServer.offersApp(),
+      ...(this.appProxy.appDown ? { appDown: true as const } : {}),
       project: this.project,
     }
   }
@@ -1116,13 +1197,27 @@ class SessionRuntime implements ProjectRuntime {
 
   /** The per-turn canvas brief: the view sealed on the batch being delivered,
    *  and the inventory as it is now. */
-  private canvasLines(): string[] {
+  private canvasLines(
+    batch: Pick<FeedbackBatch, 'view' | 'target'> = { view: this.activeView, target: this.activeTarget },
+  ): string[] {
     return canvasBrief({
       inventory: this.canvases.read.inventory(),
-      view: this.activeView,
+      view: batch.view,
       app: this.app.kind === 'attached' ? this.app.origin : null,
       tools: this.agentHasCanvasTools,
+      ...(batch.target ? { target: batch.target } : {}),
     })
+  }
+
+  /** A `#` from `/send` with the name the user picked it by, or null when it
+   *  names a place this review does not have: no app attached, no such canvas,
+   *  or no canvas tools for the agent to reach any canvas with. */
+  private resolveTarget(request: TargetRequest): BatchTarget | null {
+    if (request.kind === 'app') return this.app.kind === 'attached' ? { kind: 'app', label: 'App' } : null
+    if (!this.agentHasCanvasTools) return null
+    if (request.kind === 'new-canvas') return { kind: 'new-canvas', label: NEW_CANVAS_LABEL }
+    const canvas = this.canvases.read.inventory().canvases.find((c) => c.id === request.canvasId)
+    return canvas ? { kind: 'canvas', canvasId: canvas.id, label: canvas.name } : null
   }
 
   private toShells(event: CanvasEventWire): void {
@@ -1251,7 +1346,8 @@ class SessionRuntime implements ProjectRuntime {
         // under whatever the user typed while the turn was running.
         const answers = this.activeBatch ? { batchId: this.activeBatch } : {}
         this.activeBatch = null
-        const delivered = this.store.deliveredBatchIds()
+        const taken = this.turnBatches
+        this.turnBatches = []
         // A cancelled turn can still have said something before it was stopped,
         // and an empty one is not a message - the note below is what explains it.
         if (text) {
@@ -1282,7 +1378,7 @@ class SessionRuntime implements ProjectRuntime {
         // The turn is the whole delivery in ACP mode, so its end is the ack -
         // including a cancelled one: the user stopped it, and handing the batch
         // straight back would undo that.
-        for (const id of delivered) this.store.ack(id)
+        for (const id of taken) this.store.ack(id)
         // Before delivering, so a batch queued behind the round is answered on the main line.
         this.leaveSpentBranch(EXPLORE_EMPTY)
         this.deliverToAcp()
@@ -1449,7 +1545,7 @@ class SessionRuntime implements ProjectRuntime {
    *  Resuming the copy is `reopenSession`'s job, which is also where the mcp
    *  servers and the review's pinned model get re-asserted - both of which a
    *  resumed session needs, since it comes back on the agent's own defaults. */
-  async branchAcpChat(): Promise<boolean> {
+  async branchAcpChat(stillWanted: () => boolean = () => true): Promise<boolean> {
     if (!this.acp?.canBranch) return false
     // Nothing said yet means nothing to carry, and an agent refuses to fork a
     // session with no transcript - which made `/explore` fail on every review
@@ -1462,7 +1558,7 @@ class SessionRuntime implements ProjectRuntime {
     }
     const agent = this.acp.snapshot().agent
     const forked = await this.acp.forkSession()
-    if (!forked) return false
+    if (!forked || !stillWanted()) return false
     return this.moveToChat(() => this.store.startBranch(forked, agent).id)
   }
 
@@ -1477,6 +1573,21 @@ class SessionRuntime implements ProjectRuntime {
    *  review itself. */
   get canExplore(): boolean {
     return !!this.acp?.canBranch && this.acp.servesMcpHttp
+  }
+
+  /** Whether a round can start without taking anything from the main line. The
+   *  branch moves the one agent off it, which cancels a turn in flight and settles
+   *  every batch still pending there unanswered - so nothing may be either. */
+  private get exploreFree(): boolean {
+    const acp = this.acp?.snapshot()
+    return (
+      this.canExplore &&
+      acp?.state === 'idle' &&
+      !acp.cancelling &&
+      !this.agentBusy &&
+      !this.pendingExplore &&
+      this.store.pendingBatchIds().length === 0
+    )
   }
 
   /** Open a round: a url for the agent to send variants to, a branch to have it
@@ -1495,13 +1606,15 @@ class SessionRuntime implements ProjectRuntime {
     direction?: string
     attachments?: Attachment[]
     references?: Reference[]
-  }): Promise<ExploreState | null> {
+  }): Promise<ExploreState | 'busy' | null> {
     if (!this.canExplore) return null
+    if (!this.exploreFree) return 'busy'
     const id = newId()
     this.exploreMcp.open(id, (variant) => this.takeVariant(id, variant))
-    if (!(await this.branchAcpChat())) {
+    // The fork is awaited, and a batch sent meanwhile would be settled by the move.
+    if (!(await this.branchAcpChat(() => this.exploreFree))) {
       this.exploreMcp.close(id)
-      return null
+      return this.exploreFree || !this.canExplore ? null : 'busy'
     }
     const label = shortAnchor(input.anchor)
     const round = this.store.startExplore({
@@ -1519,7 +1632,7 @@ class SessionRuntime implements ProjectRuntime {
       ts: Date.now(),
       ...(round.attachments?.length ? { attachments: round.attachments.map(attachmentEcho) } : {}),
       ...(round.references?.length
-        ? { references: round.references.map((r) => ({ n: r.n, label: r.label })) }
+        ? { references: round.references.map(referenceEcho) }
         : {}),
     })
     const truth = truthState(this.project, this.harnessOn, this.store.harnessSeen())
@@ -1720,6 +1833,7 @@ class SessionRuntime implements ProjectRuntime {
   /** Hand the next queued batch to the ACP agent, if both exist. The payload is
    *  the same JSON `poll` prints, so the skill's reading of it carries over. */
   private deliverToAcp(): void {
+    if (this.acp?.snapshot().state === 'working') return this.steerAcp()
     if (!this.acp || this.acp.snapshot().state !== 'idle') return
     // The explore's own turn goes first and alone. Branching only *starts* the
     // session it will run in - `reopenSession` returns as soon as it has let go
@@ -1729,6 +1843,7 @@ class SessionRuntime implements ProjectRuntime {
     if (explore) {
       this.pendingExplore = null
       this.agentBusy = true
+      this.turnBatches = []
       this.promptAcp(explore)
       this.broadcast()
       return
@@ -1775,7 +1890,65 @@ class SessionRuntime implements ProjectRuntime {
     if (truth.enabled) this.store.markHarnessSeen()
   }
 
+  /** Hand the next batch to the turn already running, when that turn is the
+   *  answer to an earlier batch and the agent can take one mid-turn. Only plain
+   *  feedback: a setup batch and an explore round are turns of their own kind,
+   *  and what is queued behind them waits for them to end. */
+  private steerAcp(): void {
+    const acp = this.acp
+    const answering = this.activeBatch
+    if (!acp?.steerable || this.steeringBatch || !answering || this.pendingExplore) return
+    if (this.steerRefusals >= STEER_ATTEMPTS || Date.now() < this.steerHeldUntil) return
+    // Read on every update the turn streams, so the common case - nothing waiting - is one read.
+    const batch = this.store.nextUndelivered()
+    if (!batch || batch.setup || this.store.findBatch(answering)?.setup) return
+    if (this.roundOf(this.store.currentChat.id)) return
+    this.steeringBatch = batch.batchId
+    const text = steerPrompt(
+      this.feedbackOf(batch),
+      batch.skills ?? [],
+      acp.snapshot().agent,
+      replyLanguageLine(this.store.userWords()),
+      this.canvasLines(batch),
+    )
+    void acp.steer(text).then((said) => {
+      this.steeringBatch = null
+      if (said === null) {
+        if (this.acp === acp && acp.snapshot().state === 'working') this.steerRefused()
+        this.deliverToAcp()
+        return
+      }
+      this.steerRefusals = 0
+      this.steered(answering, batch, said)
+    })
+  }
+
+  private steerRefused(): void {
+    const wait = STEER_RETRY_MS * 2 ** this.steerRefusals++
+    this.steerHeldUntil = Date.now() + wait
+    setTimeout(() => this.deliverToAcp(), wait).unref()
+  }
+
+  /** `batch` is in the turn. What the agent said before it took it is the reply
+   *  to `answered`, and from here on the turn answers `batch`. Nothing said yet
+   *  leaves `answered` without a reply of its own: the next one covers both. */
+  private steered(answered: string, batch: FeedbackBatch, said: string): void {
+    this.store.markDelivered(batch.batchId)
+    this.turnBatches.push(batch.batchId)
+    if (said) {
+      this.store.appendConversation({ role: 'agent', text: said, ts: Date.now(), batchId: answered })
+    }
+    this.activeBatch = batch.batchId
+    this.activeSkills = batch.skills ?? []
+    this.activeView = batch.view
+    this.activeTarget = batch.target
+    this.broadcast()
+    this.deliverToAcp()
+  }
+
   private promptAcp(text: string): void {
+    this.steerRefusals = 0
+    this.steerHeldUntil = 0
     this.canvases.beginTurn()
     this.acp!.prompt(text)
   }
@@ -1796,10 +1969,17 @@ class SessionRuntime implements ProjectRuntime {
     const batch = this.store.nextBatch()
     if (!batch) return null
     this.store.markDelivered(batch.batchId)
+    this.turnBatches = [batch.batchId]
     this.agentBusy = true
     this.activeBatch = batch.batchId
     this.activeSkills = batch.skills ?? []
     this.activeView = batch.view
+    this.activeTarget = batch.target
+    return this.feedbackOf(batch)
+  }
+
+  /** `batch` as the agent reads it - the JSON `poll` prints. */
+  private feedbackOf(batch: FeedbackBatch): FeedbackPayload {
     const attachments = toAgentAttachments(batch.attachments, this.store)
     return {
       type: 'feedback',
@@ -1809,6 +1989,7 @@ class SessionRuntime implements ProjectRuntime {
       items: batch.items.map((a) => toAgentItem(a, this.store, this.canvases.read.names)),
       ...(attachments ? { attachments } : {}),
       ...(batch.references?.length ? { references: batch.references } : {}),
+      ...(batch.target ? { target: batch.target } : {}),
       ...(batch.setup ? { setup: true as const } : {}),
     }
   }
@@ -1915,6 +2096,8 @@ class SessionRuntime implements ProjectRuntime {
     )
 
     api.get('/state', (_req, res) => res.json(this.snapshot()))
+
+    api.get('/sent-notes', (_req, res) => res.json(this.store.sentNotes(SENT_NOTES_RECALLED)))
 
     api.post('/page-state', (req, res) => {
       const storage = parsePageStorage(req.body)
@@ -2108,7 +2291,11 @@ class SessionRuntime implements ProjectRuntime {
       }
       const view = parseBatchView(req.body?.view)
       if (view === null) return res.status(400).json({ error: 'view must be a tab' })
-      const batch = this.store.sendBatch(req.body?.note ?? null, files, refs, skills, view)
+      const asked = parseBatchTarget(req.body?.target)
+      if (asked === null) return res.status(400).json({ error: 'target must be a place' })
+      const target = asked && this.resolveTarget(asked)
+      if (target === null) return res.status(400).json({ error: '找不到指定的位置' })
+      const batch = this.store.sendBatch(req.body?.note ?? null, files, refs, skills, view, target)
       if (!batch) return res.status(400).json({ error: 'nothing to send' })
       this.store.appendConversation({
         role: 'user',
@@ -2118,9 +2305,10 @@ class SessionRuntime implements ProjectRuntime {
         items: batch.items.map(toConversationItem),
         ...(batch.attachments?.length ? { attachments: batch.attachments.map(attachmentEcho) } : {}),
         ...(batch.references?.length
-          ? { references: batch.references.map((r) => ({ n: r.n, label: r.label })) }
+          ? { references: batch.references.map(referenceEcho) }
           : {}),
         ...(batch.skills?.length ? { skills: batch.skills } : {}),
+        ...(batch.target ? { target: batch.target } : {}),
       })
       if (this.acp) this.deliverToAcp()
       this.wakePollers()
@@ -2303,6 +2491,9 @@ class SessionRuntime implements ProjectRuntime {
         ...(files.length ? { attachments: files } : {}),
         ...(refs.length ? { references: refs } : {}),
       })
+      if (round === 'busy') {
+        return res.status(409).json({ error: 'the agent is still on the main line', busy: true })
+      }
       if (!round) {
         return res.status(409).json({ error: 'this agent cannot run an explore right now' })
       }

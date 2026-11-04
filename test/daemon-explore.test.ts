@@ -10,6 +10,7 @@ after(() => world.dispose())
 
 interface State {
   acp?: { state?: string; ask?: unknown }
+  exploreFree?: true
   chats?: { id: string; current: boolean; parentChatId?: string }[]
   conversation?: { role: string; text: string }[]
   explores?: ExploreState[]
@@ -389,6 +390,38 @@ test('a variant the page must not be shown is refused, and the agent is told why
   const reply = (await state(port)).conversation!.filter((e) => e.role === 'agent').at(-1)!.text
   assert.match(reply, /2 top-level elements/)
   assert.match(reply, /<script>/)
+})
+
+// The branch moves the one agent off the main line, which would cancel the turn and settle what
+// it was answering. So a round waits for the main line, and the page is told when it may start.
+test('an explore waits for the main line to finish, and takes nothing from it', async () => {
+  const port = await ready()
+  await api(port, '/send', { note: 'first SLOW' })
+  const working = await waitFor(async () => {
+    const s = await state(port)
+    return s.acp?.state === 'working' ? s : null
+  }, 'the main line to be working')
+  assert.equal(working.exploreFree, undefined)
+
+  const refused = await api(port, '/explore/start', { anchor: ANCHOR, capture: CAPTURE })
+  assert.equal(refused.status, 409)
+  assert.equal(((await refused.json()) as { busy?: boolean }).busy, true)
+  const after = await state(port)
+  assert.equal(after.acp?.state, 'working', 'the main line kept its turn')
+  assert.equal(after.chats?.length, 1, 'no branch was made')
+  assert.equal(after.explores, undefined)
+
+  await api(port, '/send', { note: 'second' })
+  const free = await waitFor(async () => {
+    const s = await state(port)
+    return s.acp?.state === 'idle' && s.exploreFree ? s : null
+  }, 'the main line to be free')
+  const replies = free.conversation!.filter((e) => e.role === 'agent').map((e) => e.text)
+  assert.ok(replies.some((t) => t.includes('"note": "second"')), 'the main line answered what it was given')
+
+  const round = await explore(port)
+  assert.equal(round.status, 'done')
+  assert.ok((await current(port)).parentChatId, 'the round runs on a branch')
 })
 
 test('an agent that cannot branch cannot explore, and nothing is started', async () => {

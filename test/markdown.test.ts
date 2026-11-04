@@ -76,3 +76,45 @@ test('headings map to blocks with their level', () => {
   const head = parseMarkdown('## 修改摘要')[0]!
   assert.equal(head.t === 'heading' && head.level, 2)
 })
+
+test('a GFM table parses with its alignment, header and rows', () => {
+  const text = '| 屬性 | 原本 | 改成 |\n|:--|:-:|--:|\n| 字級 | **40px** | `44px` |\n| 行高 | 1.2 |'
+  const [table] = parseMarkdown(text)
+  assert.equal(table?.t, 'table')
+  if (table?.t !== 'table') return
+  assert.deepEqual(table.align, ['left', 'center', 'right'])
+  assert.deepEqual(
+    table.head.map((cell) => cell.map((n) => (n.t === 'text' ? n.text : n.t))),
+    [['屬性'], ['原本'], ['改成']],
+  )
+  assert.equal(table.rows.length, 2)
+  assert.deepEqual(table.rows[0]!.map((cell) => cell[0]?.t), ['text', 'strong', 'code'])
+  // A short row is padded out to the header's width.
+  assert.deepEqual(table.rows[1]![2], [])
+})
+
+test('a table without outer pipes, with an escaped pipe in a cell', () => {
+  const [table] = parseMarkdown('a | b\n--- | ---\nx \\| y | z')
+  assert.equal(table?.t, 'table')
+  if (table?.t !== 'table') return
+  assert.deepEqual(table.rows[0]![0], [{ t: 'text', text: 'x | y' }])
+})
+
+test('a table right under a paragraph line still starts a table', () => {
+  const blocks = parseMarkdown('比較如下：\n| a | b |\n|---|---|\n| 1 | 2 |\n\n結論。')
+  assert.deepEqual(
+    blocks.map((b) => b.t),
+    ['p', 'table', 'p'],
+  )
+})
+
+// The reply is re-rendered on every streamed chunk, so a header whose delimiter
+// has not fully arrived has to stay prose until it does.
+test('a header without its complete delimiter row is still a paragraph', () => {
+  assert.equal(parseMarkdown('| a | b |\n|---|')[0]?.t, 'p')
+  assert.equal(parseMarkdown('| a | b |')[0]?.t, 'p')
+})
+
+test('a horizontal rule under a pipe-less line is not a table', () => {
+  assert.notEqual(parseMarkdown('標題\n---')[0]?.t, 'table')
+})

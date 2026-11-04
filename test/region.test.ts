@@ -6,6 +6,7 @@ import {
   containsRect,
   intersectsRect,
   isRegion,
+  unionOf,
   regionFrom,
 } from '../src/client/region.js'
 
@@ -60,4 +61,15 @@ test('a box that cuts through an element still reaches into it', () => {
 
 test('the centre is where an empty box resolves its element', () => {
   assert.deepEqual(centerOf(box), { x: 200, y: 150 })
+})
+
+test('a Shift group is boxed by the union of everything in it', () => {
+  assert.deepEqual(
+    unionOf([
+      { x: 10.4, y: 20, width: 30, height: 10 },
+      { x: 100, y: 5.6, width: 20.2, height: 40 },
+    ]),
+    { x: 10, y: 5, width: 111, height: 41 },
+  )
+  assert.equal(unionOf([]), null)
 })

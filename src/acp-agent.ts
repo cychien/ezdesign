@@ -41,6 +41,12 @@ import { limitFrom, mergeLimit } from './usage-limit.js'
 import { killGroup, trackGroup, untrackGroup } from './child-groups.js'
 import { type AttachedSession, SessionRouter } from './acp-session.js'
 
+function steeringOf(meta: unknown): boolean {
+  if (!meta || typeof meta !== 'object') return false
+  const steering = (meta as { steering?: { supported?: unknown } }).steering
+  return typeof steering === 'object' && steering?.supported === true
+}
+
 export type AcpState = 'starting' | 'idle' | 'working' | 'exited'
 
 /** One item of the live activity feed, in the order the turn produced them -
@@ -239,6 +245,12 @@ export class AcpAgent {
   /** Set when the agent advertises `session/fork`, which is what lets an explore
    *  run on a copy of the conversation instead of in it. */
   private canFork = false
+  /** Set when the agent advertises the `_session/steering` extension: a message
+   *  can join the turn it is running instead of waiting for it to end. */
+  private canSteer = false
+  /** Who is waiting on the steer that is out, if one is. One at a time: the
+   *  split it answers with is the feed up to its own marker. */
+  private steering: ((said: string | null) => void) | null = null
   /** Turns the *live* session has finished. Reset with the session, because what
    *  it answers is whether this session has a transcript - which is what both
    *  resume and fork need, and neither can be given by a session that has never
@@ -415,6 +427,30 @@ export class AcpAgent {
     })
   }
 
+  /** Hand `text` to the turn in flight, which takes it at its next step rather
+   *  than after it has finished. Resolves with what the turn had said up to that
+   *  point - the reply to whatever it was on before - and the feed starts over
+   *  for the part of the turn that answers `text`. Null when it did not go in:
+   *  no turn was running by the time the agent read it, or the session moved on.
+   *  Then nothing here changed, and `text` is still the caller's to send. */
+  steer(text: string): Promise<string | null> {
+    const session = this.session
+    if (!this.steerable || !session || this.steering) return Promise.resolve(null)
+    return new Promise((resolve) => {
+      this.steering = resolve
+      void session.steer(text).then((injected) => {
+        if (!injected && this.steering === resolve) this.settleSteer(null)
+      })
+    })
+  }
+
+  /** Answers the steer in flight, once. */
+  private settleSteer(said: string | null): void {
+    const settle = this.steering
+    this.steering = null
+    settle?.(said)
+  }
+
   /** The user answered in the shell: one option id per question key. */
   /** The user's answers to the ask `id`, as the shell sent them. Refused - and
    *  the ask left waiting - unless they are complete and well-typed for its
@@ -451,6 +487,11 @@ export class AcpAgent {
     this.cancelling = true
     this.opts.onChange()
     return true
+  }
+
+  /** Whether a turn in flight can be steered right now. */
+  get steerable(): boolean {
+    return this.canSteer && !!this.session && this.state === 'working' && !this.cancelling
   }
 
   /** Whether this agent can branch a conversation at all. */
@@ -539,6 +580,7 @@ export class AcpAgent {
     // A question routed out of a session nobody will answer for any more: the
     // agent is blocked on it, and it has to be released before we let go.
     this.settleAsk()
+    this.settleSteer(null)
     this.opts.onChange()
     // Nothing to let go of when the move landed on a session that had not opened
     // yet. The one in flight is the epoch's to discard.
@@ -658,6 +700,7 @@ export class AcpAgent {
       const message = await session.next()
       if (message.kind === 'retired' || epoch !== this.epoch) return
       if (message.kind === 'update') this.onUpdate(message.notification)
+      else if (message.kind === 'steered') this.steered()
       else this.turnEnded(message.stopReason, epoch)
     }
   }
@@ -665,6 +708,7 @@ export class AcpAgent {
   stop(): void {
     this.state = 'exited'
     this.settleAsk()
+    this.settleSteer(null)
     this.session?.retire()
     this.finish?.()
     const pid = this.child.pid
@@ -687,6 +731,7 @@ export class AcpAgent {
     const tail = this.stderrTail.join('').trim().split('\n').slice(-3).join('\n')
     this.error = tail ? `${message}\n${tail}` : message
     this.settleAsk()
+    this.settleSteer(null)
     this.session?.retire()
     this.finish?.()
     this.opts.onExit(this.error)
@@ -706,16 +751,31 @@ export class AcpAgent {
     this.state = 'idle'
     this.sessionTurns += 1
     this.cancelling = false
-    // The reply is the said segments of the feed, in order. Everything between
-    // them - the tool runs - is what the paragraphs are narrating, so joining
-    // with a blank line keeps each one a paragraph of its own.
-    const reply = this.feed
-      .flatMap((f) => (f.kind === 'say' ? [f.text.trim()] : []))
-      .filter(Boolean)
-      .join('\n\n')
+    const reply = this.said()
     this.feed = []
     this.opts.onTurnEnd(reply, stopReason)
     this.opts.onChange()
+  }
+
+  /** The steer is in: what was said up to here answers what the turn was on
+   *  before it, and the feed starts over for the part that answers the steer.
+   *  Announced by the steer resolving rather than by `onChange`: until its
+   *  caller has put `said` somewhere, a snapshot would show those words gone. */
+  private steered(): void {
+    if (this.state !== 'working') return this.settleSteer(null)
+    const said = this.said()
+    this.feed = []
+    this.settleSteer(said)
+  }
+
+  /** The said segments of the feed, in order. Everything between them - the
+   *  tool runs - is what the paragraphs are narrating, so joining with a blank
+   *  line keeps each one a paragraph of its own. */
+  private said(): string {
+    return this.feed
+      .flatMap((f) => (f.kind === 'say' ? [f.text.trim()] : []))
+      .filter(Boolean)
+      .join('\n\n')
   }
 
   /** Parks an ask and resolves with the user's answers - or null when the ask
@@ -912,6 +972,7 @@ export class AcpAgent {
         this.canResume = !!init.agentCapabilities?.sessionCapabilities?.resume
         this.canMcpHttp = !!init.agentCapabilities?.mcpCapabilities?.http
         this.canFork = !!init.agentCapabilities?.sessionCapabilities?.fork
+        this.canSteer = steeringOf(init._meta)
         this.ctx = ctx
         await this.openSession()
         // `connectWith` closes the stream when this returns, so this is the

@@ -15,11 +15,11 @@ export interface Anchor {
   selector?: string
   /** trimmed text content or the selected text for kind=text */
   text?: string
-  /** Only for a framed region: one line per element the frame enclosed,
-   *  outermost first. The anchor's other fields resolve to their common
-   *  ancestor, so this is what says the user meant a group rather than it. */
+  /** Only for a group - a framed region, or elements gathered with Shift: one
+   *  line per member, outermost first. The anchor's other fields resolve to
+   *  their common ancestor, so this is what says the user meant a group. */
   contains?: string[]
-  /** The element's own box - or, for a framed region, the box the user drew. */
+  /** The element's own box - or, for a group, the box around all of it. */
   rect?: { x: number; y: number; width: number; height: number }
   viewport?: { width: number; height: number; preset?: string }
   /** page pathname the annotation was made on */
@@ -187,6 +187,9 @@ export interface ChosenVariant {
 export interface ReferenceEcho {
   n: number
   label: string
+  /** The name of the explore variant it carries, so the chip reads back as the
+   *  choice it was rather than as a plain pick. */
+  variant?: string
 }
 
 export interface Annotation {
@@ -293,6 +296,16 @@ export interface ExploreState {
  *  the strip, so nothing of this round is on the page any more. */
 export type ExploreStatus = 'generating' | 'done' | 'cancelled' | 'dismissed'
 
+/** Where the user asked for a batch's result to go, with a `#` in the note box.
+ *  Absent, the agent decides, as it always has. `label` is what the user picked,
+ *  stamped by the daemon at send time: a canvas renamed or deleted since must
+ *  not change what the thread says they asked for. */
+export type BatchTarget = (
+  | { kind: 'app' }
+  | { kind: 'canvas'; canvasId: string }
+  | { kind: 'new-canvas' }
+) & { label: string }
+
 export interface FeedbackBatch {
   batchId: string
   items: Annotation[]
@@ -318,12 +331,24 @@ export interface FeedbackBatch {
   skills?: string[]
   /** Not feedback: builds the design harness's files; carries no items or note. */
   setup?: true
+  /** Where the result goes; `[target 1]` in the note is where the user put it. */
+  target?: BatchTarget
   /** The tab the user was on when they sent this, stamped by `/send`, so the
    *  turn says where they were rather than where the shell is at delivery. */
   view?: BatchView
   sentAt: number
   deliveredAt?: number
   ackedAt?: number
+}
+
+/** What the user sent from the note box, whole: enough for the box to be
+ *  rebuilt as it was, chips included. */
+export interface SentNoteWire {
+  note: string
+  references: Reference[]
+  attachments: { id: string; name: string; origin?: { pick: string } }[]
+  skills: string[]
+  target?: BatchTarget
 }
 
 /** Where the user was: the App at a page, or a canvas. */
@@ -360,6 +385,8 @@ export interface ConversationEntry {
    *  skill leaves no other trace: the agent expands it into the prompt rather
    *  than calling its Skill tool, so nothing in the turn's activity says it ran. */
   skills?: string[]
+  /** The `#` the batch named, as the user saw it. */
+  target?: BatchTarget
 }
 
 export type SessionEndedBy = 'user' | 'agent'
@@ -378,6 +405,8 @@ export type PollResult =
       attachments?: AgentAttachment[]
       /** elements the note points at, rather than any one item */
       references?: Reference[]
+      /** where the user asked for the result to go; absent, it is the agent's call */
+      target?: BatchTarget
       setup?: true
     }
   | { type: 'session-ended'; endedBy: SessionEndedBy }

@@ -32,7 +32,11 @@
  *  anything else that reaches a later macrotask puts the stop in first and loses
  *  the tail of the reply. The chunk-ordering test catches that; it does not catch
  *  the microtask case, which is why the rule is written as "synchronous" rather
- *  than left to whatever the tests happen to notice. */
+ *  than left to whatever the tests happen to notice.
+ *
+ *  A steer is the same problem in the middle of a turn: where the reply to what
+ *  the agent was on ends and the reply to the steered message begins is the
+ *  steer's response, and it goes into the queue the way the stop does. */
 
 import {
   type ClientContext,
@@ -41,11 +45,17 @@ import {
   methods,
 } from '@agentclientprotocol/sdk'
 
-/** A session update, or the end of a turn. `retired` is neither: it is this
- *  reader being told to stop, so a loop parked on `next()` can return instead of
- *  waiting on a session nobody owns any more. */
+/** Not in the protocol schema: an extension both Claude's and Codex's adapters
+ *  implement, advertised as `_meta.steering.supported` on `initialize`. */
+const STEER_METHOD = '_session/steering'
+
+/** A session update, a steer taken into the turn, or the end of a turn.
+ *  `retired` is none of them: it is this reader being told to stop, so a loop
+ *  parked on `next()` can return instead of waiting on a session nobody owns any
+ *  more. */
 export type SessionMessage =
   | { kind: 'update'; notification: SessionNotification }
+  | { kind: 'steered' }
   | { kind: 'stop'; stopReason: string }
   | { kind: 'retired' }
 
@@ -134,6 +144,28 @@ export class AttachedSession {
       () => {},
     )
     return response
+  }
+
+  /** Put `text` into the turn in flight. Resolves with whether it went in, and
+   *  when it did, a `steered` message is already queued behind everything the
+   *  agent said before it. */
+  steer(text: string): Promise<boolean> {
+    return this.ctx
+      .request<{ outcome?: unknown }>(STEER_METHOD, {
+        sessionId: this.sessionId,
+        prompt: [{ type: 'text', text }],
+        // Without it an agent whose turn has just ended starts a turn of its own
+        // for `text`, one no `session/prompt` here is waiting on.
+        _meta: { steering: { idleBehavior: 'promptRequired' } },
+      })
+      .then(
+        (value) => {
+          if (value?.outcome !== 'injected') return false
+          this.queue.enqueue({ kind: 'steered' })
+          return true
+        },
+        () => false,
+      )
   }
 
   next(): Promise<SessionMessage> {

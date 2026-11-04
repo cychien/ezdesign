@@ -267,3 +267,47 @@ test('CV-agent-height: update_frame grows a frame over MCP, the frame under it m
     [940, 1084, 390, 844],
   ])
 })
+
+// The user's `#` decides where the result goes. It reaches the agent as an
+// instruction and as the words the user wrote, the thread keeps what they picked
+// by name, and a place this review does not have is refused rather than guessed.
+test('a # in the note box sends the batch to that place, and only to a place that exists', async () => {
+  const { w, control } = await world()
+  const port = await ready(w, control, project(w))
+  const created = (await (await api(port, '/canvases', { name: 'Design system' })).json()) as { id: string }
+
+  const sent = async (note: string, target: unknown) => {
+    const before = ((await w.state(port)) as unknown as State).conversation.length
+    const res = await api(port, '/send', { note, target })
+    if (!res.ok) return res.status
+    await waitFor(async () => {
+      const s = (await w.state(port)) as unknown as State
+      return s.acp?.state === 'idle' && s.conversation.slice(before).some((e) => e.role === 'agent')
+    }, `the turn for ${note}`)
+    return res.status
+  }
+  assert.equal(await sent('三個版本 [target 1]', { kind: 'canvas', canvasId: created.id }), 200)
+  assert.equal(await sent('標題改大 [target 1]', { kind: 'app' }), 200)
+  assert.equal(await sent('nowhere [target 1]', { kind: 'canvas', canvasId: '000000000000' }), 400)
+  assert.equal(await sent('nowhere [target 1]', { kind: 'moon' }), 400)
+
+  const { prompts } = await report(w, port)
+  const onCanvas = prompts.find((p) => p.text.includes('三個版本'))!.text
+  assert.match(onCanvas, /"note": "三個版本 #Design system"/, 'the agent reads what the user typed')
+  assert.ok(
+    onCanvas.includes(`The user marked this batch #Design system, so that is where the result goes: put it on canvas "Design system" (${created.id}) as frames.`),
+  )
+  assert.ok(!onCanvas.includes('Add new frames to canvas'), 'the default canvas is not offered alongside')
+  const onApp = prompts.find((p) => p.text.includes('標題改大'))!.text
+  assert.ok(onApp.includes("The user marked this batch #App, so that is where the result goes: make the change in the app's own source."))
+
+  const thread = ((await w.state(port)) as unknown as { conversation: { target?: { label: string } }[] }).conversation
+  const labels = thread.flatMap((e) => (e.target ? [e.target.label] : []))
+  assert.deepEqual(labels, ['Design system', 'App'], 'the thread keeps what was picked, by name')
+  const notes = (await (await fetch(`http://127.0.0.1:${port}/__ezdesign/api/sent-notes`)).json()) as { target?: { label: string } }[]
+  assert.deepEqual(
+    notes.slice(1, 3).map((n) => n.target?.label),
+    ['App', 'Design system'],
+    'Up brings the # back with the message',
+  )
+})

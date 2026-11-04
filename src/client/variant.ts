@@ -243,17 +243,22 @@ export class VariantSwapper {
     for (const swap of this.swaps.values()) this.apply(swap)
   }
 
-  private apply(swap: Swap): void {
-    if (this.doc.querySelector(`[${VARIANT_ATTR}="${cssEscape(swap.exploreId)}"]`)) return
+  /** The page's own element an anchor names, never one of ours or one we stand in for. */
+  find(anchor: Anchor): Element | null {
     const elements = [...this.doc.querySelectorAll<Element>(`[${SOURCE_ATTR}], body *`)].filter(
       (el) => !el.closest(`[${VARIANT_ATTR}]`) && !el.hasAttribute(SWAPPED_ATTR),
     )
     const index = locate(
-      swap.anchor,
+      anchor,
       elements.map((el) => this.describe(el)),
     )
-    if (index === null) return
-    const target = elements[index]!
+    return index === null ? null : elements[index]!
+  }
+
+  private apply(swap: Swap): void {
+    if (this.doc.querySelector(`[${VARIANT_ATTR}="${cssEscape(swap.exploreId)}"]`)) return
+    const target = this.find(swap.anchor)
+    if (!target) return
     const root = buildVariant(swap.html!, this.doc)
     if (!root) return
     const boxSizing = this.doc.defaultView?.getComputedStyle(target).boxSizing || 'content-box'

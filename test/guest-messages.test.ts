@@ -29,6 +29,7 @@ const SAMPLES: Record<string, Record<string, unknown>> = {
   'ez:pick-cancelled': { pickId: 'p1', resumed: true },
   'ez:explore': { anchor, capture: { html: '<h1/>' }, direction: 'bolder' },
   'ez:explore-held': { draft: { comment: 'x' } },
+  'ez:recaptured': { reqId: 'r1', capture: { html: '<h1/>' } },
   'ez:key': { chord: { key: 'Enter', metaKey: true, ctrlKey: false } },
   'ez:wheel': { dx: 1, dy: 2 },
   'ez:scroll': { ratio: 0.5 },
@@ -55,7 +56,7 @@ test('CV-p3-protocol-table: a type parses exactly from the kinds the table lets 
 })
 
 test('CV-p3-protocol-table: a canvas guest cannot navigate or explore, and its keys are marked as coming from a canvas', () => {
-  for (const type of ['ez:navigate', 'ez:page', 'ez:explore', 'ez:explore-held', 'ez:scroll']) {
+  for (const type of ['ez:navigate', 'ez:page', 'ez:explore', 'ez:explore-held', 'ez:recaptured', 'ez:scroll']) {
     assert.equal(parseGuestMessage({ type, ...SAMPLES[type] }, CANVAS), null, type)
   }
   assert.deepEqual(parseGuestMessage({ type: 'ez:key', ...SAMPLES['ez:key'] }, CANVAS), {

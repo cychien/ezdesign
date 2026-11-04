@@ -84,6 +84,9 @@
   --ez-ref: #f4d3e2;
   --ez-ref-ink: #7b3a5c;
   --ez-ref-accent: #cf5f92;
+  /* Mirrors the shell's library teal. See the note on --library there. */
+  --ez-library: #c3e2d8;
+  --ez-library-ink: #2c5a4b;
   /* Explore's violet - the fourth hue in this palette, after the mark's orange
      (40), the attachment sage (137) and the reference pink (350). Hue 300 is
      true violet: 288 reads as indigo and technical, 312 leans magenta and gets
@@ -95,6 +98,8 @@
      the solid. */
   --ez-explore-ink: #5e3f8c;
   --ez-explore-accent: #6b3baa;
+  /* Mirrors the shell's explore plate. See the note on --explore there. */
+  --ez-explore: #e0d7f3;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans TC', sans-serif;
 }
 
@@ -365,14 +370,15 @@
   color: var(--ez-ref-ink);
 }
 
-/* A reference the user brought back from an explore, rather than off the picker.
-   The plate stays the reference's, because that is what it is - an element the
-   comment points at - and the mark carries the violet instead, the way the branch
-   crumb does: the colour says which *kind* of reference it is without claiming a
-   fourth chip colour, which the palette above deliberately does not have. The
-   word in the chip does the rest. */
-.ez-chip-ref.ez-chip-chosen svg {
-  color: var(--ez-explore-accent);
+/* A reference the user brought back from an explore. See the shell's rule. */
+.ez-chip-ref.ez-chip-chosen {
+  background: var(--ez-explore);
+  color: var(--ez-explore-ink);
+}
+
+.ez-chip-library {
+  background: var(--ez-library);
+  color: var(--ez-library-ink);
 }
 
 /* Still uploading. Dimmed rather than spinner'd: it resolves in a blink on a
@@ -394,6 +400,8 @@
 .ez-slash-menu {
   position: fixed;
   z-index: 2147483604;
+  display: flex;
+  flex-direction: column;
   min-width: 240px;
   max-width: 300px;
   padding: 4px 4px 5px;
@@ -416,6 +424,14 @@
   font-weight: 500;
   line-height: 1.4;
   color: var(--ez-ink-faint);
+}
+
+/* Capped to the room beside its trigger in JS; past that the list scrolls and
+   the caption stays put. */
+.ez-slash-list {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .ez-slash-item {
@@ -509,6 +525,13 @@
   display: none;
 }
 
+/* Shift is adding to it. Transparent rather than hidden, so the composer keeps
+   focus and a key typed with Shift still lands in it. */
+.ez-popup[data-ez-aside] {
+  opacity: 0;
+  pointer-events: none;
+}
+
 /* A pick frames elements too, but it is not about to annotate one - it is about
    to hand one to a comment. Same frame, the other colour, so the two never read
    as the same act. Placed after the frame's own rule, which is what settles the
@@ -579,6 +602,36 @@
 
 [data-ez-mode='region']:not([data-ez-pick]) .ez-region-size {
   background: var(--ez-mark);
+}
+
+/* What Shift has gathered for one comment: the same marks a single element or
+   box gets, one per member. */
+.ez-gathered-element,
+.ez-gathered-box {
+  position: fixed;
+  z-index: 2147483599;
+  pointer-events: none;
+}
+
+.ez-gathered-element {
+  border: 3px solid var(--ez-mark);
+  border-radius: 4px;
+  background: color-mix(in oklab, var(--ez-mark) 10%, transparent);
+  box-shadow:
+    0 0 0 1px oklch(100% 0 0 / 0.6),
+    inset 0 0 0 1px oklch(100% 0 0 / 0.6);
+}
+
+.ez-gathered-box {
+  border: 1px dashed var(--ez-mark);
+  background: color-mix(in oklab, var(--ez-mark) 9%, transparent);
+}
+
+/* Gathered for a pick: they land in a ref chip, so they take its pink. */
+[data-ez-pick] .ez-gathered-element,
+[data-ez-pick] .ez-gathered-box {
+  border-color: var(--ez-ref-accent);
+  background: color-mix(in oklab, var(--ez-ref-accent) 10%, transparent);
 }
 
 /* Said once, at the top of a popup that came back from another page: the user

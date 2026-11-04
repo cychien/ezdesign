@@ -225,3 +225,35 @@ test('the brief names one canvas for new frames: the one the user is on, else th
   assert.ok(brief({ tab: 'app', page: '/' }, [canvas('cccccccccccc', 'C', 3, true)]).includes(none))
   assert.ok(brief(undefined, []).includes(none))
 })
+
+// A `#` is the user deciding, so it replaces the default rather than joining it:
+// the brief names one place and rules out the others.
+test('a # in the batch is where the result goes, in place of the default canvas', () => {
+  const inventory = {
+    activeTab: 'app' as const,
+    canvases: [
+      { id: 'aaaaaaaaaaaa' as CanvasId, name: 'A', archived: false, frames: 1, createdAt: 1 },
+      { id: 'bbbbbbbbbbbb' as CanvasId, name: 'B', archived: true, frames: 1, createdAt: 2 },
+    ],
+  }
+  const brief = (target: NonNullable<Parameters<typeof canvasBrief>[0]['target']>) =>
+    canvasBrief({ inventory, view: { tab: 'canvas', canvasId: 'aaaaaaaaaaaa' }, app: 'http://localhost:5173', tools: true, target })
+  const only = (lines: string[]) => {
+    assert.ok(!lines.some((l) => l.startsWith('Add new frames to canvas')), 'the default is gone')
+    return lines.find((l) => l.startsWith('The user marked this batch'))
+  }
+  assert.equal(
+    only(brief({ kind: 'app', label: 'App' })),
+    "The user marked this batch #App, so that is where the result goes: make the change in the app's own source. Do not put it on a canvas.",
+  )
+  assert.equal(
+    only(brief({ kind: 'canvas', canvasId: 'aaaaaaaaaaaa', label: 'A' })),
+    'The user marked this batch #A, so that is where the result goes: put it on canvas "A" (aaaaaaaaaaaa) as frames. Do not change the app\'s source for it, and do not use another canvas.',
+  )
+  assert.match(only(brief({ kind: 'canvas', canvasId: 'bbbbbbbbbbbb', label: 'B' }))!, /archived, so call reopen_canvas first/)
+  assert.match(
+    only(brief({ kind: 'canvas', canvasId: 'dddddddddddd', label: 'Gone' }))!,
+    /canvas "Gone" has since been deleted, so create a new canvas with create_canvas named "Gone"/,
+  )
+  assert.match(only(brief({ kind: 'new-canvas', label: '新 canvas' }))!, /create a new canvas with create_canvas, named for what it holds/)
+})

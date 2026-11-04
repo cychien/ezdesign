@@ -268,3 +268,14 @@ test('a proposal that lands after the user moved on is dropped', () => {
   ]).machine
   assert.equal(step(stopped, { type: 'proposal', proposal: { state: 'asking', agent: 'claude' } }).stateChanged, false)
 })
+
+test('a restart from an external server resolves afresh, so a dead one is replaced by the command', () => {
+  const external = run([
+    { type: 'ensure', now: 1, by: 'browser' },
+    { type: 'resolved', attempt: 1, resolution: { kind: 'external', origin: ORIGIN }, now: 2 },
+  ]).machine
+  const again = step(external, { type: 'restart', now: 9, by: 'browser' })
+  assert.deepEqual(again.effects, [{ type: 'resolve', attempt: 2 }])
+  assert.deepEqual(toWire(again.machine.state), { phase: 'starting', since: 9 })
+  assert.deepEqual(step(external, { type: 'ensure', now: 9, by: 'browser' }).effects, [], 'ensure still leaves it be')
+})

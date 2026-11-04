@@ -27,6 +27,7 @@ interface DevServerState {
 interface Snapshot {
   app?: string
   appTab: boolean
+  appDown?: true
   devServer: DevServerState
 }
 
@@ -181,6 +182,40 @@ test("the user's own server at the recorded origin is used, and never stopped", 
   assert.equal(external.devServer.origin, origin)
   assert.equal((await api(port, 'stop')).status, 409)
   assert.equal(alive(own.pid!), true)
+})
+
+// The App tab used to be left on the proxy's error page with nothing to start
+// the server again: the dev server card only showed while no app was attached.
+test("the user's own server dying is noticed by the proxy, and a restart runs the project's command", async () => {
+  const dir = npmProject('node server.mjs')
+  const own = spawn(process.execPath, ['server.mjs'], { cwd: dir, detached: true, stdio: ['ignore', 'pipe', 'ignore'] })
+  strays.add(own)
+  const origin = await new Promise<string>((resolve) =>
+    own.stdout!.on('data', (c: Buffer) => {
+      const m = /http:\/\/localhost:\S*?(\d+)/.exec(c.toString().replace(/\x1b\[[0-9;]*m/g, ''))
+      if (m) resolve(`http://localhost:${m[1]}`)
+    }),
+  )
+  const { port } = await world.openSession(daemon.port, { project: dir, url: origin })
+  await api(port, 'start', { host: 'browser' })
+  await phase(port, 'external')
+  assert.equal(((await world.state(port)) as unknown as Snapshot).appDown, undefined)
+
+  const gone = new Promise((resolve) => own.once('exit', resolve))
+  process.kill(-own.pid!, 'SIGKILL')
+  strays.delete(own)
+  await gone
+  const proxied = await fetch(`http://127.0.0.1:${port}/`, { headers: { accept: 'text/html' } })
+  assert.equal(proxied.status, 502)
+  const down = (await world.state(port)) as unknown as Snapshot
+  assert.equal(down.appDown, true)
+  assert.equal(down.app, origin, 'still attached: the card stands in for it, nothing is torn down')
+
+  assert.equal((await api(port, 'restart', { host: 'browser' })).status, 202)
+  const running = await phase(port, 'running')
+  assert.equal(running.appDown, undefined, 'the attach of the new run clears it')
+  assert.equal(await (await fetch(`http://127.0.0.1:${port}/`)).text(), 'hello from the dev server')
+  await api(port, 'stop')
 })
 
 test('a web page cannot stop the daemon; the CLI still can', async () => {

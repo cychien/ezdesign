@@ -66,3 +66,15 @@ export function intersectsRect(region: Region, rect: Region): boolean {
     rect.y + rect.height > region.y
   )
 }
+
+/** The smallest box holding all of them, on whole pixels like a drawn one. */
+export function unionOf(regions: Region[]): Region | null {
+  if (!regions.length) return null
+  const left = Math.min(...regions.map((r) => r.x))
+  const top = Math.min(...regions.map((r) => r.y))
+  const right = Math.max(...regions.map((r) => r.x + r.width))
+  const bottom = Math.max(...regions.map((r) => r.y + r.height))
+  const x = Math.floor(left)
+  const y = Math.floor(top)
+  return { x, y, width: Math.ceil(right) - x, height: Math.ceil(bottom) - y }
+}

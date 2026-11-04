@@ -150,7 +150,7 @@ test('a fresh overlay is re-armed, and the pill says where it comes back to', ()
   assert.equal(state?.returnTo, '/pricing')
   assert.equal(pickHint(state, '⌘'), null, 'nothing is said until the new overlay listens')
   const armed = reducePick(state, { t: 'armed', id: 'p1', host: 'popup', now: 60 }).state
-  assert.equal(pickHint(armed, '⌘'), '⌘ + 點擊元素或直接拖曳框選・完成後回到 /pricing')
+  assert.equal(pickHint(armed, '⌘'), '⌘ + 點擊元素或直接拖曳框選・加 ⇧ 選多個・完成後回到 /pricing')
 })
 
 test('the pill drops the way back once the frame is on the page again', () => {
@@ -162,7 +162,7 @@ test('the pill drops the way back once the frame is on the page again', () => {
     { t: 'ready', page: '/pricing', now: 70, frame: 'a' },
     { t: 'armed', id: 'p1', host: 'popup', now: 80, frame: 'a' },
   ])
-  assert.equal(pickHint(state, '⌘'), '⌘ + 點擊元素，或拖曳框選範圍')
+  assert.equal(pickHint(state, '⌘'), '⌘ + 點擊元素，或拖曳框選範圍・加 ⇧ 選多個')
 })
 
 // A popup's pick is out to every frame; another frame reloading under it says
@@ -182,7 +182,7 @@ test('the note box pill asks for the click', () => {
     { t: 'arm', id: 'p1', host: 'note', now: 0 },
     { t: 'armed', id: 'p1', host: 'note', now: 10 },
   ]).state
-  assert.equal(pickHint(armed, 'Ctrl'), 'Ctrl + 點擊元素，或拖曳框選範圍')
+  assert.equal(pickHint(armed, 'Ctrl'), 'Ctrl + 點擊元素，或拖曳框選範圍・加 Shift 選多個')
   assert.equal(pickHint(null, 'Ctrl'), null)
 })
 
@@ -536,5 +536,5 @@ test('on a board the pill says a title picks the whole frame', () => {
     { t: 'arm', id: 'p1', host: 'note', now: 0 },
     { t: 'armed', id: 'p1', host: 'note', now: 10 },
   ]).state
-  assert.equal(pickHint(armed, '⌘', true), '⌘ + 點擊元素或拖曳框選・點標題選整個 frame')
+  assert.equal(pickHint(armed, '⌘', true), '⌘ + 點擊元素或拖曳框選・加 ⇧ 選多個・點標題選整個 frame')
 })

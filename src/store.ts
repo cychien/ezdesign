@@ -27,6 +27,7 @@ import type {
   Annotation,
   Attachment,
   AttachmentOrigin,
+  BatchTarget,
   BatchView,
   ConversationEntry,
   ExploreState,
@@ -34,6 +35,7 @@ import type {
   ExploreVariant,
   FeedbackBatch,
   Reference,
+  SentNoteWire,
   SessionEndedBy,
   VideoDigest,
   VideoFrames,
@@ -617,6 +619,7 @@ export class SessionStore implements ViewStore {
     references: Reference[] = [],
     skills: string[] = [],
     view?: BatchView,
+    target?: BatchTarget,
   ): FeedbackBatch | null {
     if (this.holdsPendingVideo(attachments)) throw new Error('a video still being digested cannot be sent')
     const items = this.annotations
@@ -638,6 +641,7 @@ export class SessionStore implements ViewStore {
       ...(attachments.length ? { attachments } : {}),
       ...(references.length ? { references } : {}),
       ...(skills.length ? { skills } : {}),
+      ...(target ? { target } : {}),
       ...(view ? { view } : {}),
       sentAt: Date.now(),
     }
@@ -911,10 +915,40 @@ export class SessionStore implements ViewStore {
     return this.outbox.find((b) => !b.ackedAt) ?? null
   }
 
-  /** Batches handed out but never acked - what an ACP turn's end settles. At most
-   *  one at a time: `nextBatch` only ever hands out the oldest unacked. */
-  deliveredBatchIds(): string[] {
-    return this.outbox.filter((b) => b.deliveredAt && !b.ackedAt).map((b) => b.batchId)
+  /** What the user sent from the note box, newest first: the batches with
+   *  something typed or chipped there, not ones that only carried the queue. */
+  sentNotes(limit: number): SentNoteWire[] {
+    const out: SentNoteWire[] = []
+    for (const batch of [...this.outbox].reverse()) {
+      if (out.length >= limit) break
+      if (batch.setup) continue
+      const references = batch.references ?? []
+      const attachments = (batch.attachments ?? []).map((a) => ({
+        id: a.id,
+        name: a.name,
+        ...(a.origin ? { origin: { pick: a.origin.pick } } : {}),
+      }))
+      const skills = batch.skills ?? []
+      if (!batch.note && !references.length && !attachments.length && !skills.length && !batch.target) continue
+      out.push({
+        note: batch.note ?? '',
+        references,
+        attachments,
+        skills,
+        ...(batch.target ? { target: batch.target } : {}),
+      })
+    }
+    return out
+  }
+
+  /** Oldest batch never handed out - the one a turn already answering an earlier
+   *  batch can be steered with. */
+  nextUndelivered(): FeedbackBatch | null {
+    return this.outbox.find((b) => !b.deliveredAt && !b.ackedAt) ?? null
+  }
+
+  findBatch(batchId: string): FeedbackBatch | undefined {
+    return this.outbox.find((b) => b.batchId === batchId)
   }
 
   /** Everything the agent has not finished with - the one it is on, and the ones
