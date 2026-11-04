@@ -6,11 +6,13 @@ const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.ur
 const json = <T>(path: string) => JSON.parse(read(path)) as T
 
 interface ReleasePackage {
+  'release-type'?: string
+  'package-name'?: string
   component?: string
   'include-component-in-tag'?: boolean
   draft?: boolean
   'force-tag-creation'?: boolean
-  'extra-files'?: string[]
+  'extra-files'?: (string | { type: string; path: string; jsonpath: string })[]
 }
 
 const config = json<{ packages: Record<string, ReleasePackage> }>('release-please-config.json')
@@ -59,8 +61,21 @@ test('no release reaches Latest before its files are in, and npm releases never 
   assert.match(jobs.get('desktop')!, /gh release edit "\$TAG" --draft=false --latest/)
 })
 
-test('a release bumps the bundled skill version with the package', () => {
-  assert.deepEqual(config.packages['.']!['extra-files'], ['skills/ezdesign/SKILL.md'])
+test('a release bumps the package and its bundled skill together', () => {
+  assert.deepEqual(config.packages['.']!['extra-files'], [
+    'skills/ezdesign/SKILL.md',
+    { type: 'json', path: 'package.json', jsonpath: '$.version' },
+  ])
+})
+
+// A Release PR holding only the npm package names no component, and release-please
+// then refuses to tag it unless the package's own component is empty too. A node
+// package takes one from package.json's name, which is how 0.12.0 shipped untagged.
+test('the npm package has no component of its own, so a Release PR of it alone gets tagged', () => {
+  const root = config.packages['.']!
+  assert.equal(root['release-type'], 'simple')
+  assert.equal(root['package-name'], undefined)
+  assert.equal(root.component, undefined)
 })
 
 test('a canary goes out when anything the tarball is built from changed', () => {
