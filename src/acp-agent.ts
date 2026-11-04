@@ -758,13 +758,14 @@ export class AcpAgent {
   }
 
   /** The steer is in: what was said up to here answers what the turn was on
-   *  before it, and the feed starts over for the part that answers the steer. */
+   *  before it, and the feed starts over for the part that answers the steer.
+   *  Announced by the steer resolving rather than by `onChange`: until its
+   *  caller has put `said` somewhere, a snapshot would show those words gone. */
   private steered(): void {
     if (this.state !== 'working') return this.settleSteer(null)
     const said = this.said()
     this.feed = []
     this.settleSteer(said)
-    this.opts.onChange()
   }
 
   /** The said segments of the feed, in order. Everything between them - the
