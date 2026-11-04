@@ -1072,7 +1072,17 @@ interface ExploreRequest {
 
 let exploreWaiting: { frame: string; request: ExploreRequest; starting?: boolean } | null = null
 
-function waitingPill(waiting: { request: ExploreRequest; starting?: boolean }): HTMLElement {
+/** The explore that is visibly waiting: only while the main line is actually at work. One
+ *  that is merely starting - recapturing, forking - or held up by something momentary like a
+ *  session still opening shows nothing, the way an explore that never waited does. */
+function shownWaiting(): { request: ExploreRequest } | null {
+  if (!exploreWaiting || exploreWaiting.starting) return null
+  const mainLineRunning =
+    !!snapshot?.agentBusy || !!snapshot?.agentQueued || snapshot?.acp?.state === 'working'
+  return mainLineRunning ? exploreWaiting : null
+}
+
+function waitingPill(waiting: { request: ExploreRequest }): HTMLElement {
   const pill = h('div', 'ez-strip-pill')
   const label = shortAnchor(waiting.request.anchor)
   pill.title = `agent 做完手上的工作，就開始探索「${label}」`
@@ -1082,7 +1092,6 @@ function waitingPill(waiting: { request: ExploreRequest; starting?: boolean }): 
   const actions = h('div', 'ez-strip-actions')
   const cancel = h('button', 'ez-strip-action', '取消')
   cancel.title = '不探索了，留言放回原處'
-  cancel.disabled = !!waiting.starting
   cancel.onclick = cancelWaitingExplore
   actions.append(cancel)
   pill.append(actions)
@@ -1212,12 +1221,14 @@ let stripDrawn: string | null = null
 
 function paintStrip(): void {
   const rounds = liveExplores()
-  strip.hidden = rounds.length === 0 && !exploreWaiting
-  const waiting = exploreWaiting && {
-    anchor: exploreWaiting.request.anchor,
-    starting: !!exploreWaiting.starting,
-  }
-  const signature = JSON.stringify([currentChatId(), snapshot?.agentBusy ?? false, rounds, waiting])
+  const waiting = shownWaiting()
+  strip.hidden = rounds.length === 0 && !waiting
+  const signature = JSON.stringify([
+    currentChatId(),
+    snapshot?.agentBusy ?? false,
+    rounds,
+    waiting?.request.anchor ?? null,
+  ])
   if (signature === stripDrawn) return
   stripDrawn = signature
   const focused = document.activeElement
@@ -1226,7 +1237,7 @@ function paintStrip(): void {
   const heldChoice = chip?.dataset.choice
   strip.replaceChildren(
     ...rounds.map((round) => roundPill(round)),
-    ...(exploreWaiting ? [waitingPill(exploreWaiting)] : []),
+    ...(waiting ? [waitingPill(waiting)] : []),
   )
   // Rebuilt whole, so the chip being chosen with the arrow keys has to be handed focus back.
   if (heldRound === undefined || heldChoice === undefined) return
