@@ -27,6 +27,7 @@ import type {
   Annotation,
   Attachment,
   AttachmentOrigin,
+  BatchTarget,
   BatchView,
   ConversationEntry,
   ExploreState,
@@ -618,6 +619,7 @@ export class SessionStore implements ViewStore {
     references: Reference[] = [],
     skills: string[] = [],
     view?: BatchView,
+    target?: BatchTarget,
   ): FeedbackBatch | null {
     if (this.holdsPendingVideo(attachments)) throw new Error('a video still being digested cannot be sent')
     const items = this.annotations
@@ -639,6 +641,7 @@ export class SessionStore implements ViewStore {
       ...(attachments.length ? { attachments } : {}),
       ...(references.length ? { references } : {}),
       ...(skills.length ? { skills } : {}),
+      ...(target ? { target } : {}),
       ...(view ? { view } : {}),
       sentAt: Date.now(),
     }
@@ -926,8 +929,14 @@ export class SessionStore implements ViewStore {
         ...(a.origin ? { origin: { pick: a.origin.pick } } : {}),
       }))
       const skills = batch.skills ?? []
-      if (!batch.note && !references.length && !attachments.length && !skills.length) continue
-      out.push({ note: batch.note ?? '', references, attachments, skills })
+      if (!batch.note && !references.length && !attachments.length && !skills.length && !batch.target) continue
+      out.push({
+        note: batch.note ?? '',
+        references,
+        attachments,
+        skills,
+        ...(batch.target ? { target: batch.target } : {}),
+      })
     }
     return out
   }

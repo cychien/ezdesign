@@ -55,7 +55,9 @@ import { ProjectHub } from './projects/hub.js'
 import { homePageRouter, projectsApiRouter } from './projects/routes.js'
 import { projectRoot } from './project-root.js'
 import {
+  type TargetRequest,
   attachmentIds,
+  parseBatchTarget,
   parseBatchView,
   parseReferences,
   sanitizeAnchor,
@@ -100,6 +102,7 @@ import type {
   ExploreCapture,
   ExploreState,
   ExploreStatus,
+  BatchTarget,
   FeedbackBatch,
   PollResult,
   Reference,
@@ -400,8 +403,13 @@ function invokedSkill(skills: string[], agent: string): string[] {
  *  agent is known. The record keeps `[skill n]`, which belongs to nobody; what
  *  goes over the wire is the name in the language this agent reads. */
 function spokenFeedback(feedback: FeedbackPayload, skills: string[], agent: string): FeedbackPayload {
+  // `[target 1]` is spent here too, as what the user typed: the brief says what
+  // it asks for, and the sentence reads as they wrote it.
+  const target = feedback.target
   const named = (text: string | null): string | null =>
-    text === null ? null : spendSkillMarkers(text, skills, agent)
+    text === null
+      ? null
+      : spendSkillMarkers(text, skills, agent).replace(TARGET_MARKER, target ? `#${target.label}` : '')
   return {
     ...feedback,
     note: named(feedback.note),
@@ -680,6 +688,12 @@ const SAID_NOTHING_NOTE = '這一輪結束了，agent 沒有回覆內容'
 /** How far back the note box's Up arrow reaches. */
 const SENT_NOTES_RECALLED = 50
 
+/** Where the `#` sat in the note: the composer's `targetMarker(1)`. */
+const TARGET_MARKER = '[target 1]'
+
+/** What a `#` asking for a fresh canvas reads as, in the chip and to the agent. */
+const NEW_CANVAS_LABEL = '新 canvas'
+
 const STEER_ATTEMPTS = 5
 const STEER_RETRY_MS = 100
 
@@ -765,6 +779,8 @@ class SessionRuntime implements ProjectRuntime {
   /** Where the user was when they sent the batch being answered; see
    *  `activeSkills`. */
   private activeView: BatchView | undefined = undefined
+  /** Where the user said the batch being answered goes, sealed like the view. */
+  private activeTarget: BatchTarget | undefined = undefined
   /** The ask for a round whose branch is still opening. Held rather than sent,
    *  because a prompt to a session that is not up yet is a prompt that is
    *  dropped - see `deliverToAcp`. */
@@ -1177,13 +1193,27 @@ class SessionRuntime implements ProjectRuntime {
 
   /** The per-turn canvas brief: the view sealed on the batch being delivered,
    *  and the inventory as it is now. */
-  private canvasLines(view = this.activeView): string[] {
+  private canvasLines(
+    batch: Pick<FeedbackBatch, 'view' | 'target'> = { view: this.activeView, target: this.activeTarget },
+  ): string[] {
     return canvasBrief({
       inventory: this.canvases.read.inventory(),
-      view,
+      view: batch.view,
       app: this.app.kind === 'attached' ? this.app.origin : null,
       tools: this.agentHasCanvasTools,
+      ...(batch.target ? { target: batch.target } : {}),
     })
+  }
+
+  /** A `#` from `/send` with the name the user picked it by, or null when it
+   *  names a place this review does not have: no app attached, no such canvas,
+   *  or no canvas tools for the agent to reach any canvas with. */
+  private resolveTarget(request: TargetRequest): BatchTarget | null {
+    if (request.kind === 'app') return this.app.kind === 'attached' ? { kind: 'app', label: 'App' } : null
+    if (!this.agentHasCanvasTools) return null
+    if (request.kind === 'new-canvas') return { kind: 'new-canvas', label: NEW_CANVAS_LABEL }
+    const canvas = this.canvases.read.inventory().canvases.find((c) => c.id === request.canvasId)
+    return canvas ? { kind: 'canvas', canvasId: canvas.id, label: canvas.name } : null
   }
 
   private toShells(event: CanvasEventWire): void {
@@ -1858,7 +1888,7 @@ class SessionRuntime implements ProjectRuntime {
       batch.skills ?? [],
       acp.snapshot().agent,
       replyLanguageLine(this.store.userWords()),
-      this.canvasLines(batch.view),
+      this.canvasLines(batch),
     )
     void acp.steer(text).then((said) => {
       this.steeringBatch = null
@@ -1890,6 +1920,7 @@ class SessionRuntime implements ProjectRuntime {
     this.activeBatch = batch.batchId
     this.activeSkills = batch.skills ?? []
     this.activeView = batch.view
+    this.activeTarget = batch.target
     this.broadcast()
     this.deliverToAcp()
   }
@@ -1922,6 +1953,7 @@ class SessionRuntime implements ProjectRuntime {
     this.activeBatch = batch.batchId
     this.activeSkills = batch.skills ?? []
     this.activeView = batch.view
+    this.activeTarget = batch.target
     return this.feedbackOf(batch)
   }
 
@@ -1936,6 +1968,7 @@ class SessionRuntime implements ProjectRuntime {
       items: batch.items.map((a) => toAgentItem(a, this.store, this.canvases.read.names)),
       ...(attachments ? { attachments } : {}),
       ...(batch.references?.length ? { references: batch.references } : {}),
+      ...(batch.target ? { target: batch.target } : {}),
       ...(batch.setup ? { setup: true as const } : {}),
     }
   }
@@ -2237,7 +2270,11 @@ class SessionRuntime implements ProjectRuntime {
       }
       const view = parseBatchView(req.body?.view)
       if (view === null) return res.status(400).json({ error: 'view must be a tab' })
-      const batch = this.store.sendBatch(req.body?.note ?? null, files, refs, skills, view)
+      const asked = parseBatchTarget(req.body?.target)
+      if (asked === null) return res.status(400).json({ error: 'target must be a place' })
+      const target = asked && this.resolveTarget(asked)
+      if (target === null) return res.status(400).json({ error: '找不到指定的位置' })
+      const batch = this.store.sendBatch(req.body?.note ?? null, files, refs, skills, view, target)
       if (!batch) return res.status(400).json({ error: 'nothing to send' })
       this.store.appendConversation({
         role: 'user',
@@ -2250,6 +2287,7 @@ class SessionRuntime implements ProjectRuntime {
           ? { references: batch.references.map((r) => ({ n: r.n, label: r.label })) }
           : {}),
         ...(batch.skills?.length ? { skills: batch.skills } : {}),
+        ...(batch.target ? { target: batch.target } : {}),
       })
       if (this.acp) this.deliverToAcp()
       this.wakePollers()

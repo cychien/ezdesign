@@ -293,6 +293,16 @@ export interface ExploreState {
  *  the strip, so nothing of this round is on the page any more. */
 export type ExploreStatus = 'generating' | 'done' | 'cancelled' | 'dismissed'
 
+/** Where the user asked for a batch's result to go, with a `#` in the note box.
+ *  Absent, the agent decides, as it always has. `label` is what the user picked,
+ *  stamped by the daemon at send time: a canvas renamed or deleted since must
+ *  not change what the thread says they asked for. */
+export type BatchTarget = (
+  | { kind: 'app' }
+  | { kind: 'canvas'; canvasId: string }
+  | { kind: 'new-canvas' }
+) & { label: string }
+
 export interface FeedbackBatch {
   batchId: string
   items: Annotation[]
@@ -318,6 +328,8 @@ export interface FeedbackBatch {
   skills?: string[]
   /** Not feedback: builds the design harness's files; carries no items or note. */
   setup?: true
+  /** Where the result goes; `[target 1]` in the note is where the user put it. */
+  target?: BatchTarget
   /** The tab the user was on when they sent this, stamped by `/send`, so the
    *  turn says where they were rather than where the shell is at delivery. */
   view?: BatchView
@@ -333,6 +345,7 @@ export interface SentNoteWire {
   references: Reference[]
   attachments: { id: string; name: string; origin?: { pick: string } }[]
   skills: string[]
+  target?: BatchTarget
 }
 
 /** Where the user was: the App at a page, or a canvas. */
@@ -369,6 +382,8 @@ export interface ConversationEntry {
    *  skill leaves no other trace: the agent expands it into the prompt rather
    *  than calling its Skill tool, so nothing in the turn's activity says it ran. */
   skills?: string[]
+  /** The `#` the batch named, as the user saw it. */
+  target?: BatchTarget
 }
 
 export type SessionEndedBy = 'user' | 'agent'
@@ -387,6 +402,8 @@ export type PollResult =
       attachments?: AgentAttachment[]
       /** elements the note points at, rather than any one item */
       references?: Reference[]
+      /** where the user asked for the result to go; absent, it is the agent's call */
+      target?: BatchTarget
       setup?: true
     }
   | { type: 'session-ended'; endedBy: SessionEndedBy }

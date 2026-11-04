@@ -3,7 +3,7 @@
 
 import { MAX_VARIANT_HTML, MAX_VARIANT_NAME } from './explore.js'
 import { MAX_GROUP_MEMBERS } from './label.js'
-import type { Anchor, BatchView, ChosenVariant, ExploreCapture, Reference } from './protocol.js'
+import type { Anchor, BatchTarget, BatchView, ChosenVariant, ExploreCapture, Reference } from './protocol.js'
 import { asCanvasId } from './canvas/types.js'
 
 /** A comment pointing at more elements than this is a bug or an attack, not a
@@ -318,4 +318,18 @@ export function parseBatchView(raw: unknown): BatchView | null | undefined {
   }
   const id = tab === 'canvas' ? asCanvasId(canvasId) : null
   return id ? { tab: 'canvas', canvasId: id } : null
+}
+
+/** What `/send` takes for a batch's `#`: the place without its label, which the
+ *  daemon stamps itself. Three answers again: absent, a place, or `null` for one
+ *  that is there and unusable. */
+export type TargetRequest = BatchTarget extends infer T ? (T extends unknown ? Omit<T, 'label'> : never) : never
+
+export function parseBatchTarget(raw: unknown): TargetRequest | null | undefined {
+  if (raw === undefined || raw === null) return undefined
+  if (typeof raw !== 'object') return null
+  const { kind, canvasId } = raw as Record<string, unknown>
+  if (kind === 'app' || kind === 'new-canvas') return { kind }
+  const id = kind === 'canvas' ? asCanvasId(canvasId) : null
+  return id ? { kind: 'canvas', canvasId: id } : null
 }

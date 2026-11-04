@@ -9,6 +9,7 @@ import {
   draftPendingNames,
   draftRefs,
   draftSkills,
+  draftTarget,
   draftText,
   dropDraftRef,
   groupPicks,
@@ -521,4 +522,38 @@ test('an edited comment gets its pick back as one chip', () => {
     text(NBSP),
   ])
   assert.equal(draftText(body), '參考 [file 1] [file 2] 和 [file 3]')
+})
+
+// ------------------------------------------------------------------ targets
+
+// A `#` is marked where it sits, like a skill: the daemon turns it back into
+// what the user typed for the agent, and the thread into a chip.
+test('a target is marked where it stands and read back off the box', () => {
+  const target = { kind: 'app' as const, label: 'App' }
+  const body: DraftNode[] = [
+    { t: 'text', v: '標題改大 ' },
+    { t: 'target', target },
+  ]
+  assert.equal(draftText(body), '標題改大 [target 1]')
+  assert.deepEqual(draftTarget(body), target)
+  assert.equal(draftTarget([{ t: 'text', v: '沒有指定' }]), null)
+  assert.deepEqual(draftFileIds(body), [], 'a target is not a file')
+  assert.deepEqual(draftSkills(body), [], 'nor a skill')
+})
+
+test('a stored comment rebuilds its target chip, and a marker naming none stays text', () => {
+  const target = { kind: 'canvas' as const, canvasId: 'aaaaaaaaaaaa', label: 'Design system' }
+  const body = bodyFromComment('做三個版本 [target 1]', [], [], [], target)
+  assert.deepEqual(draftTarget(body), target)
+  assert.equal(draftText(body), '做三個版本 [target 1]')
+  const orphan = bodyFromComment('做三個版本 [target 1]', [], [], [])
+  assert.equal(draftTarget(orphan), null)
+  assert.equal(draftText(orphan), '做三個版本 [target 1]')
+})
+
+test('a reference brought back from a sent comment keeps the variant it was chosen with', () => {
+  const variant = { name: '實心', html: '<b>x</b>' }
+  const body = bodyFromComment('像 [ref 1]', [{ n: 1, anchor: anchor('a.tsx:1'), label: 'cta', variant }], [])
+  const ref = body.find((n) => n.t === 'ref')
+  assert.deepEqual(ref && ref.t === 'ref' ? ref.variant : null, variant)
 })

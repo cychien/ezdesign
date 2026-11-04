@@ -5,7 +5,7 @@
  *  not the tab showing when the batch is delivered: a batch queued behind a
  *  working turn is about what the user was looking at when they sent it. */
 
-import type { BatchView } from '../protocol.js'
+import type { BatchTarget, BatchView } from '../protocol.js'
 import { CANVAS_SERVER_NAME, CANVAS_TOOL_NAMES } from './mcp.js'
 import { CANVASES_DIR, type CanvasInventory } from './types.js'
 
@@ -22,6 +22,9 @@ export interface CanvasBriefInput {
    *  canvases is said: describing tools it cannot call invites it to write
    *  `canvas.json` by hand. */
   tools: boolean
+  /** Where the user said the result goes, with `#`. Absent, it is the agent's
+   *  call, steered only by the canvas the user was on. */
+  target?: BatchTarget
 }
 
 /** Lines for `acpPrompt`; empty without tools, so the prompt is unchanged. */
@@ -58,9 +61,28 @@ export function canvasBrief(input: CanvasBriefInput): string[] {
     `Items with anchor.frame were made inside a canvas frame; anchor.source is then a line of that frame's file under ${CANVASES_DIR}/.`,
     "A frame's HTML is yours: change it with update_frame or by editing that file. Its position is the user's and its width is fixed; when the content needs a different height, pass height to update_frame rather than adding the frame again. Never edit canvas.json or layout.json.",
     `To show the user designs, mockups or alternatives side by side, put each one in a frame on a canvas. Canvas tools (${CANVAS_SERVER_NAME}): ${CANVAS_TOOL_NAMES.join(', ')}.`,
-    target
-      ? `Add new frames to canvas "${target.name}" (${target.id}). Call create_canvas only when the user asks for a new canvas or this one is full.`
-      : 'No canvas is open: create one with create_canvas for new frames.',
+    input.target
+      ? destination(input.target, all)
+      : target
+        ? `Add new frames to canvas "${target.name}" (${target.id}). Call create_canvas only when the user asks for a new canvas or this one is full.`
+        : 'No canvas is open: create one with create_canvas for new frames.',
     '',
   ]
+}
+
+/** The user's `#`, as an instruction rather than a default: where the result
+ *  goes, and where it must not. */
+function destination(target: BatchTarget, canvases: CanvasInventory['canvases']): string {
+  const marked = `The user marked this batch #${target.label}, so that is where the result goes:`
+  if (target.kind === 'app') {
+    return `${marked} make the change in the app's own source. Do not put it on a canvas.`
+  }
+  if (target.kind === 'new-canvas') {
+    return `${marked} create a new canvas with create_canvas, named for what it holds, and put the result on it as frames. Do not change the app's source for it.`
+  }
+  const canvas = canvases.find((c) => c.id === target.canvasId)
+  if (!canvas) {
+    return `${marked} canvas "${target.label}" has since been deleted, so create a new canvas with create_canvas named "${target.label}" and put the result on it as frames. Do not change the app's source for it.`
+  }
+  return `${marked} put it on canvas "${canvas.name}" (${canvas.id}) as frames${canvas.archived ? ' - it is archived, so call reopen_canvas first' : ''}. Do not change the app's source for it, and do not use another canvas.`
 }

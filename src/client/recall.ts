@@ -29,7 +29,13 @@ export function recallHistory(notes: SentNoteWire[]): DraftNode[][] {
   let last: string | null = null
   for (const sent of notes) {
     const body = trimEnd(
-      bodyFromComment(sent.note, sent.references as NumberedRef[], sent.attachments, sent.skills),
+      bodyFromComment(
+        sent.note,
+        sent.references as NumberedRef[],
+        sent.attachments,
+        sent.skills,
+        sent.target,
+      ),
     )
     const key = draftKey(body)
     if (key === last) continue

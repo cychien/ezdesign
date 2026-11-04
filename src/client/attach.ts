@@ -17,6 +17,7 @@ import {
   draftPendingNames,
   draftRefs,
   draftSkills,
+  draftTarget,
   draftText,
   hasPendingRef,
   nextRefNumber,
@@ -24,6 +25,7 @@ import {
   refChipText,
   restorableBody,
 } from './draft.js'
+import type { BatchTarget } from '../protocol.js'
 import type { DraftNode, NumberedRef, RefWire } from './draft.js'
 import { type IconNode, icon } from './icon.js'
 import { type Make, type SlashCommand, attachSlashMenu } from './slash.js'
@@ -82,6 +84,10 @@ interface Options {
    *  running. Absent means the box has no `$` menu at all - a poll-mode review
    *  has no agent to hand a skill to. */
   skills?: () => SlashCommand[] | Promise<SlashCommand[]>
+  /** Offered under `#`: where the batch's result goes. Asked on every keystroke
+   *  behind the `#`, since canvases come and go while the box is open. Absent
+   *  means no `#` menu - with no canvas to choose, there is nothing to say. */
+  targets?: () => SlashCommand[]
   /** Lets the user choose references from the capture library; what comes back
    *  is already this session's attachments. Absent means no `/library` - an
    *  unframed page has no shell to open the library in. */
@@ -105,6 +111,10 @@ export interface AttachController {
   skills(): string[]
   /** Put a skill chip at the caret. */
   insertSkill(name: string): void
+  /** Where the box says the result goes, if it says. */
+  target(): BatchTarget | null
+  /** Put the one target chip at the caret, taking out any other. */
+  insertTarget(target: BatchTarget): void
   /** Attachment ids, in the order the chips appear. */
   ids(): string[]
   /** Picked-element references, in the order the chips appear, each carrying the
@@ -154,6 +164,9 @@ const REF_ATTR = 'data-ez-ref'
  *  a second: everything that walks the box keys off the attribute, and a skill is
  *  neither a file to delete nor a reference to number. */
 const SKILL_ATTR = 'data-ez-skill'
+/** Where the result goes, as JSON. Its own attribute for the reason the others
+ *  are: everything that walks the box keys off the attribute. */
+const TARGET_ATTR = 'data-ez-target'
 /** A library pick: its files as JSON. Its own attribute, so the upload
  *  bookkeeping keyed off `CHIP_ATTR` never sees it. */
 const PICK_ATTR = 'data-ez-pick'
@@ -166,6 +179,7 @@ export function attachify({
   onChange,
   commands,
   skills,
+  targets,
   chooseLibrary,
 }: Options): AttachController {
   const editable = mk('div', className)
@@ -234,6 +248,12 @@ export function attachify({
     load: skills,
   })
 
+  /** Where the result goes, on a third trigger: neither something done to this
+   *  box nor a skill handed over, but an instruction about the outcome. */
+  const targetMenu = targets
+    ? attachSlashMenu(editable, { mk, triggerChar: '#', title: '放到', commands: targets })
+    : null
+
   /** Chips with an upload still in flight. Membership plus "still in the DOM" is
    *  what `pending` asks, so a chip deleted mid-upload stops blocking the send
    *  the moment it is gone. */
@@ -289,6 +309,7 @@ export function attachify({
     chip.querySelector('.ez-chip-name')!.textContent = name
     if (attr === REF_ATTR) chip.classList.add('ez-chip-ref')
     if (attr === SKILL_ATTR) chip.classList.add('ez-chip-skill')
+    if (attr === TARGET_ATTR) chip.classList.add('ez-chip-target')
     if (attr === PICK_ATTR) chip.classList.add('ez-chip-library')
     if (!value) chip.classList.add('ez-chip-pending')
     return chip
@@ -324,6 +345,9 @@ export function attachify({
   /** No glyph and a `$` in the name: this one reads as a token in the sentence,
    *  the way inline code does, rather than as a labelled object like a file. */
   const skillChip = (name: string) => makeChip(`$${name}`, SKILL_ATTR, name, null)
+
+  /** A token in the sentence, the way a skill is: `#` and what was picked. */
+  const targetChip = (target: BatchTarget) => makeChip(`#${target.label}`, TARGET_ATTR, JSON.stringify(target), null)
 
   const pendingRef = () => editable.querySelector<HTMLElement>(`[${REF_ATTR}=""]`)
 
@@ -500,6 +524,7 @@ export function attachify({
       else if (node.t === 'file') editable.appendChild(fileChip(node.name, node.id))
       else if (node.t === 'skill') editable.appendChild(skillChip(node.name))
       else if (node.t === 'pick') editable.appendChild(pickChip(node.files))
+      else if (node.t === 'target') editable.appendChild(targetChip(node.target))
       else {
         const ref = node.anchor
           ? {
@@ -541,6 +566,7 @@ export function attachify({
     (node.hasAttribute(CHIP_ATTR) ||
       node.hasAttribute(REF_ATTR) ||
       node.hasAttribute(SKILL_ATTR) ||
+      node.hasAttribute(TARGET_ATTR) ||
       node.hasAttribute(PICK_ATTR))
 
   /** Backspacing away the spacer a chip brought with it is handled here rather
@@ -635,6 +661,14 @@ export function attachify({
       insertAtCaret(skillChip(name))
       changed()
     },
+    target: () => draftTarget(snapshot()),
+    insertTarget(target: BatchTarget): void {
+      // One per box, so a second pick is a change of mind, not an addition: it
+      // goes where the user typed this `#`, and the old chip goes.
+      for (const old of editable.querySelectorAll(`[${TARGET_ATTR}]`)) old.remove()
+      insertAtCaret(targetChip(target))
+      changed()
+    },
     ids: () => draftFileIds(snapshot()),
     refs: () => draftRefs(snapshot()),
     pending: () => [...uploading].filter((c) => editable.contains(c)).length,
@@ -653,7 +687,7 @@ export function attachify({
     },
     // Either menu, whichever is up - at most one can be, since a trigger only
     // counts at the start of the word being typed.
-    closeSlash: () => slash.close() || skillMenu.close(),
+    closeSlash: () => slash.close() || skillMenu.close() || !!targetMenu?.close(),
     beginRef,
     resolveRef,
     insertRef,
@@ -718,6 +752,11 @@ function collectNodes(node: Node, out: DraftNode[]): void {
       out.push({ t: 'pick', files: parsePick(child.getAttribute(PICK_ATTR)) })
       continue
     }
+    if (child.hasAttribute(TARGET_ATTR)) {
+      const target = parseTarget(child.getAttribute(TARGET_ATTR))
+      if (target) out.push({ t: 'target', target })
+      continue
+    }
     if (child.hasAttribute(SKILL_ATTR)) {
       // The name comes off the attribute, not off the chip: what the chip reads
       // carries a `$` the agent must never be handed.
@@ -752,6 +791,14 @@ function parseRef(raw: string | null): NumberedRef | null {
   if (!raw) return null
   try {
     return JSON.parse(raw) as NumberedRef
+  } catch {
+    return null
+  }
+}
+
+function parseTarget(raw: string | null): BatchTarget | null {
+  try {
+    return raw ? (JSON.parse(raw) as BatchTarget) : null
   } catch {
     return null
   }

@@ -156,7 +156,9 @@ export function attachSlashMenu(
     load,
   }: {
     mk: Make
-    commands: SlashCommand[]
+    /** A function is asked on every keystroke behind the trigger, for a list
+     *  that changes while the box is open - the canvases a result can go to. */
+    commands: SlashCommand[] | (() => SlashCommand[])
     triggerChar?: string
     title?: string
     /** A source fetched the first time the trigger is typed, for a list this
@@ -363,7 +365,8 @@ export function attachSlashMenu(
           if (readTrigger()) sync()
         })
     }
-    const matches = filterCommands(load ? (loaded ?? []) : commands, hit.query)
+    const listed = typeof commands === 'function' ? commands() : commands
+    const matches = filterCommands(load ? (loaded ?? []) : listed, hit.query)
     if (matches.length === 0) {
       // No "no results" row: closing lets the slash go back to being a character,
       // and a backspace brings the menu straight back.

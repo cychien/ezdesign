@@ -1,3 +1,5 @@
+import type { BatchTarget } from '../protocol.js'
+
 /** The serializable mirror of what a comment box holds: text runs and chips
  *  interleaved, in document order. `attachify` walks the DOM once into this
  *  shape, and every semantic - the text the comment reads as, which files it
@@ -71,6 +73,9 @@ export type DraftNode =
   /** References chosen from the library in one go, as one chip. To the agent
    *  they are files like any other: each takes its own `[file n]`. */
   | { t: 'pick'; files: { id: string; name: string }[] }
+  /** Where the batch's result goes, picked with `#`. One per box: the batch has
+   *  one result and it lands in one place. */
+  | { t: 'target'; target: BatchTarget }
 
 /** What the popup was anchored to, captured as data rather than as a live node,
  *  so a save is still machine-precise when the node itself is gone. */
@@ -151,13 +156,18 @@ export const fileMarker = (n: number): string => `[file ${n}]`
  *  agent-neutral and `acpPrompt` spends it at the one moment the agent is known.
  *  `[skill n]` is the name at index n-1. */
 export const skillMarker = (n: number): string => `[skill ${n}]`
-const MARKER = /\[(ref|file|skill) (\d+)\]/g
+
+/** Where the `#` sat in the sentence. Always 1 - a box holds one - but numbered
+ *  like the others so every marker reads and parses the same way. */
+export const targetMarker = (n: number): string => `[target ${n}]`
+const MARKER = /\[(ref|file|skill|target) (\d+)\]/g
 
 export type CommentPart =
   | { t: 'text'; v: string }
   | { t: 'ref'; n: number }
   | { t: 'file'; n: number }
   | { t: 'skill'; n: number }
+  | { t: 'target'; n: number }
 
 /** A comment's parts with each library pick's run of `[file n]` markers folded
  *  back into the one chip the user saw. A run is markers joined by the single
@@ -193,7 +203,7 @@ export function splitComment(text: string): CommentPart[] {
   let at = 0
   for (const match of text.matchAll(MARKER)) {
     if (match.index > at) out.push({ t: 'text', v: text.slice(at, match.index) })
-    out.push({ t: match[1] as 'ref' | 'file' | 'skill', n: Number(match[2]) })
+    out.push({ t: match[1] as 'ref' | 'file' | 'skill' | 'target', n: Number(match[2]) })
     at = match.index + match[0].length
   }
   if (at < text.length) out.push({ t: 'text', v: text.slice(at) })
@@ -214,12 +224,14 @@ export function draftText(body: DraftNode[]): string {
   // Counted in this pass, so the numbering matches `draftFileIds` by construction.
   let file = 0
   let skill = 0
+  let target = 0
   for (const node of body) {
     if (node.t === 'text') out.push(node.v)
     else if (node.t === 'ref' && node.anchor) out.push(refMarker(node.n))
     else if (node.t === 'file' && node.id) out.push(fileMarker(++file))
     else if (node.t === 'skill') out.push(skillMarker(++skill))
     else if (node.t === 'pick') out.push(node.files.map(() => fileMarker(++file)).join(' '))
+    else if (node.t === 'target') out.push(targetMarker(++target))
   }
   return out.join('').replaceAll(NBSP, ' ').trim()
 }
@@ -242,6 +254,7 @@ export function bodyFromComment(
   refs: NumberedRef[],
   files: { id: string; name: string; origin?: { pick: string } }[],
   skills: string[] = [],
+  target?: BatchTarget,
 ): DraftNode[] {
   const byNumber = new Map(refs.map((r) => [r.n, r]))
   const placedRefs = new Set<number>()
@@ -264,7 +277,17 @@ export function bodyFromComment(
         continue
       }
       placedRefs.add(part.n)
-      body.push({ t: 'ref', n: ref.n, anchor: ref.anchor, label: ref.label })
+      body.push({
+        t: 'ref',
+        n: ref.n,
+        anchor: ref.anchor,
+        label: ref.label,
+        ...(ref.variant ? { variant: ref.variant } : {}),
+      })
+      continue
+    }
+    if (part.t === 'target') {
+      body.push(target && part.n === 1 ? { t: 'target', target } : { t: 'text', v: targetMarker(part.n) })
       continue
     }
     if (part.t === 'skill') {
@@ -297,15 +320,21 @@ export function bodyFromComment(
   return normalizeDraft(body)
 }
 
-/** Resolved references in document order, each carrying the number the comment
- *  refers to it by. Order and numbering are independent: the array is positional,
- *  `n` is an identity. */
 /** Every skill the user named, in the order they wrote them - which is the order
  *  `[skill n]` counts in, so the two cannot disagree. */
 export function draftSkills(body: DraftNode[]): string[] {
   return body.flatMap((node) => (node.t === 'skill' ? [node.name] : []))
 }
 
+/** Where the box says the result goes, if it says. */
+export function draftTarget(body: DraftNode[]): BatchTarget | null {
+  for (const node of body) if (node.t === 'target') return node.target
+  return null
+}
+
+/** Resolved references in document order, each carrying the number the comment
+ *  refers to it by. Order and numbering are independent: the array is positional,
+ *  `n` is an identity. */
 export function draftRefs(body: DraftNode[]): NumberedRef[] {
   const out: NumberedRef[] = []
   for (const node of body) {

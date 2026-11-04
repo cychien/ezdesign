@@ -47,7 +47,7 @@ import { ANNOUNCEMENTS } from './announcements/index.js'
 import { LIBRARY_TEST_IDS } from './library/names.js'
 import { chooseLibraryAttachments } from './library/picker.js'
 import { videoDigests } from './video-digest/runner.js'
-import type { DigestFailure, SentNoteWire } from '../protocol.js'
+import type { BatchTarget, DigestFailure, SentNoteWire } from '../protocol.js'
 import type { DevServerWire } from '../dev-server/wire.js'
 import { installDevServerPanel } from './dev-server-panel.js'
 import { host } from './host.js'
@@ -104,6 +104,7 @@ import {
   refMarker,
   skillMarker,
   splitComment,
+  targetMarker,
 } from './draft.js'
 import { STREAM_STATE, type StreamState } from './event-hub.js'
 import { subscribeEvents } from './event-stream.js'
@@ -170,6 +171,8 @@ interface ConversationWire {
   /** The skills this batch named, in the order they were written. `[skill n]`
    *  in the text is `skills[n-1]`. */
   skills?: string[]
+  /** Where the batch said its result goes. `[target 1]` in the text is it. */
+  target?: BatchTarget
   items?: {
     comment: string
     where: string
@@ -1946,6 +1949,7 @@ const noteAttach = attachify({
     },
   ],
   skills: () => fetchSkills(),
+  targets: () => targetCommands(),
   chooseLibrary: () => chooseLibraryAttachments(API),
 })
 const note = noteAttach.editable
@@ -3588,6 +3592,7 @@ async function sendBatch(): Promise<void> {
   const references = noteAttach.refs()
   const text = noteAttach.text()
   const skills = noteAttach.skills()
+  const target = noteAttach.target()
   // A skill on its own is a request: "run this over what you can see" needs no
   // annotation and no note.
   if (
@@ -3613,6 +3618,7 @@ async function sendBatch(): Promise<void> {
         attachments,
         references,
         ...(skills.length ? { skills } : {}),
+        ...(target ? { target } : {}),
         ...(canvasUi ? { view: canvasUi.batchView(nav.url) } : {}),
       }),
     })
@@ -3979,6 +3985,33 @@ async function fetchSkills(): Promise<SlashCommand[]> {
     description: skill.description,
     run: () => noteAttach.insertSkill(skill.name),
   }))
+}
+
+/** What `#` offers: the places a batch's result can go. Only with canvas tools -
+ *  without them the app is the only place there is, and a choice of one is not
+ *  a choice. Asked on every keystroke behind the `#`, so a canvas made a moment
+ *  ago is already on the list. */
+function targetCommands(): SlashCommand[] {
+  if (!snapshot?.canvas.agentHasTools) return []
+  const offer = (target: BatchTarget, hint: string, keywords: string[]): SlashCommand => ({
+    // Never the canvas id: it is hex, and `#a1b2c3` typed as a colour would
+    // match the canvas whose id happens to start that way.
+    id: target.kind === 'canvas' ? target.label : target.kind,
+    label: target.label,
+    hint,
+    keywords,
+    run: () => noteAttach.insertTarget(target),
+  })
+  const canvases = snapshot.canvas.canvases
+    .filter((c) => !c.archived)
+    .sort((a, b) => a.createdAt - b.createdAt)
+  return [
+    ...(snapshot.app ? [offer({ kind: 'app', label: 'App' }, '改到實際的 app', ['app', '網站', '頁面', '程式'])] : []),
+    ...canvases.map((c) =>
+      offer({ kind: 'canvas', canvasId: c.id, label: c.name }, 'canvas', ['canvas', '畫布']),
+    ),
+    offer({ kind: 'new-canvas', label: '新 canvas' }, '建立新的 canvas', ['new', 'canvas', '新', '畫布']),
+  ]
 }
 
 // --------------------------------------------------------------- chat picker
@@ -4391,6 +4424,7 @@ function buildSaid(entry: ConversationWire, isUser: boolean): HTMLElement {
     entry.attachments,
     items.length ? 'ez-bubble-note' : undefined,
     entry.skills,
+    entry.target,
   )
   if (entry.text || entry.references?.length || entry.attachments?.length) {
     said.appendChild(note.box)
@@ -4406,7 +4440,7 @@ function buildSaid(entry: ConversationWire, isUser: boolean): HTMLElement {
 function chipEl(
   name: string,
   glyph: IconNode | null,
-  kind?: 'ref' | 'skill' | 'library',
+  kind?: 'ref' | 'skill' | 'library' | 'target',
   title?: string,
 ): HTMLElement {
   const chip = h('span', kind ? `ez-chip ez-chip-${kind}` : 'ez-chip')
@@ -4422,6 +4456,7 @@ const refChipEl = (n: number, label: string) =>
 /** The same token the composer writes into the box, read back. No glyph, because
  *  it is the same thing it was when it was typed - and the `$` is what says so. */
 const skillChipEl = (name: string) => chipEl(`$${name}`, null, 'skill')
+const targetChipEl = (target: BatchTarget) => chipEl(`#${target.label}`, null, 'target')
 
 /** Only for files the comment did not place - see `commentEl`. */
 function fileChips(names: string[]): HTMLElement | null {
@@ -4449,6 +4484,7 @@ function commentEl(
   files: FileEcho[] | undefined,
   className?: string,
   skills?: string[],
+  target?: BatchTarget,
 ): { box: HTMLElement; unplacedFiles: string[] } {
   const box = h('div', className)
   const numbered = new Map(
@@ -4473,6 +4509,12 @@ function commentEl(
       const chip = chipEl(pickChipText(++picks), Album02Icon as IconNode, 'library')
       chip.title = part.files.map((n) => names[n - 1]).join('\n')
       box.appendChild(chip)
+      continue
+    }
+    if (part.t === 'target') {
+      box.appendChild(
+        target && part.n === 1 ? targetChipEl(target) : document.createTextNode(targetMarker(part.n)),
+      )
       continue
     }
     if (part.t === 'skill') {
