@@ -84,6 +84,9 @@
      there for why hue 300 and why these two lightnesses. */
   --explore-ink: #5e3f8c;
   --explore-accent: #6b3baa;
+  /* A chip's plate in that violet, weighed like the chips above - 5.92:1
+     --explore-ink on it, 1.31 against --paper. */
+  --explore: #e0d7f3;
   /* The same violet as it reads on the variant strip's near-black pill.
      --explore-accent is weighted for paper and all but disappears there. */
   --explore-on-ink: #a97ae0;
@@ -2954,14 +2957,11 @@ body.ez-arranging .ez-frame {
   color: var(--ref-ink);
 }
 
-/* A reference the user brought back from an explore, rather than off the picker.
-   The plate stays the reference's, because that is what it is - an element the
-   comment points at - and the mark carries the violet instead, the way the branch
-   crumb does: the colour says which *kind* of reference it is without claiming a
-   fourth chip colour, which the palette above deliberately does not have. The
-   word in the chip does the rest. */
-.ez-chip-ref.ez-chip-chosen svg {
-  color: var(--explore-accent);
+/* A reference the user brought back from an explore, rather than off the
+   picker: it carries an answer, not a pointer, and wears explore's colour. */
+.ez-chip-ref.ez-chip-chosen {
+  background: var(--explore);
+  color: var(--explore-ink);
 }
 
 .ez-chip-library {

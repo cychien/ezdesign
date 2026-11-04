@@ -98,6 +98,8 @@
      the solid. */
   --ez-explore-ink: #5e3f8c;
   --ez-explore-accent: #6b3baa;
+  /* Mirrors the shell's explore plate. See the note on --explore there. */
+  --ez-explore: #e0d7f3;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans TC', sans-serif;
 }
 
@@ -368,14 +370,10 @@
   color: var(--ez-ref-ink);
 }
 
-/* A reference the user brought back from an explore, rather than off the picker.
-   The plate stays the reference's, because that is what it is - an element the
-   comment points at - and the mark carries the violet instead, the way the branch
-   crumb does: the colour says which *kind* of reference it is without claiming a
-   fourth chip colour, which the palette above deliberately does not have. The
-   word in the chip does the rest. */
-.ez-chip-ref.ez-chip-chosen svg {
-  color: var(--ez-explore-accent);
+/* A reference the user brought back from an explore. See the shell's rule. */
+.ez-chip-ref.ez-chip-chosen {
+  background: var(--ez-explore);
+  color: var(--ez-explore-ink);
 }
 
 .ez-chip-library {

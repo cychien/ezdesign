@@ -187,6 +187,9 @@ export interface ChosenVariant {
 export interface ReferenceEcho {
   n: number
   label: string
+  /** The name of the explore variant it carries, so the chip reads back as the
+   *  choice it was rather than as a plain pick. */
+  variant?: string
 }
 
 export interface Annotation {

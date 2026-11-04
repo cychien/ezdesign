@@ -48,7 +48,8 @@ import { ANNOUNCEMENTS } from './announcements/index.js'
 import { LIBRARY_TEST_IDS } from './library/names.js'
 import { chooseLibraryAttachments } from './library/picker.js'
 import { videoDigests } from './video-digest/runner.js'
-import type { BatchTarget, DigestFailure, SentNoteWire } from '../protocol.js'
+import type { BatchTarget, DigestFailure, ReferenceEcho, SentNoteWire } from '../protocol.js'
+import { referenceEcho } from '../label.js'
 import type { DevServerWire } from '../dev-server/wire.js'
 import { installDevServerPanel } from './dev-server-panel.js'
 import { host } from './host.js'
@@ -156,7 +157,7 @@ interface AnnotationWire {
 
 /** A bare string is what logs written before references carried a number hold.
  *  It has no marker to sit in, so it is appended rather than inlined. */
-type RefEcho = string | { n: number; label: string }
+type RefEcho = string | ReferenceEcho
 
 /** A file as the log keeps it. A bare string is a paste; a library pick's files
  *  carry the pick, which is what folds them back into one chip. */
@@ -4343,7 +4344,7 @@ function paintQueue(annotations: AnnotationWire[]): void {
     li.append(head)
     const row = commentEl(
       a.comment,
-      a.references,
+      a.references?.map(referenceEcho),
       a.attachments?.map((f) => (f.origin ? { name: f.name, pick: f.origin.pick } : f.name)),
       'ez-qi-comment',
     )
@@ -4460,8 +4461,17 @@ function chipEl(
   return chip
 }
 
-const refChipEl = (n: number, label: string) =>
-  chipEl(refChipText(n), AlignSelectionIcon as IconNode, 'ref', label)
+/** Drawn as the composer drew it - see `refChip` in `attach.ts`. */
+function refChipEl(ref: ReferenceEcho): HTMLElement {
+  const chip = chipEl(
+    refChipText(ref.n, !!ref.variant),
+    (ref.variant ? MagicWand01Icon : AlignSelectionIcon) as IconNode,
+    'ref',
+    [ref.variant, ref.label].filter(Boolean).join(' · '),
+  )
+  if (ref.variant) chip.classList.add('ez-chip-chosen')
+  return chip
+}
 
 /** The same token the composer writes into the box, read back. No glyph, because
  *  it is the same thing it was when it was typed - and the `$` is what says so. */
@@ -4498,7 +4508,7 @@ function commentEl(
 ): { box: HTMLElement; unplacedFiles: string[] } {
   const box = h('div', className)
   const numbered = new Map(
-    (refs ?? []).flatMap((r) => (typeof r === 'string' ? [] : [[r.n, r.label] as const])),
+    (refs ?? []).flatMap((r) => (typeof r === 'string' ? [] : [[r.n, r] as const])),
   )
   const echoes = files ?? []
   const names = echoes.map(echoName)
@@ -4546,15 +4556,15 @@ function commentEl(
       box.appendChild(chipEl(name, File02Icon as IconNode))
       continue
     }
-    const label = numbered.get(part.n)
+    const ref = numbered.get(part.n)
     // A marker naming nothing stays as it was written: silently dropping it
     // would lose the fact that the user pointed at something here.
-    if (label === undefined) {
+    if (ref === undefined) {
       box.appendChild(document.createTextNode(refMarker(part.n)))
       continue
     }
     placedRefs.add(part.n)
-    box.appendChild(refChipEl(part.n, label))
+    box.appendChild(refChipEl(ref))
   }
   // Anything the text did not name still has to be seen. A legacy echo has no
   // number to read, so it falls back to the label it does have.
@@ -4562,7 +4572,7 @@ function commentEl(
     if (typeof r === 'string') {
       box.appendChild(chipEl(r, AlignSelectionIcon as IconNode, 'ref'))
     } else if (!placedRefs.has(r.n)) {
-      box.appendChild(refChipEl(r.n, r.label))
+      box.appendChild(refChipEl(r))
     }
   }
   return {

@@ -92,7 +92,7 @@ import {
 } from './preferences.js'
 import { readInspireToken } from './credentials.js'
 import type { AttachmentLocator } from './label.js'
-import { attachmentEcho, shortAnchor, toAgentAttachments, toAgentItem, toConversationItem } from './label.js'
+import { attachmentEcho, referenceEcho, shortAnchor, toAgentAttachments, toAgentItem, toConversationItem } from './label.js'
 import { type IncomingVariant, ExploreMcp, MCP_ROUTE, isExploreTool } from './mcp-explore.js'
 import type {
   Anchor,
@@ -1611,7 +1611,7 @@ class SessionRuntime implements ProjectRuntime {
       ts: Date.now(),
       ...(round.attachments?.length ? { attachments: round.attachments.map(attachmentEcho) } : {}),
       ...(round.references?.length
-        ? { references: round.references.map((r) => ({ n: r.n, label: r.label })) }
+        ? { references: round.references.map(referenceEcho) }
         : {}),
     })
     const truth = truthState(this.project, this.harnessOn, this.store.harnessSeen())
@@ -2284,7 +2284,7 @@ class SessionRuntime implements ProjectRuntime {
         items: batch.items.map(toConversationItem),
         ...(batch.attachments?.length ? { attachments: batch.attachments.map(attachmentEcho) } : {}),
         ...(batch.references?.length
-          ? { references: batch.references.map((r) => ({ n: r.n, label: r.label })) }
+          ? { references: batch.references.map(referenceEcho) }
           : {}),
         ...(batch.skills?.length ? { skills: batch.skills } : {}),
         ...(batch.target ? { target: batch.target } : {}),

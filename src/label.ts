@@ -10,6 +10,7 @@ import type {
   DigestFailure,
   FrameRef,
   Reference,
+  ReferenceEcho,
   VideoDigest,
 } from './protocol.js'
 
@@ -213,9 +214,13 @@ export function attachmentEcho(a: Attachment): AttachmentEcho {
   return a.origin ? { name: a.name, pick: a.origin.pick } : a.name
 }
 
+export function referenceEcho(r: Reference): ReferenceEcho {
+  return { n: r.n, label: r.label, ...(r.variant ? { variant: r.variant.name } : {}) }
+}
+
 export function toConversationItem(a: Annotation): ConversationItem {
   const attachments = a.attachments?.map(attachmentEcho)
-  const references = a.references?.map((r) => ({ n: r.n, label: r.label }))
+  const references = a.references?.map(referenceEcho)
   return {
     comment: a.comment,
     where: shortAnchor(a.anchor),
