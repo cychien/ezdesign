@@ -393,7 +393,7 @@ export function attachSlashMenu(
     if (!menu) return
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault()
-      e.stopPropagation()
+      e.stopImmediatePropagation()
       const step = e.key === 'ArrowDown' ? 1 : shown.length - 1
       active = (active + step) % shown.length
       paintActive()
@@ -404,14 +404,14 @@ export function attachSlashMenu(
       // Cmd+Enter is the submit, and it outranks the menu.
       if (e.metaKey || e.ctrlKey) return
       e.preventDefault()
-      e.stopPropagation()
+      e.stopImmediatePropagation()
       const command = shown[active]
       if (command) choose(command)
       return
     }
     if (e.key === 'Escape') {
       e.preventDefault()
-      e.stopPropagation()
+      e.stopImmediatePropagation()
       close()
     }
   })
