@@ -223,6 +223,69 @@ test('cancel is refused when no turn is in flight', async () => {
   assert.equal(h.acp.cancelTurn(), false)
 })
 
+// A message steered in is answered by the turn already running, and the turn
+// still ends once, through its own prompt. What it said before the steer is the
+// reply to what it was on then; the reply at its end is only what came after.
+test('a steer joins the turn in flight, which splits its reply there', async () => {
+  const h = harness()
+  after(() => h.acp.stop())
+  await h.idle()
+  h.acp.prompt('SLOW')
+  await h.until('the turn to be under way', (s) => s.state === 'working' && s.feed.length > 0)
+  assert.equal(h.acp.steerable, true)
+
+  assert.equal(await h.acp.steer('SLOW again'), 's1:SLOW')
+  assert.equal(h.acp.snapshot().state, 'working', 'the steer did not end the turn')
+  await h.until('the steer to be answered', (s) => s.feed.length > 0)
+  assert.equal(await h.acp.steer('and this'), 's1:steered:SLOW again')
+
+  await h.until('the turn to end', () => h.turns.length > 0)
+  assert.deepEqual(h.turns, [{ reply: 's1:steered:and this', stopReason: 'end_turn' }])
+  const report = JSON.parse((await h.ask('REPORT')).reply) as Report
+  assert.deepEqual(
+    report.log.filter((l) => l.startsWith('prompt') || l.startsWith('steer')),
+    ['prompt:s1', 'steer:s1', 'steer:s1'],
+    'one turn, steered twice',
+  )
+})
+
+// The race steering always has: the turn is working when the steer leaves and
+// over by the time the agent reads it. The text is handed back rather than
+// started as a turn of the agent's own that nothing here would be following.
+test('a steer that reaches a turn already over is handed back', async () => {
+  const h = harness()
+  after(() => h.acp.stop())
+  await h.idle()
+  h.acp.prompt('hello')
+  assert.equal(h.acp.steerable, true)
+  assert.equal(await h.acp.steer('too late'), null)
+  await h.until('the turn to end', () => h.turns.length > 0)
+  assert.deepEqual(h.turns, [{ reply: 's1:hello', stopReason: 'end_turn' }])
+  const report = JSON.parse((await h.ask('REPORT')).reply) as Report
+  assert.equal(report.prompts.length, 1, 'the late steer started nothing')
+})
+
+test('there is nothing to steer while idle, or into an agent that cannot be steered', async () => {
+  const idle = harness()
+  after(() => idle.acp.stop())
+  await idle.idle()
+  assert.equal(idle.acp.steerable, false)
+  assert.equal(await idle.acp.steer('nobody is working'), null)
+
+  const plain = harness({ env: { EZ_FAKE_NO_STEER: '1' } })
+  after(() => plain.acp.stop())
+  await plain.idle()
+  plain.acp.prompt('SLOW')
+  await plain.until('the turn to be under way', (s) => s.state === 'working' && s.feed.length > 0)
+  assert.equal(plain.acp.steerable, false)
+  assert.equal(await plain.acp.steer('ignored'), null)
+  assert.deepEqual(plain.acp.snapshot().feed.length, 1, 'the turn is left as it was')
+  plain.acp.cancelTurn()
+  await plain.until('the turn to end', () => plain.turns.length > 0)
+  const report = JSON.parse((await plain.ask('REPORT')).reply) as Report
+  assert.equal(report.log.some((l) => l.startsWith('steer')), false, 'the agent was never asked')
+})
+
 // The whole point of /new: the next prompt lands on a session the agent has no
 // history for, which is what stops the review paying for one.
 test('reopening moves to a fresh session and closes the old one', async () => {
