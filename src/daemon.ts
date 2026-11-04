@@ -680,10 +680,6 @@ const SAID_NOTHING_NOTE = '這一輪結束了，agent 沒有回覆內容'
 const STEER_ATTEMPTS = 5
 const STEER_RETRY_MS = 100
 
-/** A batch the agent had said nothing about yet when the next one was steered
- *  in. Its answer is the one under that next batch. */
-const STEERED_ON_NOTE = '和下一則一起處理，回覆在下一則'
-
 /** Why the turn stopped, for the thread. Only ever shown for a stop the user did
  *  not get a reply out of - `end_turn` is the normal one and says nothing. The
  *  raw reason is kept in the fallback: an unmapped stop is still worth naming. */
@@ -1880,15 +1876,14 @@ class SessionRuntime implements ProjectRuntime {
   }
 
   /** `batch` is in the turn. What the agent said before it took it is the reply
-   *  to `answered`, and from here on the turn answers `batch`. */
+   *  to `answered`, and from here on the turn answers `batch`. Nothing said yet
+   *  leaves `answered` without a reply of its own: the next one covers both. */
   private steered(answered: string, batch: FeedbackBatch, said: string): void {
     this.store.markDelivered(batch.batchId)
     this.turnBatches.push(batch.batchId)
-    this.store.appendConversation(
-      said
-        ? { role: 'agent', text: said, ts: Date.now(), batchId: answered }
-        : { role: 'system', text: STEERED_ON_NOTE, ts: Date.now(), batchId: answered },
-    )
+    if (said) {
+      this.store.appendConversation({ role: 'agent', text: said, ts: Date.now(), batchId: answered })
+    }
     this.activeBatch = batch.batchId
     this.activeSkills = batch.skills ?? []
     this.activeView = batch.view

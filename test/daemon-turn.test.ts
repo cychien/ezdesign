@@ -162,22 +162,25 @@ test('a batch sent mid-turn goes into that turn, and the reply splits where it w
   assert.equal(done.agentQueued, undefined, 'nothing is left waiting: every batch was answered')
 })
 
-// A turn that has said nothing yet when the next batch goes in still leaves the
-// first question accounted for, rather than looking unanswered forever.
-test('a batch steered past a silent one says where its answer went', async () => {
+// A turn that has said nothing yet when the next batch goes in leaves nothing
+// under the first question: the reply under the next one covers both.
+test('a batch steered past a silent one leaves the reply to cover both', async () => {
   const port = await openWithAgent('http://localhost:9993', FAKE_AGENT)
   const first = await send(port, 'QUIET SLOW')
   await waitFor(
     async () => (await turnState(port)).acp?.state === 'working',
     'the turn to start',
   )
-  await send(port, 'second')
+  const second = await send(port, 'second')
   const done = await waitFor(async () => {
     const s = await turnState(port)
     return s.acp?.state === 'idle' && s.conversation.some((e) => e.role === 'agent') && s
   }, 'the turn to end')
-  const note = done.conversation.find((e) => e.role === 'system' && e.batchId === first)
-  assert.equal(note?.text, '和下一則一起處理，回覆在下一則')
+  assert.deepEqual(
+    done.conversation.filter((e) => e.role !== 'user').map((e) => [e.role, e.batchId]),
+    [['agent', second]],
+  )
+  assert.ok(!done.conversation.some((e) => e.role !== 'user' && e.batchId === first))
 })
 
 // An agent without the extension, or a turn of another kind, keeps the old
