@@ -85,7 +85,15 @@ import {
 } from './grid-layout.js'
 import type { GridMetrics, Layout } from './grid-layout.js'
 import type { AnchorWire, DraftNode, DraftWire, NumberedRef, RefWire } from './draft.js'
-import { RECALL_START, type RecallState, draftKey, recallHistory, recallOwns, recallStep } from './recall.js'
+import {
+  RECALL_START,
+  type RecallState,
+  draftKey,
+  isBlankDraft,
+  recallHistory,
+  recallMove,
+  showingRecalled,
+} from './recall.js'
 import {
   bodyFromComment,
   fileMarker,
@@ -1964,27 +1972,26 @@ note.addEventListener('focus', () => void loadRecalled())
 note.addEventListener('keydown', (e) => {
   if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return
   if (e.defaultPrevented || e.isComposing || e.shiftKey || e.altKey || e.metaKey || e.ctrlKey) return
-  const box = noteAttach.snapshot()
-  if (!recallOwns(recall, box)) {
-    recall = RECALL_START
-    return
-  }
-  e.preventDefault()
   const key = e.key === 'ArrowUp' ? 'up' : 'down'
+  const box = noteAttach.snapshot()
+  // Up leaves the box from its first line and Down from its last, so a long
+  // message is still walked line by line. A recalled one untouched is not the
+  // user's to walk, and goes on through the history from anywhere in it.
+  if (key === 'down' && recall.at < 0) return
+  const edge = noteAttach.caretOnEdgeLine(key === 'up' ? 'first' : 'last')
+  if (!edge && !showingRecalled(recall, box)) return
+  e.preventDefault()
   void loadRecalled().then((history) => {
-    // Typed into while the list was on its way: the box is a draft now.
+    // Typed into while the list was on its way: that press is stale.
     if (draftKey(noteAttach.snapshot()) !== draftKey(box)) return
-    const next = recallStep(recall, box, key, history.length)
-    if (next === null) return
-    if (next < 0) {
-      noteAttach.reset()
-      recall = RECALL_START
-      return
-    }
-    noteAttach.restore(history[next]!)
-    recall = { at: next, shown: draftKey(noteAttach.snapshot()) }
+    const move = recallMove(recall, box, key, history)
+    if (!move) return
+    if (isBlankDraft(move.body)) noteAttach.reset()
+    else noteAttach.restore(move.body)
+    recall = move.state.at < 0 ? move.state : { ...move.state, shown: draftKey(noteAttach.snapshot()) }
   })
 })
+
 /** The sidebar composer a pick started from is waiting in: the note box, or the
  *  queued annotation being edited. */
 let pickComposer: AttachController = noteAttach

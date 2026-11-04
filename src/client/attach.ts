@@ -136,6 +136,9 @@ export interface AttachController {
    *  ids and refs are all pure functions of it, and it is what crosses a
    *  document boundary when a popup has to survive a navigation. */
   snapshot(): DraftNode[]
+  /** Whether the caret sits on the box's first or last line as drawn, wrapped
+   *  lines included: where Up or Down has no line left to move the caret to. */
+  caretOnEdgeLine(edge: 'first' | 'last'): boolean
   /** Rebuild from a snapshot, replacing whatever the box holds. The caret ends
    *  past the last node, which only takes on a box that is in the document. */
   restore(body: DraftNode[]): void
@@ -323,6 +326,25 @@ export function attachify({
   const skillChip = (name: string) => makeChip(`$${name}`, SKILL_ATTR, name, null)
 
   const pendingRef = () => editable.querySelector<HTMLElement>(`[${REF_ATTR}=""]`)
+
+  function caretOnEdgeLine(edge: 'first' | 'last'): boolean {
+    const selection = document.getSelection()
+    if (!selection?.rangeCount || !selection.isCollapsed) return false
+    const caret = selection.getRangeAt(0)
+    if (!editable.contains(caret.startContainer)) return false
+    // Everything between the caret and that end of the box. The caret's own
+    // rect is no use: Chrome reports an empty one for a caret between elements,
+    // which is exactly where it sits on a blank line.
+    const between = document.createRange()
+    between.selectNodeContents(editable)
+    if (edge === 'first') between.setEnd(caret.startContainer, caret.startOffset)
+    else between.setStart(caret.startContainer, caret.startOffset)
+    if (hasLineBreak(between.cloneContents(), edge)) return false
+    // No break typed between them, but the text can still wrap onto more lines.
+    const line = parseFloat(getComputedStyle(editable).lineHeight) || 20
+    const tops = [...between.getClientRects()].map((r) => r.top)
+    return !tops.length || Math.max(...tops) - Math.min(...tops) < line / 2
+  }
 
   function placeCaretAfter(node: Node): void {
     const caret = document.createRange()
@@ -638,6 +660,7 @@ export function attachify({
     cancelRef,
     snapshot,
     restore,
+    caretOnEdgeLine,
     reset() {
       slash.close()
       uploading.clear()
@@ -652,6 +675,15 @@ export function attachify({
       changed()
     },
   }
+}
+
+/** Whether a stretch of the box holds a line break the user typed: a newline,
+ *  or the `<br>` and `<div>` a contenteditable makes of one. Toward the end of
+ *  the box, a `<br>` with nothing after it is Chrome's filler for a last line,
+ *  not a line of its own. */
+function hasLineBreak(stretch: DocumentFragment, edge: 'first' | 'last'): boolean {
+  if (edge === 'last' && stretch.lastChild?.nodeName === 'BR') stretch.lastChild.remove()
+  return !!stretch.querySelector('br, div, p') || (stretch.textContent ?? '').includes('\n')
 }
 
 /** The box as data. Everything that reads a composer goes through here, so this

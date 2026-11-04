@@ -8,8 +8,8 @@ import {
   draftKey,
   isBlankDraft,
   recallHistory,
-  recallOwns,
-  recallStep,
+  recallMove,
+  showingRecalled,
 } from '../src/client/recall.js'
 
 const sent = (note: string, extra: Partial<SentNoteWire> = {}): SentNoteWire => ({
@@ -28,8 +28,32 @@ const textOf = (body: DraftNode[]): string =>
     .join('')
     .trim()
 
-/** The box after an arrow put `body` in it. */
-const showing = (at: number, body: DraftNode[]): RecallState => ({ at, shown: draftKey(body) })
+const typed = (v: string): DraftNode[] => [{ t: 'text', v }]
+
+/** A box and the arrows over it, pressed the way the shell presses them: the
+ *  state an arrow returns is completed with what the box then holds. */
+function walker(history: DraftNode[][], start: DraftNode[] = []) {
+  let state: RecallState = RECALL_START
+  let box = start
+  return {
+    press(key: 'up' | 'down'): boolean {
+      const move = recallMove(state, box, key, history)
+      if (!move) return false
+      box = move.body
+      state = move.state.at < 0 ? move.state : { ...move.state, shown: draftKey(box) }
+      return true
+    },
+    type(more: string) {
+      box = [...box, { t: 'text', v: more }]
+    },
+    get box() {
+      return box
+    },
+    get state() {
+      return state
+    },
+  }
+}
 
 test('a sent message comes back with its chips where the markers were', () => {
   const [body] = recallHistory([
@@ -62,48 +86,54 @@ test('the same message sent twice in a row is one step back, not two', () => {
   assert.deepEqual(history.map(textOf), ['again', 'before', 'again'])
 })
 
-test('an empty box or one still showing a recalled message is the history’s', () => {
-  const [newest] = recallHistory([sent('newest')])
-  assert.equal(recallOwns(RECALL_START, []), true)
-  assert.equal(recallOwns(RECALL_START, [{ t: 'text', v: '  \n' }]), true)
-  assert.equal(recallOwns(showing(0, newest!), newest!), true)
-})
-
-// The one thing the arrows must never do: throw away what the user is writing.
-test('a draft of the user’s own, or a recalled message typed over, keeps its arrows', () => {
-  const [newest] = recallHistory([sent('newest')])
-  const typed: DraftNode[] = [{ t: 'text', v: 'half a thought' }]
-  assert.equal(recallOwns(RECALL_START, typed), false)
-  const edited: DraftNode[] = [...newest!, { t: 'text', v: ' more' }]
-  assert.equal(recallOwns(showing(0, newest!), edited), false)
-})
-
 test('Up walks back to the oldest and stops there, Down walks forward to an empty box', () => {
-  const history = recallHistory([sent('third'), sent('second'), sent('first')])
-  let state: RecallState = RECALL_START
-  let box: DraftNode[] = []
-  const press = (key: 'up' | 'down'): number | null => {
-    const next = recallStep(state, box, key, history.length)
-    if (next === null) return null
-    box = next < 0 ? [] : history[next]!
-    state = next < 0 ? RECALL_START : showing(next, box)
-    return next
-  }
-  assert.equal(press('down'), null, 'nothing below the user’s own box')
-  assert.deepEqual([press('up'), press('up'), press('up')], [0, 1, 2])
-  assert.equal(textOf(box), 'first')
-  assert.equal(press('up'), null, 'nothing older than the oldest')
-  assert.deepEqual([press('down'), press('down'), press('down')], [1, 0, -1])
-  assert.deepEqual(box, [])
-  assert.equal(press('down'), null)
+  const w = walker(recallHistory([sent('third'), sent('second'), sent('first')]))
+  assert.equal(w.press('down'), false, 'nothing below the user’s own box')
+  const back = [w.press('up'), textOf(w.box), w.press('up'), textOf(w.box), w.press('up'), textOf(w.box)]
+  assert.deepEqual(back, [true, 'third', true, 'second', true, 'first'])
+  assert.equal(w.press('up'), false, 'nothing older than the oldest')
+  const forward = [w.press('down'), textOf(w.box), w.press('down'), textOf(w.box), w.press('down')]
+  assert.deepEqual(forward, [true, 'second', true, 'third', true])
+  assert.deepEqual(w.box, [])
+  assert.equal(w.press('down'), false)
 })
 
-test('a recalled message emptied by hand starts the walk over from the newest', () => {
-  const history = recallHistory([sent('newest'), sent('older')])
-  assert.equal(recallStep(showing(1, history[1]!), [], 'up', history.length), 0)
+// The point of the change: a half-written message is not in the way of the
+// history, and is still there at the end of the walk.
+test('a draft is held while Up walks the history, and the last Down gives it back', () => {
+  const w = walker(recallHistory([sent('newest'), sent('older')]), typed('寫到一半'))
+  assert.equal(w.press('up'), true)
+  assert.equal(textOf(w.box), 'newest')
+  w.press('up')
+  w.press('down')
+  w.press('down')
+  assert.deepEqual(w.box, typed('寫到一半'))
+  assert.deepEqual(w.state, RECALL_START)
 })
 
-test('with nothing sent there is nowhere to go', () => {
-  assert.equal(recallStep(RECALL_START, [], 'up', 0), null)
+test('a recalled message typed over is what the last Down returns to', () => {
+  const w = walker(recallHistory([sent('newest'), sent('older')]), typed('原本的草稿'))
+  w.press('up')
+  w.press('up')
+  w.type('，改過')
+  assert.equal(showingRecalled(w.state, w.box), false, 'typed over, it is the user’s now')
+  assert.equal(w.press('down'), true)
+  assert.equal(textOf(w.box), 'newest')
+  w.press('down')
+  assert.equal(textOf(w.box), 'older，改過')
+})
+
+test('a recalled message untouched is still the history’s, wherever the caret is', () => {
+  const w = walker(recallHistory([sent('newest')]))
+  w.press('up')
+  assert.equal(showingRecalled(w.state, w.box), true)
+  assert.equal(showingRecalled(RECALL_START, w.box), false)
+})
+
+test('with nothing sent there is nowhere to go, and the box is left alone', () => {
+  const w = walker([], typed('draft'))
+  assert.equal(w.press('up'), false)
+  assert.deepEqual(w.box, typed('draft'))
   assert.equal(isBlankDraft([]), true)
+  assert.equal(isBlankDraft([{ t: 'text', v: ' \u00a0\n' }]), true)
 })
