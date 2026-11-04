@@ -268,6 +268,9 @@ interface SnapshotWire {
    *  advertised, so the page is told rather than left to guess: a command in the
    *  menu that always fails is worse than one that is not offered. */
   canExplore?: true
+  /** One asked for now would start now. A round moves the one agent off the main
+   *  line, so an explore asked for while the main line has work in hand waits. */
+  exploreFree?: true
   /** ACP mode only: the harness reaches the agent through this daemon's prompts. */
   designHarness?: boolean
   devServer: DevServerWire
@@ -1130,6 +1133,7 @@ class SessionRuntime implements ProjectRuntime {
       account: this.account.snapshot(),
       ...(live.length ? { explores: live } : {}),
       ...(this.canExplore ? { canExplore: true as const } : {}),
+      ...(this.exploreFree ? { exploreFree: true as const } : {}),
       devServer: this.devServer.snapshot(),
       appTab: this.app.kind === 'attached' || this.devServer.offersApp(),
       ...(this.appProxy.appDown ? { appDown: true as const } : {}),
@@ -1541,7 +1545,7 @@ class SessionRuntime implements ProjectRuntime {
    *  Resuming the copy is `reopenSession`'s job, which is also where the mcp
    *  servers and the review's pinned model get re-asserted - both of which a
    *  resumed session needs, since it comes back on the agent's own defaults. */
-  async branchAcpChat(): Promise<boolean> {
+  async branchAcpChat(stillWanted: () => boolean = () => true): Promise<boolean> {
     if (!this.acp?.canBranch) return false
     // Nothing said yet means nothing to carry, and an agent refuses to fork a
     // session with no transcript - which made `/explore` fail on every review
@@ -1554,7 +1558,7 @@ class SessionRuntime implements ProjectRuntime {
     }
     const agent = this.acp.snapshot().agent
     const forked = await this.acp.forkSession()
-    if (!forked) return false
+    if (!forked || !stillWanted()) return false
     return this.moveToChat(() => this.store.startBranch(forked, agent).id)
   }
 
@@ -1569,6 +1573,21 @@ class SessionRuntime implements ProjectRuntime {
    *  review itself. */
   get canExplore(): boolean {
     return !!this.acp?.canBranch && this.acp.servesMcpHttp
+  }
+
+  /** Whether a round can start without taking anything from the main line. The
+   *  branch moves the one agent off it, which cancels a turn in flight and settles
+   *  every batch still pending there unanswered - so nothing may be either. */
+  private get exploreFree(): boolean {
+    const acp = this.acp?.snapshot()
+    return (
+      this.canExplore &&
+      acp?.state === 'idle' &&
+      !acp.cancelling &&
+      !this.agentBusy &&
+      !this.pendingExplore &&
+      this.store.pendingBatchIds().length === 0
+    )
   }
 
   /** Open a round: a url for the agent to send variants to, a branch to have it
@@ -1587,13 +1606,15 @@ class SessionRuntime implements ProjectRuntime {
     direction?: string
     attachments?: Attachment[]
     references?: Reference[]
-  }): Promise<ExploreState | null> {
+  }): Promise<ExploreState | 'busy' | null> {
     if (!this.canExplore) return null
+    if (!this.exploreFree) return 'busy'
     const id = newId()
     this.exploreMcp.open(id, (variant) => this.takeVariant(id, variant))
-    if (!(await this.branchAcpChat())) {
+    // The fork is awaited, and a batch sent meanwhile would be settled by the move.
+    if (!(await this.branchAcpChat(() => this.exploreFree))) {
       this.exploreMcp.close(id)
-      return null
+      return this.exploreFree || !this.canExplore ? null : 'busy'
     }
     const label = shortAnchor(input.anchor)
     const round = this.store.startExplore({
@@ -2470,6 +2491,9 @@ class SessionRuntime implements ProjectRuntime {
         ...(files.length ? { attachments: files } : {}),
         ...(refs.length ? { references: refs } : {}),
       })
+      if (round === 'busy') {
+        return res.status(409).json({ error: 'the agent is still on the main line', busy: true })
+      }
       if (!round) {
         return res.status(409).json({ error: 'this agent cannot run an explore right now' })
       }

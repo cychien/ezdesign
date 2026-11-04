@@ -49,7 +49,7 @@ import { LIBRARY_TEST_IDS } from './library/names.js'
 import { chooseLibraryAttachments } from './library/picker.js'
 import { videoDigests } from './video-digest/runner.js'
 import type { BatchTarget, DigestFailure, ReferenceEcho, SentNoteWire } from '../protocol.js'
-import { referenceEcho } from '../label.js'
+import { referenceEcho, shortAnchor } from '../label.js'
 import type { DevServerWire } from '../dev-server/wire.js'
 import { installDevServerPanel } from './dev-server-panel.js'
 import { host } from './host.js'
@@ -225,6 +225,8 @@ interface SnapshotWire {
   account: AccountWire
   explores?: ExploreWire[]
   canExplore?: true
+  /** One asked for now would start now: the main line has nothing in hand. */
+  exploreFree?: true
   designHarness?: boolean
   designEffort?: DesignEffort
   devServer: DevServerWire
@@ -1056,6 +1058,102 @@ function stripNotice(text: string): void {
   }, 4000)
 }
 
+/** An explore asked for while the main line still had work in hand. A round moves
+ *  the one agent onto a branch, so it waits here until the daemon says the main
+ *  line is free, and the element is captured again when it starts: the turn it
+ *  waited on may well have rewritten it. */
+interface ExploreRequest {
+  anchor: AnchorWire
+  capture: unknown
+  direction: string
+  attachments: string[]
+  references: RefWire[]
+}
+
+let exploreWaiting: { frame: string; request: ExploreRequest; starting?: boolean } | null = null
+
+function waitingPill(waiting: { request: ExploreRequest; starting?: boolean }): HTMLElement {
+  const pill = h('div', 'ez-strip-pill')
+  const label = shortAnchor(waiting.request.anchor)
+  pill.title = `agent 做完手上的工作，就開始探索「${label}」`
+  pill.setAttribute('role', 'group')
+  pill.setAttribute('aria-label', `探索 ${label}`)
+  pill.append(icon(MagicWand01Icon as IconNode, 14), h('div', 'ez-strip-pending', '等候中'))
+  const actions = h('div', 'ez-strip-actions')
+  const cancel = h('button', 'ez-strip-action', '取消')
+  cancel.title = '不探索了，留言放回原處'
+  cancel.disabled = !!waiting.starting
+  cancel.onclick = cancelWaitingExplore
+  actions.append(cancel)
+  pill.append(actions)
+  return pill
+}
+
+function cancelWaitingExplore(): void {
+  if (!exploreWaiting || exploreWaiting.starting) return
+  exploreWaiting = null
+  paintCanExplore()
+  paintStrip()
+  endExploreIn()
+}
+
+/** Whether the page may offer `/explore`: one at a time, so not while one waits. */
+function paintCanExplore(): void {
+  frames.postAll({ type: 'ez:can-explore', on: snapshot?.canExplore === true && !exploreWaiting })
+}
+
+const recaptures = new Map<string, (capture: unknown) => void>()
+
+/** The element as it is now, from the frame it was picked in; null when that frame
+ *  or the element has gone, or the page does not answer. */
+function recapture(frame: string, anchor: AnchorWire): Promise<unknown> {
+  if (!frames.has(frame)) return Promise.resolve(null)
+  const reqId = crypto.randomUUID()
+  return new Promise((resolve) => {
+    const settle = (capture: unknown) => {
+      recaptures.delete(reqId)
+      clearTimeout(timer)
+      resolve(capture)
+    }
+    const timer = setTimeout(() => settle(null), 2000)
+    recaptures.set(reqId, settle)
+    frames.post(frame, { type: 'ez:recapture', reqId, anchor })
+  })
+}
+
+/** Start the waiting explore if the main line is free. Run on every snapshot. */
+async function pumpExplore(): Promise<void> {
+  const waiting = exploreWaiting
+  if (!waiting || waiting.starting || !snapshot?.exploreFree) return
+  waiting.starting = true
+  paintStrip()
+  const capture = (await recapture(waiting.frame, waiting.request.anchor)) ?? waiting.request.capture
+  await reportPageStorage()
+  const res = await api('/explore/start', {
+    method: 'POST',
+    body: JSON.stringify({ ...waiting.request, capture }),
+  })
+  const body = (await res.json().catch(() => ({}))) as { exploreId?: string; busy?: boolean }
+  if (res.status === 409 && body.busy) {
+    // Something reached the main line first; the next free snapshot tries again.
+    waiting.starting = false
+    paintStrip()
+    return
+  }
+  exploreWaiting = null
+  paintCanExplore()
+  paintStrip()
+  if (!res.ok) {
+    // Nothing to wait for, so the comment comes straight back rather than
+    // staying hidden behind a round that never started.
+    stripNotice('這個 agent 現在無法執行探索')
+    endExploreIn()
+    return
+  }
+  // What the held comment is waiting on, so any ending at all can release it.
+  if (exploreHold && body.exploreId) exploreHold = { ...exploreHold, round: body.exploreId }
+}
+
 /** What each frame currently has standing in it, so a repaint only posts the
  *  swaps that actually changed. Without it every snapshot - and they arrive on
  *  every keystroke the agent streams - would re-swap the page under the user. */
@@ -1114,15 +1212,22 @@ let stripDrawn: string | null = null
 
 function paintStrip(): void {
   const rounds = liveExplores()
-  strip.hidden = rounds.length === 0
-  const signature = JSON.stringify([currentChatId(), snapshot?.agentBusy ?? false, rounds])
+  strip.hidden = rounds.length === 0 && !exploreWaiting
+  const waiting = exploreWaiting && {
+    anchor: exploreWaiting.request.anchor,
+    starting: !!exploreWaiting.starting,
+  }
+  const signature = JSON.stringify([currentChatId(), snapshot?.agentBusy ?? false, rounds, waiting])
   if (signature === stripDrawn) return
   stripDrawn = signature
   const focused = document.activeElement
   const chip = focused instanceof HTMLElement && strip.contains(focused) ? focused : null
   const heldRound = chip?.closest<HTMLElement>('[data-round]')?.dataset.round
   const heldChoice = chip?.dataset.choice
-  strip.replaceChildren(...rounds.map((round) => roundPill(round)))
+  strip.replaceChildren(
+    ...rounds.map((round) => roundPill(round)),
+    ...(exploreWaiting ? [waitingPill(exploreWaiting)] : []),
+  )
   // Rebuilt whole, so the chip being chosen with the arrow keys has to be handed focus back.
   if (heldRound === undefined || heldChoice === undefined) return
   strip
@@ -2178,9 +2283,10 @@ async function openResume(): Promise<void> {
     row.addEventListener('pointerenter', () => pointAtResumeRow(row))
     row.addEventListener('focus', () => pointAtResumeRow(row))
     row.title = chat.entries ? `${chat.entries} 則` : '尚無內容'
-    row.onclick = () => {
+    row.onclick = async () => {
       closeResume()
-      if (!chat.current) void switchChat(chat.id)
+      if (chat.current || !(await confirmLeaveBranch('確定要離開探索？', '切換對話'))) return
+      await switchChat(chat.id)
     }
     resumeList.append(row)
     return row
@@ -2684,18 +2790,24 @@ const morePicker = BRANCHES_REACHABLE ? branchPicker(forkMore, 'ez-fork-more-men
  *  choice is the user's: they can see the turn running, and leaving it is a
  *  perfectly ordinary thing to decide. */
 async function leaveBranch(toChatId: string): Promise<void> {
-  const ok = await askConfirm({
+  if (!(await confirmLeaveBranch('確定要回主對話？', '回主對話'))) return
+  await switchChat(toChatId)
+}
+
+/** Every way off a branch asks this, `/new` and `/resume` included: each one
+ *  ends the round and takes its variants with it. Nothing to ask on the main line. */
+async function confirmLeaveBranch(title: string, go: string): Promise<boolean> {
+  if (!onBranch) return true
+  return await askConfirm({
     // Keyed on the act. The body says one clause more when a turn is running,
     // but it is the same decision either way, so answering it once answers it.
     key: 'leave-branch',
-    title: '確定要回主對話？',
+    title,
     body: snapshot?.agentBusy
-      ? '回去會立刻停下 agent，這一輪探索就此結束，之後無法再回到這個對話。'
-      : '這一輪探索就此結束，之後無法再回到這個對話。',
-    go: '回主對話',
+      ? '離開會立刻停下 agent，這一輪探索的結果會消失，之後也無法再回到這個對話。'
+      : '這一輪探索的結果會消失，之後也無法再回到這個對話。',
+    go,
   })
-  if (!ok) return
-  await switchChat(toChatId)
 }
 
 forkRoot.onclick = () => {
@@ -3748,11 +3860,12 @@ async function cancelTurn(): Promise<void> {
 }
 
 /** Throw away the agent's context and carry on in a fresh session. No
- *  confirmation: the thread keeps every word of the review either way, and what
- *  is being dropped is the agent's memory of it - which is what the user just
- *  asked to drop. */
+ *  confirmation on the main line: the thread keeps every word of the review either
+ *  way, and what is being dropped is the agent's memory of it - which is what the
+ *  user just asked to drop. On a branch it also ends the round, so that asks. */
 async function newChat(): Promise<void> {
   if (!snapshot?.acp) return
+  if (!(await confirmLeaveBranch('確定要離開探索？', '開新對話'))) return
   await api('/acp/new', { method: 'POST' })
 }
 
@@ -4722,7 +4835,8 @@ function render(): void {
   settleHold()
   paintFork(s)
   pushThread(s)
-  frames.postAll({ type: 'ez:can-explore', on: s.canExplore === true })
+  paintCanExplore()
+  void pumpExplore()
   // The page is standing in an explore rather than showing the review's own
   // line. The page is told because it withdraws `/explore` while it is true; the
   // line that says so is drawn out here, on the frame's own edge.
@@ -5249,29 +5363,23 @@ window.addEventListener('message', (e: MessageEvent) => {
     // variants. The shell owns the request because it is the one holding the
     // session's api - and the one that can say why it was refused.
     case 'ez:explore':
-      void (async () => {
-        await reportPageStorage()
-        const res = await api('/explore/start', {
-          method: 'POST',
-          body: JSON.stringify({
-            anchor: msg.anchor,
-            capture: msg.capture,
-            direction: msg.direction,
-            attachments: msg.attachments,
-            references: msg.references,
-          }),
-        })
-        if (!res.ok) {
-          // Nothing to wait for, so the comment comes straight back rather than
-          // staying hidden behind a round that never started.
-          stripNotice('這個 agent 現在無法執行探索')
-          endExploreIn()
-          return
-        }
-        // What the held comment is waiting on, so any ending at all can release it.
-        const { exploreId } = (await res.json()) as { exploreId?: string }
-        if (exploreHold && exploreId) exploreHold = { ...exploreHold, round: exploreId }
-      })()
+      if (exploreWaiting) return
+      exploreWaiting = {
+        frame: from,
+        request: {
+          anchor: msg.anchor as AnchorWire,
+          capture: msg.capture,
+          direction: msg.direction,
+          attachments: msg.attachments,
+          references: msg.references,
+        },
+      }
+      paintCanExplore()
+      paintStrip()
+      void pumpExplore()
+      return
+    case 'ez:recaptured':
+      recaptures.get(msg.reqId)?.(msg.capture)
       return
     case 'ez:ready': {
       // A canvas frame is one document: it has no page for the review to follow.
@@ -5285,7 +5393,7 @@ window.addEventListener('message', (e: MessageEvent) => {
       frames.post(from, { type: 'ez:set-mode', mode: annotateMode })
       // A fresh page has none of this: whether it may offer the command, and what
       // is meant to be standing in place of what.
-      frames.post(from, { type: 'ez:can-explore', on: snapshot?.canExplore === true })
+      frames.post(from, { type: 'ez:can-explore', on: snapshot?.canExplore === true && !exploreWaiting })
       frames.post(from, {
         type: 'ez:in-explore',
         on: !!snapshot?.chats?.find((c) => c.current)?.parentChatId,

@@ -2234,6 +2234,7 @@ function boot(): void {
       ref?: RefWire
       held?: boolean
       exploreId?: string
+      reqId?: string
       anchor?: AnchorWire
       html?: string | null
       on?: boolean
@@ -2248,6 +2249,10 @@ function boot(): void {
       })
     }
     if (data?.type === 'ez:variants-clear') swapper.clear()
+    if (data?.type === 'ez:recapture' && data.reqId && data.anchor) {
+      const element = swapper.find(data.anchor)
+      post({ type: 'ez:recaptured', reqId: data.reqId, capture: element ? captureElement(element) : null })
+    }
     if (data?.type === 'ez:can-explore') canExplore = data.on === true
     if (data?.type === 'ez:in-explore') inExplore = data.on === true
     if (data?.type === 'ez:set-mode') setMode(data.mode ?? 'off')

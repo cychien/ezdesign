@@ -102,6 +102,8 @@ export const GUEST_PROTOCOL = {
   'ez:in-explore': down(APP),
   'ez:variant': down(APP),
   'ez:variants-clear': down(APP),
+  /** `{reqId, anchor}`: capture that element as it is now, for an explore that waited. */
+  'ez:recapture': down(APP),
   'ez:scroll-to': down(APP),
   /** The session state and annotations: a canvas guest gets its own subset,
    *  an App preview all of them. Neither holds an event stream of its own. */
@@ -176,6 +178,11 @@ export const GUEST_PROTOCOL = {
   'ez:explore-held': up(APP, (r) => {
     const draft = obj(r.draft)
     return draft ? { draft: draft as unknown as DraftWire } : null
+  }),
+  /** `capture` is null when the element is no longer on the page. */
+  'ez:recaptured': up(APP, (r) => {
+    const reqId = str(r.reqId)
+    return reqId === null ? null : { reqId, capture: obj(r.capture) }
   }),
   /** `guest` is who pressed it: a canvas guest runs only the shortcuts marked
    *  `fromCanvas` - never send, cancel or a new chat. */
