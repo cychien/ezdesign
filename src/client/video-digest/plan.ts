@@ -47,27 +47,35 @@ export interface CellPlan {
 }
 
 export function planDigest(clip: Clip): DigestPlan {
-  const episodes = trackEpisodes(clip)
+  const episodes = mergeConcurrent(trackEpisodes(clip), clip)
   const kinds = episodes.map((e) => kindOf(e, clip))
-  const chosen = sheetEpisodes(episodes, kinds)
-  const sheetOf = new Map(chosen.map((e, i) => [e, i + 2]))
-  const motionSheets = chosen.map((e) => motionSheet(clip, e, sheetOf.get(e)!))
-  const motion: MotionStretch[] = episodes.flatMap((e, i) => {
-    if (kinds[i] === 'pointer') return []
-    const sheet = sheetOf.get(e) ?? null
-    const shown = sheet === null ? 0 : motionFrames(e, clip).filter((f) => f !== beforeOf(e)).length
-    return [
-      {
-        fromMs: Math.round(clip.frames[beforeOf(e) ?? e.frames[0]!]!.t / 1000),
-        toMs: Math.round(clip.frames[e.frames.at(-1)!]!.t / 1000),
-        region: cropOf(e, clip),
-        frames: e.frames.length,
-        shown,
-        sheet,
-      },
-    ]
+  const parts = partsOf(sheetEpisodes(episodes, kinds))
+  const stretches = episodes.flatMap((e, i) => (kinds[i] === 'pointer' ? [] : splitEpisode(e, parts.get(e) ?? 1)))
+  const sheeted = stretches.filter((s) => parts.has(s.episode))
+  const sheetOf = new Map(sheeted.map((s, i) => [s, i + 2]))
+  const motion: MotionStretch[] = stretches.map((s) => {
+    const sheet = sheetOf.get(s) ?? null
+    return {
+      fromMs: Math.round(clip.frames[beforeOf(s) ?? s.frames[0]!]!.t / 1000),
+      toMs: Math.round(clip.frames[s.frames.at(-1)!]!.t / 1000),
+      region: cropOf(s.episode, clip),
+      frames: s.frames.length,
+      shown: sheet === null ? 0 : motionFrames(s, clip).filter((f) => f !== beforeOf(s)).length,
+      sheet,
+    }
   })
-  const sheets = [overviewSheet(clip, episodes, kinds, chosen), ...motionSheets]
+  const marks = new Map(
+    sheeted
+      .filter((s) => s.part === 1)
+      .map((s) => {
+        const first = sheetOf.get(s)!
+        return [s.episode, s.parts > 1 ? `${first}-${first + s.parts - 1}` : String(first)]
+      }),
+  )
+  const sheets = [
+    overviewSheet(clip, episodes, kinds, marks),
+    ...sheeted.map((s) => motionSheet(clip, s, sheetOf.get(s)!)),
+  ]
   const wanted = [...new Set(sheets.flatMap((sheet) => sheet.cells.map((c) => c.t)))].sort((x, y) => x - y)
   return { sheets, motion, wanted }
 }
@@ -81,6 +89,14 @@ interface Episode {
 
 type EpisodeKind = 'event' | 'ambient' | 'pointer'
 
+/** One sheet's share of an episode: a long one runs on over consecutive parts. */
+interface Stretch {
+  episode: Episode
+  frames: number[]
+  part: number
+  parts: number
+}
+
 const area = (b: CellBox): number => (b.x1 - b.x0 + 1) * (b.y1 - b.y0 + 1)
 const overlaps = (a: CellBox, b: CellBox): boolean => a.x0 <= b.x1 && b.x0 <= a.x1 && a.y0 <= b.y1 && b.y0 <= a.y1
 const unite = (a: CellBox, b: CellBox): CellBox => ({
@@ -90,9 +106,15 @@ const unite = (a: CellBox, b: CellBox): CellBox => ({
   y1: Math.max(a.y1, b.y1),
 })
 const dilate = (b: CellBox): CellBox => ({ x0: b.x0 - 1, y0: b.y0 - 1, x1: b.x1 + 1, y1: b.y1 + 1 })
+const join = (a: Episode, b: Episode): Episode => ({
+  frames: [...new Set([...a.frames, ...b.frames])].sort((x, y) => x - y),
+  union: unite(a.union, b.union),
+  areaSum: a.areaSum + b.areaSum,
+  largest: Math.max(a.largest, b.largest),
+})
 
-function beforeOf(e: Episode): number | null {
-  return e.frames[0]! > 0 ? e.frames[0]! - 1 : null
+function beforeOf(s: Stretch): number | null {
+  return s.frames[0]! > 0 ? s.frames[0]! - 1 : null
 }
 
 function trackEpisodes(clip: Clip): Episode[] {
@@ -110,10 +132,7 @@ function trackEpisodes(clip: Clip): Episode[] {
       }
       const [into, ...rest] = matches
       for (const other of rest) {
-        into!.frames = [...new Set([...into!.frames, ...other.frames])].sort((x, y) => x - y)
-        into!.union = unite(into!.union, other.union)
-        into!.areaSum += other.areaSum
-        into!.largest = Math.max(into!.largest, other.largest)
+        Object.assign(into!, join(into!, other))
         episodes.splice(episodes.indexOf(other), 1)
       }
       if (into!.frames.at(-1) !== i) into!.frames.push(i)
@@ -123,6 +142,24 @@ function trackEpisodes(clip: Clip): Episode[] {
     }
   })
   return episodes.sort((x, y) => x.frames[0]! - y.frames[0]!)
+}
+
+/** The tracker links a region only to episodes that already reach it, so the first
+ *  flickers of a motion that later grows over them are left as episodes of their own. */
+function mergeConcurrent(episodes: Episode[], clip: Clip): Episode[] {
+  const t = (i: number) => clip.frames[i]!.t
+  const concurrent = (a: Episode, b: Episode) =>
+    t(a.frames[0]!) - t(b.frames.at(-1)!) < LINK_GAP_US && t(b.frames[0]!) - t(a.frames.at(-1)!) < LINK_GAP_US
+  const merged = [...episodes]
+  for (let i = 0; i < merged.length; i++) {
+    for (let j = i + 1; j < merged.length; j++) {
+      if (!concurrent(merged[i]!, merged[j]!) || !overlaps(dilate(merged[i]!.union), merged[j]!.union)) continue
+      merged[i] = join(merged[i]!, merged[j]!)
+      merged.splice(j, 1)
+      j = i
+    }
+  }
+  return merged.sort((x, y) => x.frames[0]! - y.frames[0]!)
 }
 
 function kindOf(episode: Episode, clip: Clip): EpisodeKind {
@@ -136,8 +173,33 @@ function sheetEpisodes(episodes: Episode[], kinds: EpisodeKind[]): Episode[] {
   const weight = (e: Episode) => area(e.union) * Math.min(e.frames.length, MOTION_CELLS)
   const ranked = (kind: EpisodeKind) =>
     episodes.filter((_, i) => kinds[i] === kind).sort((x, y) => weight(y) - weight(x))
-  const chosen = new Set([...ranked('event'), ...ranked('ambient')].slice(0, MAX_SHEETS - 1))
+  const ambient = ranked('ambient')
+  const room = MAX_SHEETS - 1
+  const chosen = new Set([...ranked('event').slice(0, room - Math.min(1, ambient.length)), ...ambient].slice(0, room))
   return episodes.filter((e) => chosen.has(e))
+}
+
+/** Sheets no episode claimed go to whichever has the most changed frames per sheet
+ *  until each shows every frame, so a clip of one long motion is not left at 24 cells. */
+function partsOf(chosen: Episode[]): Map<Episode, number> {
+  const parts = new Map(chosen.map((e) => [e, 1]))
+  const crowding = (e: Episode) => e.frames.length / parts.get(e)!
+  for (let spare = MAX_SHEETS - 1 - chosen.length; spare > 0; spare--) {
+    const most = chosen.reduce<Episode | null>((best, e) => (!best || crowding(e) > crowding(best) ? e : best), null)
+    if (!most || crowding(most) <= MOTION_CELLS - 1) break
+    parts.set(most, parts.get(most)! + 1)
+  }
+  return parts
+}
+
+function splitEpisode(episode: Episode, parts: number): Stretch[] {
+  const cut = (k: number) => Math.round((k * episode.frames.length) / parts)
+  return Array.from({ length: parts }, (_, k) => ({
+    episode,
+    frames: episode.frames.slice(cut(k), cut(k + 1)),
+    part: k + 1,
+    parts,
+  }))
 }
 
 function cropOf(episode: Episode, clip: Clip): VideoRect {
@@ -161,10 +223,10 @@ function cropOf(episode: Episode, clip: Clip): VideoRect {
   return { x, y, width: Math.min(clip.width, Math.ceil(x1)) - x, height: Math.min(clip.height, Math.ceil(y1)) - y }
 }
 
-function motionFrames(episode: Episode, clip: Clip): number[] {
-  const before = beforeOf(episode)
+function motionFrames(stretch: Stretch, clip: Clip): number[] {
+  const before = beforeOf(stretch)
   const room = MOTION_CELLS - (before === null ? 0 : 1)
-  const changed = episode.frames.length > room ? spreadInTime(episode.frames, room, clip) : episode.frames
+  const changed = stretch.frames.length > room ? spreadInTime(stretch.frames, room, clip) : stretch.frames
   return before === null ? changed : [before, ...changed]
 }
 
@@ -186,21 +248,22 @@ function spreadInTime(frames: number[], count: number, clip: Clip): number[] {
 
 const secondsLabel = (us: number): string => `${(us / 1e6).toFixed(3)} s`
 
-function motionSheet(clip: Clip, episode: Episode, sheet: number): SheetPlan {
-  const src = cropOf(episode, clip)
-  const frames = motionFrames(episode, clip)
-  const before = beforeOf(episode)
+function motionSheet(clip: Clip, stretch: Stretch, sheet: number): SheetPlan {
+  const src = cropOf(stretch.episode, clip)
+  const frames = motionFrames(stretch, clip)
+  const before = beforeOf(stretch)
   const changed = frames.filter((f) => f !== before).length
   const layout = layOut(frames.length, src)
-  const from = clip.frames[before ?? episode.frames[0]!]!.t
-  const to = clip.frames[episode.frames.at(-1)!]!.t
+  const from = clip.frames[before ?? stretch.frames[0]!]!.t
+  const to = clip.frames[stretch.frames.at(-1)!]!.t
   const which =
-    changed === episode.frames.length ? `every changed frame (${changed})` : `${changed} of ${episode.frames.length} changed frames, evenly spaced`
+    changed === stretch.frames.length ? `every changed frame (${changed})` : `${changed} of ${stretch.frames.length} changed frames, evenly spaced`
+  const part = stretch.parts > 1 ? ` · part ${stretch.part} of ${stretch.parts}` : ''
   return {
     width: layout.width,
     height: layout.height,
     header:
-      `sheet ${sheet} · motion ${(from / 1e6).toFixed(3)}-${(to / 1e6).toFixed(3)} s · ` +
+      `sheet ${sheet} · motion ${(from / 1e6).toFixed(3)}-${(to / 1e6).toFixed(3)} s${part} · ` +
       `x ${src.x} y ${src.y}, ${src.width}x${src.height} · ${which}`,
     cells: frames.map((f, i) => {
       const at = layout.at(i)
@@ -216,17 +279,17 @@ function motionSheet(clip: Clip, episode: Episode, sheet: number): SheetPlan {
   }
 }
 
-function overviewSheet(clip: Clip, episodes: Episode[], kinds: EpisodeKind[], chosen: Episode[]): SheetPlan {
+function overviewSheet(clip: Clip, episodes: Episode[], kinds: EpisodeKind[], marks: Map<Episode, string>): SheetPlan {
   const last = clip.frames.length - 1
-  const wanted: { frame: number; mark?: { episode: Episode; sheet: number } }[] = [{ frame: 0 }, { frame: last }]
-  chosen.forEach((e, i) => wanted.push({ frame: e.frames.at(-1)!, mark: { episode: e, sheet: i + 2 } }))
+  const wanted: { frame: number; mark?: { episode: Episode; sheet: string } }[] = [{ frame: 0 }, { frame: last }]
+  for (const [episode, sheet] of marks) wanted.push({ frame: episode.frames.at(-1)!, mark: { episode, sheet } })
   episodes.forEach((e, i) => {
-    if (kinds[i] === 'event' && !chosen.includes(e)) wanted.push({ frame: e.frames.at(-1)! })
+    if (kinds[i] === 'event' && !marks.has(e)) wanted.push({ frame: e.frames.at(-1)! })
   })
   episodes.forEach((e, i) => {
     if (kinds[i] === 'pointer') wanted.push({ frame: e.frames.at(-1)! })
   })
-  const byFrame = new Map<number, { episode: Episode; sheet: number }[]>()
+  const byFrame = new Map<number, { episode: Episode; sheet: string }[]>()
   for (const w of wanted) {
     if (!byFrame.has(w.frame)) {
       if (byFrame.size >= OVERVIEW_CELLS) continue
@@ -259,7 +322,7 @@ function overviewSheet(clip: Clip, episodes: Episode[], kinds: EpisodeKind[], ch
               width: Math.max(1, Math.round(r.width * scale)),
               height: Math.max(1, Math.round(r.height * scale)),
             },
-            text: String(sheet),
+            text: sheet,
           }
         }),
       }
