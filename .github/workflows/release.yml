@@ -36,7 +36,8 @@ jobs:
       contents: read
     outputs:
       version: ${{ steps.stable.outputs.version }}
-      stable: ${{ steps.stable.outputs.publish }}
+      stable: ${{ steps.stable.outputs.release }}
+      on-npm: ${{ steps.stable.outputs.on-npm }}
       canary: ${{ steps.canary.outputs.publish }}
       desktop: ${{ steps.desktop.outputs.build }}
       desktop-tag: ${{ steps.desktop.outputs.tag }}
@@ -44,13 +45,24 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
+      # Out means on npm and, once release-please has tagged it, a published GitHub
+      # release: either half can be left behind by a run that failed half-way.
       - id: stable
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           version=$(node -p "require('./package.json').version")
           echo "version=$version" >> "$GITHUB_OUTPUT"
-          if npm view "@cychien/ezdesign@$version" version > /dev/null 2>&1; then publish=false; else publish=true; fi
-          echo "publish=$publish" >> "$GITHUB_OUTPUT"
-          echo "stable $version: publish=$publish"
+          if npm view "@cychien/ezdesign@$version" version > /dev/null 2>&1; then on_npm=true; else on_npm=false; fi
+          published=$(gh release view "v$version" --json isDraft --jq '.isDraft | not' 2> /dev/null || echo false)
+          if [ "$on_npm" = false ] || { git rev-parse -q --verify "refs/tags/v$version" > /dev/null && [ "$published" = false ]; }; then
+            release=true
+          else
+            release=false
+          fi
+          echo "on-npm=$on_npm" >> "$GITHUB_OUTPUT"
+          echo "release=$release" >> "$GITHUB_OUTPUT"
+          echo "stable $version: on npm=$on_npm, GitHub release published=$published, release=$release"
       # Against the commit the current canary was built from, not this push's
       # parent: a run superseded in the queue must not take its change with it.
       - id: canary
@@ -92,21 +104,27 @@ jobs:
       DRY_RUN: ${{ inputs.dry_run && '--dry-run' || '' }}
     steps:
       - uses: actions/checkout@v7
+        if: needs.pending.outputs.on-npm != 'true'
       - uses: pnpm/action-setup@v6
+        if: needs.pending.outputs.on-npm != 'true'
         with:
           version: 11
       - uses: actions/setup-node@v7
+        if: needs.pending.outputs.on-npm != 'true'
         with:
           node-version: 24
           registry-url: https://registry.npmjs.org
           package-manager-cache: false
-      - run: pnpm install --frozen-lockfile
+      - if: needs.pending.outputs.on-npm != 'true'
+        run: pnpm install --frozen-lockfile
         env:
           ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
       - name: Check npm can publish with OIDC
+        if: needs.pending.outputs.on-npm != 'true'
         run: |
           node -e "const [a, b, c] = process.argv[1].split('.').map(Number); if (a * 1e6 + b * 1e3 + c < 11005001) { console.error('npm ' + process.argv[1] + ' is older than 11.5.1, which trusted publishing needs'); process.exit(1) }" "$(npm --version)"
       - name: Publish to npm
+        if: needs.pending.outputs.on-npm != 'true'
         run: |
           if npm view "@cychien/ezdesign@$VERSION" version > /dev/null 2>&1; then
             echo "$VERSION is already on npm"

@@ -2,14 +2,23 @@
   "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
   "packages": {
     ".": {
-      "release-type": "node",
-      "package-name": "@cychien/ezdesign",
+      "release-type": "simple",
       "include-component-in-tag": false,
       "bump-minor-pre-major": true,
       "draft": true,
       "force-tag-creation": true,
-      "exclude-paths": ["desktop", "website"],
-      "extra-files": ["skills/ezdesign/SKILL.md"]
+      "exclude-paths": [
+        "desktop",
+        "website"
+      ],
+      "extra-files": [
+        "skills/ezdesign/SKILL.md",
+        {
+          "type": "json",
+          "path": "package.json",
+          "jsonpath": "$.version"
+        }
+      ]
     },
     "desktop": {
       "release-type": "node",
