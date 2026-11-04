@@ -1,8 +1,8 @@
 name: Release
 
-# Manual only until the first canary is out: merging this file is itself a push to
-# main, and it already changes the package, so a push trigger would publish at once.
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
     inputs:
       dry_run:
@@ -51,18 +51,21 @@ jobs:
           if npm view "@cychien/ezdesign@$version" version > /dev/null 2>&1; then publish=false; else publish=true; fi
           echo "publish=$publish" >> "$GITHUB_OUTPUT"
           echo "stable $version: publish=$publish"
+      # Against the commit the current canary was built from, not this push's
+      # parent: a run superseded in the queue must not take its change with it.
       - id: canary
         env:
           EVENT: ${{ github.event_name }}
-          BEFORE: ${{ github.event.before }}
         run: |
-          if [ "$EVENT" = push ] && git diff --quiet "$BEFORE" HEAD -- src scripts/build.mjs skills/ezdesign package.json pnpm-lock.yaml README.md LICENSE; then
+          last=$(npm view @cychien/ezdesign@next gitHead 2> /dev/null || true)
+          if [ "$EVENT" = push ] && [ -n "$last" ] && git cat-file -e "$last^{commit}" 2> /dev/null &&
+            git diff --quiet "$last" HEAD -- src scripts/build.mjs skills/ezdesign package.json pnpm-lock.yaml README.md LICENSE; then
             publish=false
           else
             publish=true
           fi
           echo "publish=$publish" >> "$GITHUB_OUTPUT"
-          echo "canary: publish=$publish"
+          echo "canary since ${last:-nothing}: publish=$publish"
       # A draft is invisible to this token, so a draft and no release at all both
       # read as not out yet, which is the answer either way.
       - id: desktop
