@@ -22,10 +22,22 @@ const jobs = new Map(
   [...workflow.split(/^jobs:\n/m)[1]!.matchAll(/^ {2}([\w-]+):\n([\s\S]*?)(?=^ {2}[\w-]+:\n|(?![\s\S]))/gm)].map((m) => [m[1]!, m[2]!]),
 )
 
+/** The version the canary job publishes from `version`: `npm version prepatch --preid canary.<run>`. */
+const canaryOf = (version: string) => {
+  const [major, minor, patch] = version.split('.').map(Number)
+  return new RegExp(`^${major}\\.${minor}\\.${patch! + 1}-canary\\.\\d+\\.0$`)
+}
+
+// The canary job bumps package.json before `prepublishOnly` runs this, so its
+// prepatch of the manifest's version is the one other version allowed here.
 test('release-please counts from the versions the packages are at', () => {
   const pkg = json<{ version: string }>('package.json')
   const desktop = json<{ version: string }>('desktop/package.json')
-  assert.deepEqual(manifest, { '.': pkg.version, desktop: desktop.version })
+  assert.ok(
+    pkg.version === manifest['.'] || canaryOf(manifest['.']!).test(pkg.version),
+    `package.json ${pkg.version} is neither the manifest's ${manifest['.']} nor its canary`,
+  )
+  assert.equal(manifest.desktop, desktop.version)
   assert.deepEqual(Object.keys(config.packages).sort(), Object.keys(manifest).sort())
 })
 
