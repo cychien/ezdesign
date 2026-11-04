@@ -26,13 +26,16 @@ function prefix(version: string): string {
   return root
 }
 
+// Seeding clones the bundle with macOS's `cp -c`, as only the Mac app does.
+const MAC_APP = { skip: process.platform !== 'darwin' && 'seeding runs only in the Mac app' }
+
 test('the app adopts any daemon that speaks its contract, whatever its version', () => {
   assert.equal(speaksContract({ desktopContract: 1 }), true)
   assert.equal(speaksContract({ desktopContract: 2 }), true)
   assert.equal(speaksContract({}), false, 'a daemon from before the app is replaced at launch')
 })
 
-test('the bundled package is seeded once, and a half-seeded copy is replaced', async () => {
+test('the bundled package is seeded once, and a half-seeded copy is replaced', MAC_APP, async () => {
   await seedBundledPackage(prefix('9.9.1'), '9.9.1')
   assert.equal(installedVersion('9.9.1'), true)
   await seedBundledPackage(prefix('9.9.1'), '9.9.1')
@@ -43,7 +46,7 @@ test('the bundled package is seeded once, and a half-seeded copy is replaced', a
   assert.equal(installedVersion('9.9.2'), true)
 })
 
-test('the newest installed version runs, never one older than the bundled', async () => {
+test('the newest installed version runs, never one older than the bundled', MAC_APP, async () => {
   await seedBundledPackage(prefix('9.10.0'), '9.10.0')
   mkdirSync(join(VERSIONS, '9.11.0'), { recursive: true })
   assert.equal(newestInstalled('9.9.1'), '9.10.0', 'a broken 9.11.0 is skipped')
