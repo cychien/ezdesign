@@ -677,6 +677,9 @@ function exploreFollowUpPrompt(
  *  so this states what happened rather than reporting a fault. */
 const SAID_NOTHING_NOTE = '這一輪結束了，agent 沒有回覆內容'
 
+/** How far back the note box's Up arrow reaches. */
+const SENT_NOTES_RECALLED = 50
+
 const STEER_ATTEMPTS = 5
 const STEER_RETRY_MS = 100
 
@@ -2039,6 +2042,8 @@ class SessionRuntime implements ProjectRuntime {
     )
 
     api.get('/state', (_req, res) => res.json(this.snapshot()))
+
+    api.get('/sent-notes', (_req, res) => res.json(this.store.sentNotes(SENT_NOTES_RECALLED)))
 
     api.post('/page-state', (req, res) => {
       const storage = parsePageStorage(req.body)

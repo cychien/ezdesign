@@ -136,7 +136,8 @@ export interface AttachController {
    *  ids and refs are all pure functions of it, and it is what crosses a
    *  document boundary when a popup has to survive a navigation. */
   snapshot(): DraftNode[]
-  /** Rebuild from a snapshot. Only ever called on a fresh, unfocused box. */
+  /** Rebuild from a snapshot, replacing whatever the box holds. The caret ends
+   *  past the last node, which only takes on a box that is in the document. */
   restore(body: DraftNode[]): void
 }
 

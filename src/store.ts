@@ -34,6 +34,7 @@ import type {
   ExploreVariant,
   FeedbackBatch,
   Reference,
+  SentNoteWire,
   SessionEndedBy,
   VideoDigest,
   VideoFrames,
@@ -909,6 +910,26 @@ export class SessionStore implements ViewStore {
   /** Oldest batch not yet acked. Redelivers delivered-but-unacked batches (at-least-once). */
   nextBatch(): FeedbackBatch | null {
     return this.outbox.find((b) => !b.ackedAt) ?? null
+  }
+
+  /** What the user sent from the note box, newest first: the batches with
+   *  something typed or chipped there, not ones that only carried the queue. */
+  sentNotes(limit: number): SentNoteWire[] {
+    const out: SentNoteWire[] = []
+    for (const batch of [...this.outbox].reverse()) {
+      if (out.length >= limit) break
+      if (batch.setup) continue
+      const references = batch.references ?? []
+      const attachments = (batch.attachments ?? []).map((a) => ({
+        id: a.id,
+        name: a.name,
+        ...(a.origin ? { origin: { pick: a.origin.pick } } : {}),
+      }))
+      const skills = batch.skills ?? []
+      if (!batch.note && !references.length && !attachments.length && !skills.length) continue
+      out.push({ note: batch.note ?? '', references, attachments, skills })
+    }
+    return out
   }
 
   /** Oldest batch never handed out - the one a turn already answering an earlier

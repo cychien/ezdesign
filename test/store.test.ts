@@ -54,6 +54,44 @@ test('delivery is at-least-once: unacked batches redeliver, acked ones do not', 
   assert.equal(store.nextBatch(), null)
 })
 
+// What the note box's Up arrow walks back through: only what was typed or
+// chipped there, newest first, whole enough to put the chips back.
+test('the sent notes are the note box’s own, newest first and capped', () => {
+  const store = new SessionStore('/tmp/project-3434')
+  store.sendBatch('first')
+  store.addAnnotation({ id: 'q1', kind: 'element', comment: 'queue only', anchor, createdAt: 1 })
+  store.sendBatch(null)
+  store.sendSetup()
+  const file = {
+    id: 'f1',
+    name: 'shot.png',
+    mime: 'image/png',
+    size: 1,
+    createdAt: 1,
+    origin: {
+      pick: 'p1',
+      libraryItemId: 'l1',
+      pageUrl: 'https://example.com',
+      pageTitle: 'Example',
+      mediaUrl: null,
+      note: '',
+      tags: [],
+    },
+  }
+  store.sendBatch('like [ref 1] and [file 1]', [file], [{ n: 1, anchor, label: 'Hero' }], ['polish'])
+
+  assert.deepEqual(store.sentNotes(10), [
+    {
+      note: 'like [ref 1] and [file 1]',
+      references: [{ n: 1, anchor, label: 'Hero' }],
+      attachments: [{ id: 'f1', name: 'shot.png', origin: { pick: 'p1' } }],
+      skills: ['polish'],
+    },
+    { note: 'first', references: [], attachments: [], skills: [] },
+  ])
+  assert.equal(store.sentNotes(1).length, 1)
+})
+
 test('state survives a store re-instantiation (daemon restart)', () => {
   const first = new SessionStore('/tmp/project-4444')
   first.addAnnotation({ id: 'd1', kind: 'element', comment: 'keep me', anchor, createdAt: 1 })

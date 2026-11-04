@@ -47,7 +47,7 @@ import { ANNOUNCEMENTS } from './announcements/index.js'
 import { LIBRARY_TEST_IDS } from './library/names.js'
 import { chooseLibraryAttachments } from './library/picker.js'
 import { videoDigests } from './video-digest/runner.js'
-import type { DigestFailure } from '../protocol.js'
+import type { DigestFailure, SentNoteWire } from '../protocol.js'
 import type { DevServerWire } from '../dev-server/wire.js'
 import { installDevServerPanel } from './dev-server-panel.js'
 import { host } from './host.js'
@@ -84,7 +84,8 @@ import {
   toggleDevice,
 } from './grid-layout.js'
 import type { GridMetrics, Layout } from './grid-layout.js'
-import type { AnchorWire, DraftWire, NumberedRef, RefWire } from './draft.js'
+import type { AnchorWire, DraftNode, DraftWire, NumberedRef, RefWire } from './draft.js'
+import { RECALL_START, type RecallState, draftKey, recallHistory, recallOwns, recallStep } from './recall.js'
 import {
   bodyFromComment,
   fileMarker,
@@ -1941,6 +1942,49 @@ const noteAttach = attachify({
 })
 const note = noteAttach.editable
 note.title = '寫補充說明（N）'
+
+/** Up and Down in the note box, through what was sent from it - see `recall.ts`. */
+let recall: RecallState = RECALL_START
+/** What was sent, newest first. Asked for on the way into the box and dropped on
+ *  every send, so the first Up always finds the message just sent. */
+let recalled: Promise<DraftNode[][]> | null = null
+
+function loadRecalled(): Promise<DraftNode[][]> {
+  recalled ??= api('/sent-notes')
+    .then((res) => (res.ok ? (res.json() as Promise<SentNoteWire[]>) : []))
+    .then(recallHistory)
+    .catch(() => {
+      recalled = null
+      return []
+    })
+  return recalled
+}
+
+note.addEventListener('focus', () => void loadRecalled())
+note.addEventListener('keydown', (e) => {
+  if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return
+  if (e.defaultPrevented || e.isComposing || e.shiftKey || e.altKey || e.metaKey || e.ctrlKey) return
+  const box = noteAttach.snapshot()
+  if (!recallOwns(recall, box)) {
+    recall = RECALL_START
+    return
+  }
+  e.preventDefault()
+  const key = e.key === 'ArrowUp' ? 'up' : 'down'
+  void loadRecalled().then((history) => {
+    // Typed into while the list was on its way: the box is a draft now.
+    if (draftKey(noteAttach.snapshot()) !== draftKey(box)) return
+    const next = recallStep(recall, box, key, history.length)
+    if (next === null) return
+    if (next < 0) {
+      noteAttach.reset()
+      recall = RECALL_START
+      return
+    }
+    noteAttach.restore(history[next]!)
+    recall = { at: next, shown: draftKey(noteAttach.snapshot()) }
+  })
+})
 /** The sidebar composer a pick started from is waiting in: the note box, or the
  *  queued annotation being edited. */
 let pickComposer: AttachController = noteAttach
@@ -3568,7 +3612,11 @@ async function sendBatch(): Promise<void> {
     // Reset, not discard: the batch owns these files now. The skill chip goes
     // with the rest of the box - it was this batch's, and a later one that wants
     // it can say so.
-    if (res.ok) noteAttach.reset()
+    if (res.ok) {
+      noteAttach.reset()
+      recalled = null
+      recall = RECALL_START
+    }
   } finally {
     // Restored even when the request threw: the note and its chips are still
     // there, so the send has to stay retryable.

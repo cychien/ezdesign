@@ -326,6 +326,15 @@ export interface FeedbackBatch {
   ackedAt?: number
 }
 
+/** What the user sent from the note box, whole: enough for the box to be
+ *  rebuilt as it was, chips included. */
+export interface SentNoteWire {
+  note: string
+  references: Reference[]
+  attachments: { id: string; name: string; origin?: { pick: string } }[]
+  skills: string[]
+}
+
 /** Where the user was: the App at a page, or a canvas. */
 export type BatchView = { tab: 'app'; page: string } | { tab: 'canvas'; canvasId: string }
 
