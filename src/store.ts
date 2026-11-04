@@ -911,10 +911,14 @@ export class SessionStore implements ViewStore {
     return this.outbox.find((b) => !b.ackedAt) ?? null
   }
 
-  /** Batches handed out but never acked - what an ACP turn's end settles. At most
-   *  one at a time: `nextBatch` only ever hands out the oldest unacked. */
-  deliveredBatchIds(): string[] {
-    return this.outbox.filter((b) => b.deliveredAt && !b.ackedAt).map((b) => b.batchId)
+  /** Oldest batch never handed out - the one a turn already answering an earlier
+   *  batch can be steered with. */
+  nextUndelivered(): FeedbackBatch | null {
+    return this.outbox.find((b) => !b.deliveredAt && !b.ackedAt) ?? null
+  }
+
+  findBatch(batchId: string): FeedbackBatch | undefined {
+    return this.outbox.find((b) => b.batchId === batchId)
   }
 
   /** Everything the agent has not finished with - the one it is on, and the ones

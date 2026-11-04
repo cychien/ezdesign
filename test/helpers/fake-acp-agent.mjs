@@ -10,6 +10,9 @@
  *    SLOW      park the turn until cancelled, then stop with `cancelled` - in an
  *              explore turn, after its variants have been sent. A steer
  *              without SLOW in it ends the parked turn instead, with `end_turn`
+ *    LATESTART <ms>  take that long to get the turn under way, during which a
+ *              steer finds nothing to join
+ *    QUIET     say nothing of the prompt itself - with SLOW, a turn parked silent
  *    CHUNKS    stream CHUNK_COUNT message chunks back-to-back, then end the turn
  *    CONFIGPUSH  push a `config_option_update` nobody asked for, then end the turn
  *    MODEPUSH  push a bare `current_mode_update`, then end the turn
@@ -331,6 +334,13 @@ const app = agent({ name: 'fake-acp-agent' })
     const turn = new AbortController()
     turns.set(sessionId, turn)
     const text = prompt.map((b) => (b.type === 'text' ? b.text : '')).join('')
+    const lateStart = /LATESTART (\d+)/.exec(text)
+    if (lateStart) {
+      await new Promise((resolve) => {
+        const timer = setTimeout(resolve, Number(lateStart[1]))
+        turn.signal.addEventListener('abort', () => (clearTimeout(timer), resolve()), { once: true })
+      })
+    }
     const say = (t) =>
       ctx.client.notify(methods.client.session.update, {
         sessionId,
@@ -543,7 +553,7 @@ const app = agent({ name: 'fake-acp-agent' })
     prompts.push({ sessionId, text })
     turned.add(sessionId)
     log.push(`prompt:${sessionId}`)
-    await say(`${sessionId}:${text}`)
+    if (!text.includes('QUIET')) await say(`${sessionId}:${text}`)
     if (!text.includes('SLOW')) return { stopReason: 'end_turn' }
     return await park(turn.signal, sessionId, say)
   })
