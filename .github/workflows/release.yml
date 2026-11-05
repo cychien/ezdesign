@@ -20,11 +20,18 @@ jobs:
   release-please:
     if: ${{ !inputs.dry_run }}
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      pull-requests: write
     steps:
+      # A Release PR opened with GITHUB_TOKEN gets its Check held for approval.
+      - id: app
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
       - uses: googleapis/release-please-action@v5
+        with:
+          token: ${{ steps.app.outputs.token }}
 
   # Asks the registry and GitHub what is already out rather than trusting this
   # run's events, so a run that failed half-way is finished by the next one.
