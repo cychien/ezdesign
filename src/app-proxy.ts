@@ -11,7 +11,7 @@
  *  hand: the shell tab holds the app's HMR websocket through here for as long
  *  as it is open, and `server.close` would wait on it forever. */
 
-import type { IncomingMessage, ServerResponse } from 'node:http'
+import type { ClientRequest, IncomingMessage, ServerResponse } from 'node:http'
 import type { Socket } from 'node:net'
 import type { Request, RequestHandler, Response } from 'express'
 import {
@@ -58,6 +58,19 @@ const unreachable = (origin: string) => `<!doctype html><meta charset="utf-8"><t
     .then((r) => { if (!r.headers.has('${UNREACHABLE_HEADER}')) location.reload() }, () => {}), 1500)
 </script>`
 
+/** The app is shown under the proxy's origin but trusts only its own, so a page
+ *  calling its own server - an auth library's origin check, a CSRF guard - would
+ *  be refused. Only the proxy's own origin is replaced: a request another site
+ *  sends through here stays cross-site. */
+export function presentAsApp(proxyReq: ClientRequest, req: IncomingMessage, appOrigin: string): void {
+  const self = `http://${req.headers.host}`
+  if (req.headers.origin === self) proxyReq.setHeader('origin', appOrigin)
+  const referer = req.headers.referer
+  if (referer === self || referer?.startsWith(`${self}/`)) {
+    proxyReq.setHeader('referer', appOrigin + referer.slice(self.length))
+  }
+}
+
 export class AppProxy {
   private current: AppAttachment = { kind: 'none' }
   /** The attached app stopped answering: set by a request the proxy could not
@@ -78,6 +91,9 @@ export class AppProxy {
   ) {
     const router = () => (this.current.kind === 'attached' ? this.current.origin : undefined)
     const answered = () => this.setUnreachable(false)
+    const asApp = (proxyReq: ClientRequest, req: IncomingMessage) => {
+      if (this.current.kind === 'attached') presentAsApp(proxyReq, req, this.current.origin)
+    }
     const error = (err: Error, req: IncomingMessage, res: ServerResponse | Socket) => {
       // Only a refused connect says the app is gone. A websocket reset by a
       // reloading page, or a request the browser gave up on, does not. The HMR
@@ -101,6 +117,7 @@ export class AppProxy {
       selfHandleResponse: true,
       on: {
         error,
+        proxyReq: asApp,
         proxyRes: (proxyRes, req, res) => {
           answered()
           return intercept(proxyRes, req, res)
@@ -111,7 +128,7 @@ export class AppProxy {
       router,
       changeOrigin: true,
       ws: true,
-      on: { error, proxyRes: answered, open: answered },
+      on: { error, proxyReq: asApp, proxyReqWs: asApp, proxyRes: answered, open: answered },
     })
   }
 
