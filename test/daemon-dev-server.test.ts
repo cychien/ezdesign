@@ -33,7 +33,10 @@ interface Snapshot {
 
 const SERVER = `
 import { createServer } from 'node:http'
-const server = createServer((_req, res) => res.end(process.env.REPLY ?? 'hello from the dev server'))
+const server = createServer((_req, res) => {
+  res.setHeader('content-type', 'text/html')
+  res.end(process.env.REPLY ?? 'hello from the dev server')
+})
 server.listen(0, '127.0.0.1', () => {
   if (process.env.QUIET !== '1') console.log('\\n  \\x1b[32m➜\\x1b[39m  Local:   http://localhost:\\x1b[1m' + server.address().port + '\\x1b[22m/')
 })
@@ -56,12 +59,28 @@ process.on('SIGTERM', () => {
 })
 `
 
+/** A full-stack dev command, as `parlor dev` is: its API answers first, with
+ *  JSON and no route at `/`, and the page comes up after it. */
+const FULL_STACK = `
+import { spawn } from 'node:child_process'
+import { createServer } from 'node:http'
+const api = createServer((_req, res) => {
+  res.writeHead(404, { 'content-type': 'application/json' })
+  res.end('{"error":{"code":"not_found","message":"No route for GET /"}}')
+})
+api.listen(0, '127.0.0.1', () => {
+  if (process.env.QUIET !== '1') console.log('api listening on http://localhost:' + api.address().port)
+  setTimeout(() => spawn(process.execPath, ['server.mjs'], { stdio: 'inherit' }), 300)
+})
+`
+
 const npmProject = (dev: string) =>
   project({
     'package.json': JSON.stringify({ name: 'app', scripts: { dev } }),
     'package-lock.json': '{}',
     'server.mjs': SERVER,
     'runner.mjs': RUNNER,
+    'full-stack.mjs': FULL_STACK,
   })
 
 async function api(port: number, path: string, body: unknown = {}, method = 'POST'): Promise<Response> {
@@ -162,6 +181,28 @@ test('a server that prints no URL is found by the port it opened', async () => {
   await api(port, 'start', { host: 'browser' })
   const running = await phase(port, 'running')
   assert.match(running.devServer.origin!, /^http:\/\/localhost:\d+$/)
+  assert.equal(await (await fetch(`http://127.0.0.1:${port}/`)).text(), 'hello from the dev server')
+  await api(port, 'stop')
+})
+
+test('a full-stack command that prints its API first shows the page, not the API', async () => {
+  const dir = npmProject('node full-stack.mjs')
+  const { port } = await world.openSession(daemon.port, { project: dir })
+  await api(port, 'start', { host: 'browser' })
+  const running = await waitFor(async () => {
+    const s = (await world.state(port)) as unknown as Snapshot
+    return s.devServer.phase === 'running' && s.devServer.origins?.length === 2 ? s : null
+  }, 'both origins to be printed')
+  assert.equal(running.app, running.devServer.origins![1], 'the App tab shows the page printed second')
+  assert.equal(await (await fetch(`http://127.0.0.1:${port}/`)).text(), 'hello from the dev server')
+  await api(port, 'stop')
+})
+
+test('the port scan prefers the page to an API that holds a port beside it', async () => {
+  const dir = npmProject('QUIET=1 node full-stack.mjs')
+  const { port } = await world.openSession(daemon.port, { project: dir })
+  await api(port, 'start', { host: 'browser' })
+  await phase(port, 'running')
   assert.equal(await (await fetch(`http://127.0.0.1:${port}/`)).text(), 'hello from the dev server')
   await api(port, 'stop')
 })

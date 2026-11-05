@@ -24,6 +24,8 @@ export type CrashCause =
   | 'exited'
   /** Nothing local was printed and no port opened within `DEV_SERVER_READY_MS`. */
   | 'no-url'
+  /** Local URLs were printed, and none answered within `DEV_SERVER_READY_MS`. */
+  | 'no-answer'
   /** The shell could not be started at all. */
   | 'spawn'
 
@@ -41,8 +43,8 @@ export type DevServerWire =
       command: DevCommandWire
       /** The one on the App tab. */
       origin: string
-      /** Every distinct local origin it printed, first first. The App tab offers
-       *  the others. */
+      /** Every distinct local origin it printed, first first. The App tab shows
+       *  the first that serves a page, and offers the others. */
       origins: string[]
       since: number
     }

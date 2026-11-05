@@ -1,6 +1,12 @@
 import { readFileSync, realpathSync } from 'node:fs'
 import { join, relative } from 'node:path'
-import { DEV_SERVER_PORT_SCAN_AFTER_MS, DEV_SERVER_READY_MS, DEV_SERVER_STOP_GRACE_MS } from '../constants.js'
+import { setTimeout as sleep } from 'node:timers/promises'
+import {
+  DEV_SERVER_PORT_SCAN_AFTER_MS,
+  DEV_SERVER_READY_MS,
+  DEV_SERVER_SETTLE_MS,
+  DEV_SERVER_STOP_GRACE_MS,
+} from '../constants.js'
 import { writeAtomic } from '../fs-atomic.js'
 import { findExecutable } from '../login-env.js'
 import { commandLine, detectDevCommand, missingTools, readProjectFacts, requiredTools, toolsForLine } from './detect.js'
@@ -15,7 +21,7 @@ import {
   step,
   toWire,
 } from './lifecycle.js'
-import { LogRing, ManagedProcess, listenerCwd, originAnswers } from './process.js'
+import { LogRing, ManagedProcess, listenerCwd, originAnswers, probeOrigin } from './process.js'
 import { type CommandProposal, askAgentForCommand, projectRelativePath } from './proposal.js'
 import type { DevCommandChoice, DevCommandWire, DevServerLogWire, DevServerSummaryWire, DevServerWire } from './wire.js'
 
@@ -57,6 +63,7 @@ function isTheAgentsProposal(offered: CommandProposal | null | undefined, propos
 
 const CRASH_TAIL_LINES = 30
 const PORT_SCAN_EVERY_MS = 1_000
+const PROBE_EVERY_MS = 500
 const MAX_LINE = 500
 
 export class DevServer {
@@ -218,14 +225,25 @@ export class DevServer {
         ).unref()
         return
       }
+      case 'probe': {
+        const { runId, origins } = effect
+        for (const origin of origins) void this.probeWhileLive(runId, origin)
+        return
+      }
+      case 'arm-settle': {
+        const { runId } = effect
+        setTimeout(() => this.dispatch({ type: 'settle-due', runId }), DEV_SERVER_SETTLE_MS).unref()
+        return
+      }
       case 'scan-ports': {
         const { runId } = effect
         const managed = this.live?.runId === runId ? this.live.process : null
         if (!managed) return
         void (async () => {
-          for (const origin of await managed.listeningOrigins()) {
-            if (await originAnswers(origin)) return this.dispatch({ type: 'port-found', runId, origin })
-          }
+          const listening = await managed.listeningOrigins()
+          const fits = await Promise.all(listening.map(async (origin) => ({ origin, fit: await probeOrigin(origin) })))
+          const best = fits.find((f) => f.fit === 'page') ?? fits.find((f) => f.fit === 'server')
+          if (best?.fit) return this.dispatch({ type: 'port-found', runId, origin: best.origin, fit: best.fit })
           setTimeout(() => this.dispatch({ type: 'scan-due', runId }), PORT_SCAN_EVERY_MS).unref()
         })()
         return
@@ -281,6 +299,17 @@ export class DevServer {
         this.writeRecord(effect.resume ? { ...rest, resume: effect.resume } : rest)
         return
       }
+    }
+  }
+
+  /** A printed URL can come before its server listens, so a silent one is asked again. */
+  private async probeWhileLive(runId: number, origin: string): Promise<void> {
+    const until = Date.now() + DEV_SERVER_READY_MS
+    const live = () => this.live?.runId === runId && this.live.process.running && !this.released
+    while (live() && Date.now() < until) {
+      const fit = await probeOrigin(origin)
+      if (fit) return this.dispatch({ type: 'probed', runId, origin, fit })
+      await sleep(PROBE_EVERY_MS, undefined, { ref: false })
     }
   }
 

@@ -1,3 +1,4 @@
+import type { OriginFit } from './urls.js'
 import type { CrashCause, DevCommandSource, DevServerWire, MissingToolWire, ProposalWire, UndecidedReason } from './wire.js'
 
 export interface DevCommand {
@@ -18,8 +19,10 @@ export interface Run {
 export type DevServerState =
   | { phase: 'idle' }
   | { phase: 'resolving'; since: number; by: Initiator; attempt: number }
-  | { phase: 'starting'; since: number; run: Run }
-  | { phase: 'running'; run: Run; origin: string; origins: readonly string[] }
+  /** `origins` were printed; `answered` are those that answered without a page. */
+  | { phase: 'starting'; since: number; run: Run; origins: readonly string[]; answered: readonly string[] }
+  /** `provisional`: shown for want of a page, and replaced by the first that answers. */
+  | { phase: 'running'; run: Run; origin: string; origins: readonly string[]; provisional: boolean }
   | { phase: 'stopping'; run: Run; then: { kind: 'stopped' } | { kind: 'restart'; by: Initiator; since: number } }
   | { phase: 'external'; origin: string }
   | { phase: 'needs-command'; reason: UndecidedReason; serverScripts: readonly string[]; proposal?: ProposalWire }
@@ -54,8 +57,10 @@ export type DevServerEvent =
   | { type: 'stop' }
   | { type: 'resolved'; attempt: number; resolution: Resolution; now: number }
   | { type: 'origins'; runId: number; origins: readonly string[] }
+  | { type: 'probed'; runId: number; origin: string; fit: OriginFit }
+  | { type: 'settle-due'; runId: number }
   | { type: 'scan-due'; runId: number }
-  | { type: 'port-found'; runId: number; origin: string }
+  | { type: 'port-found'; runId: number; origin: string; fit: OriginFit }
   | { type: 'ready-timeout'; runId: number; tail: readonly string[] }
   | { type: 'exited'; runId: number; code: number | null; signal: string | null; tail: readonly string[] }
   /** After an exit 0 that printed an origin: Astro's "already running at ...".
@@ -74,6 +79,8 @@ export type DevServerEffect =
   | { type: 'spawn'; run: Run }
   | { type: 'kill'; runId: number }
   | { type: 'arm-timers'; runId: number }
+  | { type: 'probe'; runId: number; origins: readonly string[] }
+  | { type: 'arm-settle'; runId: number }
   | { type: 'scan-ports'; runId: number }
   | { type: 'confirm-external'; runId: number; origin: string; tail: readonly string[] }
   | { type: 'attach'; origin: string }
@@ -95,6 +102,10 @@ export function step(machine: DevServerMachine, event: DevServerEvent): Step {
     stateChanged: next !== state,
   })
   const same = (effects: DevServerEffect[] = []): Step => ({ machine, effects, stateChanged: false })
+  const show = (from: Extract<DevServerState, { phase: 'starting' }>, origin: string, provisional: boolean): Step => {
+    const origins = from.origins.includes(origin) ? from.origins : [...from.origins, origin]
+    return to({ phase: 'running', run: from.run, origin, origins, provisional }, [{ type: 'attach', origin }])
+  }
   const current = (runId: number) => liveRun(state)?.id === runId
   const resolveAfresh = (now: number, by: Initiator): Step => {
     const attempt = machine.lastAttempt + 1
@@ -156,7 +167,7 @@ export function step(machine: DevServerMachine, event: DevServerEvent): Step {
         case 'run': {
           const run: Run = { id: machine.lastRunId + 1, command: r.command, startedAt: event.now, by: state.by }
           return to(
-            { phase: 'starting', since: state.since, run },
+            { phase: 'starting', since: state.since, run, origins: [], answered: [] },
             [
               { type: 'spawn', run },
               { type: 'arm-timers', runId: run.id },
@@ -176,29 +187,46 @@ export function step(machine: DevServerMachine, event: DevServerEvent): Step {
     }
 
     case 'origins': {
-      if (!current(event.runId) || !event.origins.length) return same()
+      if ((state.phase !== 'starting' && state.phase !== 'running') || !current(event.runId)) return same()
+      const fresh = event.origins.filter((origin) => !state.origins.includes(origin))
+      if (!fresh.length) return same()
+      const origins = [...state.origins, ...fresh]
+      const probe: DevServerEffect[] = [{ type: 'probe', runId: event.runId, origins: fresh }]
+      return to({ ...state, origins }, state.phase === 'starting' || state.provisional ? probe : [])
+    }
+
+    case 'probed': {
+      if (!current(event.runId)) return same()
       if (state.phase === 'starting') {
-        const origin = event.origins[0]!
-        return to({ phase: 'running', run: state.run, origin, origins: event.origins }, [{ type: 'attach', origin }])
+        if (event.fit === 'page') return show(state, event.origin, false)
+        if (state.answered.includes(event.origin)) return same()
+        const settle: DevServerEffect[] = state.answered.length ? [] : [{ type: 'arm-settle', runId: event.runId }]
+        return to({ ...state, answered: [...state.answered, event.origin] }, settle)
       }
-      if (state.phase === 'running' && event.origins.length > state.origins.length) {
-        return to({ ...state, origins: event.origins })
+      if (state.phase === 'running' && state.provisional && event.fit === 'page') {
+        return to({ ...state, origin: event.origin, provisional: false }, [{ type: 'attach', origin: event.origin }])
       }
       return same()
     }
 
+    case 'settle-due': {
+      if (state.phase !== 'starting' || !current(event.runId)) return same()
+      const first = state.origins.find((origin) => state.answered.includes(origin))
+      return first ? show(state, first, true) : same()
+    }
+
     case 'scan-due':
-      return state.phase === 'starting' && current(event.runId) ? same([{ type: 'scan-ports', runId: event.runId }]) : same()
+      return state.phase === 'starting' && !state.origins.length && current(event.runId)
+        ? same([{ type: 'scan-ports', runId: event.runId }])
+        : same()
 
     case 'port-found':
-      if (state.phase !== 'starting' || !current(event.runId)) return same()
-      return to({ phase: 'running', run: state.run, origin: event.origin, origins: [event.origin] }, [
-        { type: 'attach', origin: event.origin },
-      ])
+      if (state.phase !== 'starting' || state.origins.length || !current(event.runId)) return same()
+      return show(state, event.origin, event.fit !== 'page')
 
     case 'ready-timeout': {
       if (state.phase !== 'starting' || !current(event.runId)) return same()
-      const crashed = crash(state.run, 'no-url', event.tail)
+      const crashed = crash(state.run, state.origins.length ? 'no-answer' : 'no-url', event.tail)
       return { ...crashed, effects: [{ type: 'kill', runId: event.runId }, ...crashed.effects] }
     }
 
@@ -241,7 +269,7 @@ export function step(machine: DevServerMachine, event: DevServerEvent): Step {
 
     case 'origin-picked':
       if (state.phase !== 'running' || state.origin === event.origin || !state.origins.includes(event.origin)) return same()
-      return to({ ...state, origin: event.origin }, [{ type: 'attach', origin: event.origin }])
+      return to({ ...state, origin: event.origin, provisional: false }, [{ type: 'attach', origin: event.origin }])
   }
 }
 
