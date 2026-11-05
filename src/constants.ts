@@ -108,5 +108,7 @@ export const SHELL_RETURN_MS = 2000
 export const SOURCE_ATTR = 'data-ez-source'
 export const DEV_SERVER_READY_MS = 60_000
 export const DEV_SERVER_PORT_SCAN_AFTER_MS = 3_000
+/** How long a printed origin that answers without a page waits for one that serves it. */
+export const DEV_SERVER_SETTLE_MS = 3_000
 export const DEV_SERVER_STOP_GRACE_MS = 3_000
 export const DEV_SERVER_LOG_LINES = 2_000

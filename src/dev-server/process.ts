@@ -1,8 +1,10 @@
 import { type ChildProcess, execFile, spawn } from 'node:child_process'
+import { type IncomingMessage, request as httpRequest } from 'node:http'
+import { request as httpsRequest } from 'node:https'
 import { promisify } from 'node:util'
 import { DEV_SERVER_LOG_LINES } from '../constants.js'
 import { killGroup, trackGroup, untrackGroup } from '../child-groups.js'
-import { OriginScanner, parseListeningPorts } from './urls.js'
+import { type OriginFit, OriginScanner, fitOfResponse, parseListeningPorts } from './urls.js'
 import type { DevServerLogWire } from './wire.js'
 
 export interface LaunchSpec {
@@ -163,6 +165,45 @@ export async function originAnswers(origin: string, timeoutMs = 1_500): Promise<
   } catch {
     return false
   }
+}
+
+const PROBE_CONNECT_MS = 1_500
+/** A first request to `/` may compile the page (Next.js), so headers get far
+ *  longer than the connection does. */
+const PROBE_RESPONSE_MS = 30_000
+
+/** Asks `/` for a document as a browser would; `null` when nothing answers. */
+export function probeOrigin(origin: string): Promise<OriginFit | null> {
+  let url: URL
+  try {
+    url = new URL(origin)
+  } catch {
+    return Promise.resolve(null)
+  }
+  return new Promise((resolve) => {
+    const options = { agent: false, headers: { accept: 'text/html,*/*;q=0.8' } } as const
+    const onResponse = (res: IncomingMessage) => {
+      clearTimeout(timer)
+      res.destroy()
+      resolve(fitOfResponse(res.statusCode ?? 0, res.headers['content-type']))
+    }
+    const req =
+      url.protocol === 'https:'
+        ? httpsRequest(url, { ...options, rejectUnauthorized: false }, onResponse)
+        : httpRequest(url, options, onResponse)
+    let timer = setTimeout(() => req.destroy(), PROBE_CONNECT_MS)
+    req.on('socket', (socket) =>
+      socket.once('connect', () => {
+        clearTimeout(timer)
+        timer = setTimeout(() => req.destroy(), PROBE_RESPONSE_MS)
+      }),
+    )
+    req.on('error', () => {
+      clearTimeout(timer)
+      resolve(null)
+    })
+    req.end()
+  })
 }
 
 export type ListenerCwd = { kind: 'known'; path: string } | { kind: 'unknown' }

@@ -61,6 +61,15 @@ export class OriginScanner {
   }
 }
 
+/** `page` serves a document at `/`; `server` answers but is something else,
+ *  such as the API a full-stack dev command starts beside its page. */
+export type OriginFit = 'page' | 'server'
+
+export function fitOfResponse(status: number, contentType: string | undefined): OriginFit {
+  if (status >= 300 && status < 400) return 'page'
+  return status >= 200 && status < 300 && /^\s*text\/html\b/i.test(contentType ?? '') ? 'page' : 'server'
+}
+
 /** TCP ports in `LISTEN` from `lsof -nP -iTCP -sTCP:LISTEN -a -p <pids> -F pn`
  *  output, deduplicated, lowest first. */
 export function parseListeningPorts(lsofOutput: string): number[] {

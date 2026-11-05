@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { test } from 'node:test'
-import { OriginScanner, localOriginsIn, parseListeningPorts, stripAnsi } from '../src/dev-server/urls.js'
+import { OriginScanner, fitOfResponse, localOriginsIn, parseListeningPorts, stripAnsi } from '../src/dev-server/urls.js'
 
 const OUTPUT = join(import.meta.dirname, 'fixtures', 'dev-server-output')
 
@@ -66,4 +66,13 @@ test('strips colour and title sequences', () => {
 test('listening ports from lsof, lowest first', () => {
   const out = ['p4242', 'f21', 'n*:5174', 'f22', 'n127.0.0.1:5173', 'p4243', 'f9', 'n[::1]:5173', ''].join('\n')
   assert.deepEqual(parseListeningPorts(out), [5173, 5174])
+})
+
+test('a page is a document at /, or a redirect to one', () => {
+  assert.equal(fitOfResponse(200, 'text/html; charset=utf-8'), 'page')
+  assert.equal(fitOfResponse(302, undefined), 'page')
+  assert.equal(fitOfResponse(404, 'application/json'), 'server')
+  assert.equal(fitOfResponse(404, 'text/html'), 'server')
+  assert.equal(fitOfResponse(200, 'application/json'), 'server')
+  assert.equal(fitOfResponse(200, 'text/plain'), 'server')
 })

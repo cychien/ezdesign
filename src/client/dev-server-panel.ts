@@ -58,6 +58,7 @@ const agentName = (command: string) => agentProfileFor(command)?.name ?? 'agent'
 
 function crashLine(state: Extract<DevServerWire, { phase: 'crashed' }>): string {
   if (state.cause === 'no-url') return '60 秒內沒有印出網址，也沒有開啟任何 port，已停止它。'
+  if (state.cause === 'no-answer') return '印出的網址 60 秒內都沒有回應，已停止它。'
   if (state.cause === 'spawn') return '指令沒辦法執行。'
   if (state.signal) return `Dev server 被 ${state.signal} 結束了。`
   return state.exitCode !== undefined ? `Dev server 結束了（exit code ${state.exitCode}）。` : 'Dev server 結束了。'
