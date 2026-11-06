@@ -2,7 +2,7 @@
  *  a legal rect is. Pure and node-free - the daemon places the agent's frames,
  *  the shell will place the user's duplicates, and they must place the same way. */
 
-import { MAX_FRAME_SIZE, MIN_FRAME_SIZE, type Point, type Rect, type Size } from './types.js'
+import { type FrameKind, MAX_FRAME_SIZE, MIN_FRAME_SIZE, MIN_IMAGE_SIZE, type Point, type Rect, type Size } from './types.js'
 
 /** Clear space kept beside frames placed for the user. */
 export const GAP = 80
@@ -44,16 +44,19 @@ export function defaultHeightFor(width: number): number {
 
 const clamp = (v: number, min: number, max: number) => Math.min(max, Math.max(min, v))
 
-/** Whole numbers inside `MIN_FRAME_SIZE..MAX_FRAME_SIZE`, so a value from the
- *  wire cannot write 412.0000001 or a kilometre-wide frame into the repo. */
-export function normalizeRect(raw: Rect): Rect {
+/** Whole numbers inside `min..MAX_FRAME_SIZE`, so a value from the wire cannot
+ *  write 412.0000001 or a kilometre-wide frame into the repo. */
+export function normalizeRect(raw: Rect, min: Size = MIN_FRAME_SIZE): Rect {
   return {
     x: Math.round(raw.x),
     y: Math.round(raw.y),
-    width: clamp(Math.round(raw.width), MIN_FRAME_SIZE.width, MAX_FRAME_SIZE.width),
-    height: clamp(Math.round(raw.height), MIN_FRAME_SIZE.height, MAX_FRAME_SIZE.height),
+    width: clamp(Math.round(raw.width), min.width, MAX_FRAME_SIZE.width),
+    height: clamp(Math.round(raw.height), min.height, MAX_FRAME_SIZE.height),
   }
 }
+
+/** The smallest a frame of this kind may be. */
+export const minSizeOf = (kind: FrameKind): Size => (kind === 'image' ? MIN_IMAGE_SIZE : MIN_FRAME_SIZE)
 
 /** A frame's new height, and the frames that move down to make room for it: every
  *  frame below its old bottom whose span overlaps it, then every frame below
@@ -79,14 +82,16 @@ export function growDown<K>(
   return { rect: next, moved }
 }
 
-/** A pasted image's frame: its natural size, scaled down to fit
- *  `MAX_FRAME_SIZE` with its aspect kept, and never under `MIN_FRAME_SIZE`
- *  (the document letterboxes a small image). */
+/** A pasted image's frame: its natural size, scaled into
+ *  `MIN_IMAGE_SIZE..MAX_FRAME_SIZE` with its aspect kept, so it shows no
+ *  letterbox. Only a sliver too thin to keep its aspect inside both is clamped. */
 export function imageFrameSize(natural: Size): Size {
-  const scale = Math.min(1, MAX_FRAME_SIZE.width / natural.width, MAX_FRAME_SIZE.height / natural.height)
+  const down = Math.min(1, MAX_FRAME_SIZE.width / natural.width, MAX_FRAME_SIZE.height / natural.height)
+  const up = Math.max(1, MIN_IMAGE_SIZE.width / natural.width, MIN_IMAGE_SIZE.height / natural.height)
+  const scale = down < 1 ? down : up
   return {
-    width: Math.max(MIN_FRAME_SIZE.width, Math.round(natural.width * scale)),
-    height: Math.max(MIN_FRAME_SIZE.height, Math.round(natural.height * scale)),
+    width: clamp(Math.round(natural.width * scale), MIN_IMAGE_SIZE.width, MAX_FRAME_SIZE.width),
+    height: clamp(Math.round(natural.height * scale), MIN_IMAGE_SIZE.height, MAX_FRAME_SIZE.height),
   }
 }
 

@@ -165,6 +165,14 @@ export function parseLayoutStep(raw: unknown): LayoutStepWire | null {
       })
       if (frames.some((f) => f === null)) return null
       parsed.push({ t: 'move', frames: frames as ({ id: FrameId } & Point)[] })
+    } else if (op?.t === 'resize' && Array.isArray(op.frames)) {
+      const frames = (op.frames as Record<string, unknown>[]).map((f) => {
+        const id = asFrameId(f?.id)
+        const to = rect(f)
+        return id && to ? { id, ...to } : null
+      })
+      if (frames.some((f) => f === null)) return null
+      parsed.push({ t: 'resize', frames: frames as ({ id: FrameId } & Rect)[] })
     } else if (op?.t === 'remove' || op?.t === 'restore') {
       const ids = frameIds(op.ids)
       if (!ids) return null

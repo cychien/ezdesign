@@ -4991,6 +4991,135 @@ html.ez-on-board body {
   user-select: none;
 }
 
+/* A selected image's resize handles, over its outline in screen pixels: a
+   square on each corner, and an unseen strip along each edge to grab. */
+.ez-board-handles {
+  position: absolute;
+  left: 0;
+  top: 0;
+  pointer-events: none;
+}
+
+.ez-board-handles[hidden],
+.ez-board.ez-arranging .ez-board-handles {
+  display: none;
+}
+
+.ez-board-handle {
+  position: absolute;
+  pointer-events: auto;
+}
+
+.ez-board-handle[data-handle='n'],
+.ez-board-handle[data-handle='s'] {
+  left: 4px;
+  right: 4px;
+  height: 8px;
+  cursor: ns-resize;
+}
+
+.ez-board-handle[data-handle='e'],
+.ez-board-handle[data-handle='w'] {
+  top: 4px;
+  bottom: 4px;
+  width: 8px;
+  cursor: ew-resize;
+}
+
+.ez-board-handle[data-handle='n'] {
+  top: -4px;
+}
+
+.ez-board-handle[data-handle='s'] {
+  bottom: -4px;
+}
+
+.ez-board-handle[data-handle='e'] {
+  right: -4px;
+}
+
+.ez-board-handle[data-handle='w'] {
+  left: -4px;
+}
+
+.ez-board-handle[data-handle='nw'],
+.ez-board-handle[data-handle='ne'],
+.ez-board-handle[data-handle='se'],
+.ez-board-handle[data-handle='sw'] {
+  z-index: 1;
+  width: 8px;
+  height: 8px;
+  box-sizing: border-box;
+  border: 1px solid var(--arrange);
+  background: #fff;
+}
+
+.ez-board-handle[data-handle='nw'] {
+  left: -4px;
+  top: -4px;
+  cursor: nwse-resize;
+}
+
+.ez-board-handle[data-handle='ne'] {
+  right: -4px;
+  top: -4px;
+  cursor: nesw-resize;
+}
+
+.ez-board-handle[data-handle='se'] {
+  right: -4px;
+  bottom: -4px;
+  cursor: nwse-resize;
+}
+
+.ez-board-handle[data-handle='sw'] {
+  left: -4px;
+  bottom: -4px;
+  cursor: nesw-resize;
+}
+
+/* Captured, the pointer takes the board's cursor wherever it goes. */
+.ez-board.ez-resizing[data-handle='n'],
+.ez-board.ez-resizing[data-handle='s'] {
+  cursor: ns-resize;
+}
+
+.ez-board.ez-resizing[data-handle='e'],
+.ez-board.ez-resizing[data-handle='w'] {
+  cursor: ew-resize;
+}
+
+.ez-board.ez-resizing[data-handle='nw'],
+.ez-board.ez-resizing[data-handle='se'] {
+  cursor: nwse-resize;
+}
+
+.ez-board.ez-resizing[data-handle='ne'],
+.ez-board.ez-resizing[data-handle='sw'] {
+  cursor: nesw-resize;
+}
+
+/* The size being dragged to, under the image. */
+.ez-board-size {
+  position: absolute;
+  left: 0;
+  top: 0;
+  margin-top: 8px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--arrange);
+  color: #fff;
+  font-size: 11px;
+  line-height: 16px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.ez-board-size[hidden] {
+  display: none;
+}
+
 .ez-board-frame-title {
   max-width: 100%;
   overflow: hidden;

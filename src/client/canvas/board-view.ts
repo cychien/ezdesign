@@ -51,13 +51,14 @@ import {
   type AssetName,
   type Camera,
   type FrameId,
+  MAX_FRAME_SIZE,
   MAX_FRAME_TITLE,
   type Point,
   type Rect,
   type Size,
   mintFrameId,
 } from '../../canvas/types.js'
-import { boundsOf, imageFrameSize } from '../../canvas/place.js'
+import { boundsOf, imageFrameSize, minSizeOf } from '../../canvas/place.js'
 import type { CanvasWire, FrameWire, LayoutOp } from '../../canvas/wire.js'
 import { type CanvasGuestPort, canvasGuestId } from '../frame-registry.js'
 import { type IconNode, icon } from '../icon.js'
@@ -83,9 +84,11 @@ import {
   planImages,
   planMove,
   planRemove,
+  planResize,
   withPending,
 } from './history.js'
 import { planMounts } from './mounting.js'
+import { HANDLES, type Handle, resizedRect } from './resize.js'
 import { LABELS, TEST_IDS } from './names.js'
 
 /** No `allow-top-navigation`: a frame cannot take the shell's tab anywhere.
@@ -136,6 +139,8 @@ const WHEEL_ZOOM = 0.0025
 /** How far the pointer has to travel, in screen pixels, before a press on a
  *  frame becomes a drag rather than a click. */
 const DRAG_PX = 3
+/** The smallest an image may be on screen and still show resize handles. */
+const MIN_HANDLED_PX = 24
 /** The longest step an edge pan takes, so a stalled frame does not jump. */
 const MAX_PAN_STEP_S = 1 / 30
 
@@ -148,6 +153,21 @@ interface Card {
 
 type Gesture =
   | { t: 'pan'; pointer: number; x: number; y: number; camera: Camera }
+  | {
+      t: 'resize'
+      pointer: number
+      id: FrameId
+      handle: Handle
+      /** The press, board-relative, and the camera then: the pointer's travel is
+       *  measured in the world, so a pan mid-drag does not throw it off. */
+      from: Point
+      camera: Camera
+      /** Where the pointer is now, board-relative, and whether Alt is down. */
+      at: Point
+      fromCenter: boolean
+      start: Rect
+      rect: Rect
+    }
   | {
       t: 'move'
       pointer: number
@@ -195,6 +215,9 @@ export class BoardView {
   readonly el: HTMLElement
   private readonly world: HTMLElement
   private readonly heads: HTMLElement
+  /** The selected image's eight resize handles, in screen pixels like heads. */
+  private readonly handles: HTMLElement
+  private readonly sizeBadge: HTMLElement
   private readonly marquee: HTMLElement
   private readonly guides: HTMLElement
   private readonly empty: HTMLElement
@@ -260,6 +283,16 @@ export class BoardView {
     this.guides = el('div', 'ez-guides')
     this.world.append(this.guides)
     this.heads = el('div', 'ez-board-heads')
+    this.handles = el('div', 'ez-board-handles')
+    this.handles.hidden = true
+    for (const handle of HANDLES) {
+      const grip = el('div', 'ez-board-handle')
+      grip.dataset.handle = handle
+      grip.dataset.testid = TEST_IDS.handle
+      this.handles.append(grip)
+    }
+    this.sizeBadge = el('div', 'ez-board-size')
+    this.sizeBadge.hidden = true
     this.marquee = el('div', 'ez-board-marquee')
     this.marquee.hidden = true
     this.empty = el('div', 'ez-board-empty')
@@ -284,7 +317,7 @@ export class BoardView {
       this.readout,
       button(LABELS.zoomIn, PlusIcon as IconNode, () => this.zoomBy(ZOOM_STEP)),
     )
-    this.el.append(this.world, this.heads, this.marquee, this.empty, tools)
+    this.el.append(this.world, this.heads, this.handles, this.sizeBadge, this.marquee, this.empty, tools)
 
     this.el.addEventListener('wheel', (e) => this.onBoardWheel(e), { passive: false })
     this.el.addEventListener('pointerdown', (e) => this.onPointerDown(e))
@@ -391,6 +424,7 @@ export class BoardView {
   setAnnotating(mode: Mode): void {
     this.annotating = mode
     this.el.classList.toggle('ez-annotating', mode !== 'off')
+    this.paintHandles()
     if (mode !== 'region') {
       this.disarm()
       this.dropCarried()
@@ -516,6 +550,7 @@ export class BoardView {
   setPicking(on: boolean): void {
     this.picking = on
     this.el.classList.toggle('ez-picking-frames', on)
+    this.paintHandles()
     if (!on) this.markPickTarget(null)
   }
 
@@ -703,6 +738,44 @@ export class BoardView {
       card.head.classList.toggle('ez-selected', this.selection.has(id))
       card.el.classList.toggle('ez-annotate-target', this.targets.has(id))
     }
+    this.paintHandles()
+  }
+
+  /** The one image a lone selection names, while the board is arranging. */
+  private resizable(): Card | null {
+    if (this.selection.size !== 1 || this.annotating !== 'off' || this.picking) return null
+    const card = this.cards.get([...this.selection][0]!)
+    return card?.frame.kind === 'image' ? card : null
+  }
+
+  /** Where a frame is on screen right now: mid-resize, the rect being dragged. */
+  private shownRect(card: Card): Rect {
+    const g = this.gesture
+    return g?.t === 'resize' && g.id === card.frame.id ? g.rect : card.frame.rect
+  }
+
+  /** Handles on the corners and edges of the image, in whole screen pixels;
+   *  while it is being resized, its size under it. */
+  private paintHandles(): void {
+    const camera = this.camera
+    const card = this.resizable()
+    const g = this.gesture?.t === 'resize' ? this.gesture : null
+    this.sizeBadge.hidden = !g || !camera
+    this.handles.hidden = true
+    if (!card || !camera) return
+    const rect = this.shownRect(card)
+    const a = worldToScreen(camera, rect)
+    const b = worldToScreen(camera, { x: rect.x + rect.width, y: rect.y + rect.height })
+    const box = { left: Math.round(a.x), top: Math.round(a.y), right: Math.round(b.x), bottom: Math.round(b.y) }
+    // Smaller than this on screen, the handles would cover the image and leave
+    // nothing to grab it by; zooming in brings them back.
+    this.handles.hidden = !g && Math.min(box.right - box.left, box.bottom - box.top) < MIN_HANDLED_PX
+    this.handles.style.transform = `translate(${box.left}px, ${box.top}px)`
+    this.handles.style.width = `${box.right - box.left}px`
+    this.handles.style.height = `${box.bottom - box.top}px`
+    if (!g) return
+    this.sizeBadge.textContent = `${g.rect.width} × ${g.rect.height}`
+    this.sizeBadge.style.transform = `translate(${Math.round((box.left + box.right) / 2)}px, ${box.bottom}px) translateX(-50%)`
   }
 
   /** Each head sits on its frame's top-left corner in whole screen pixels, as
@@ -712,12 +785,14 @@ export class BoardView {
     if (!camera) return
     const drag = this.gesture?.t === 'move' ? this.gesture : null
     for (const card of this.cards.values()) {
-      const { id, rect } = card.frame
+      const { id } = card.frame
+      const rect = this.shownRect(card)
       const dragged = drag?.ids.has(id)
       const at = worldToScreen(camera, { x: rect.x + (dragged ? drag!.dx : 0), y: rect.y + (dragged ? drag!.dy : 0) })
       card.head.style.transform = `translate(${Math.round(at.x)}px, ${Math.round(at.y)}px) translateY(-100%)`
       card.head.style.maxWidth = `${Math.round(rect.width * camera.zoom)}px`
     }
+    this.paintHandles()
   }
 
   private paintGuides(guides: Guide[]): void {
@@ -902,6 +977,7 @@ export class BoardView {
     }
     if (this.gesture?.t === 'move' && this.gesture.started) this.dragTo(this.gesture)
     if (this.gesture?.t === 'marquee' && this.gesture.started) this.paintMarquee(this.gesture)
+    if (this.gesture?.t === 'resize') this.resizeTo(this.gesture)
   }
 
   /** Space held or the middle button pans; the background draws a selection
@@ -922,6 +998,27 @@ export class BoardView {
     if (this.spaceHeld || e.button === 1) {
       start({ t: 'pan', pointer: e.pointerId, x: e.clientX, y: e.clientY, camera: this.camera })
       this.el.classList.add('ez-panning')
+      return
+    }
+    const grip = target.closest<HTMLElement>('.ez-board-handle')
+    const resizing = grip && this.resizable()
+    if (resizing) {
+      const { rect } = resizing.frame
+      start({
+        t: 'resize',
+        pointer: e.pointerId,
+        id: resizing.frame.id,
+        handle: grip.dataset.handle as Handle,
+        from: this.boardPoint(e),
+        camera: this.camera,
+        at: this.boardPoint(e),
+        fromCenter: e.altKey,
+        start: rect,
+        rect,
+      })
+      this.el.classList.add('ez-resizing')
+      this.el.dataset.handle = grip.dataset.handle
+      this.paintHandles()
       return
     }
     const pickedHead = this.picking ? target.closest<HTMLElement>('.ez-board-frame-head') : null
@@ -1016,6 +1113,12 @@ export class BoardView {
       this.setCamera(panned(g.camera, e.clientX - g.x, e.clientY - g.y))
       return
     }
+    if (g.t === 'resize') {
+      g.at = this.boardPoint(e)
+      g.fromCenter = e.altKey
+      this.resizeTo(g)
+      return
+    }
     if (g.t === 'marquee') {
       g.at = this.boardPoint(e)
       if (!g.started && Math.hypot(g.at.x - g.from.x, g.at.y - g.from.y) < DRAG_PX) return
@@ -1088,7 +1191,7 @@ export class BoardView {
   private edgePanStep(now: number): void {
     this.edgePanRequested = 0
     const g = this.gesture
-    if (!g || g.t === 'pan' || !g.started || !this.camera) return
+    if (!g || g.t === 'pan' || g.t === 'resize' || !g.started || !this.camera) return
     const speed = edgePan(g.at, g.from, this.stage)
     if (!speed.x && !speed.y) return
     const dt = Math.min(MAX_PAN_STEP_S, Math.max(0, now - this.edgePanAt) / 1000)
@@ -1111,9 +1214,18 @@ export class BoardView {
     this.gesture = null
     cancelAnimationFrame(this.edgePanRequested)
     this.edgePanRequested = 0
-    this.el.classList.remove('ez-panning', 'ez-arranging', 'ez-tracking')
+    this.el.classList.remove('ez-panning', 'ez-arranging', 'ez-tracking', 'ez-resizing')
+    delete this.el.dataset.handle
     this.paintGuides([])
     this.marquee.hidden = true
+    if (g.t === 'resize') {
+      const card = this.cards.get(g.id)
+      if (card) this.place(card)
+      const moved = card && !cancelled && (Object.keys(g.rect) as (keyof Rect)[]).some((k) => g.rect[k] !== g.start[k])
+      if (moved) this.commit(planResize(card.frame, g.rect))
+      else this.paintHeads()
+      return
+    }
     if (g.t === 'marquee' && g.sweep) {
       this.endSweep()
       if (g.started && !cancelled && this.camera) this.composeSwept(g.origin, screenToWorld(this.camera, g.at))
@@ -1133,6 +1245,20 @@ export class BoardView {
     this.commit(planMove(this.frames, g.ids, g.dx, g.dy))
   }
 
+  private resizeTo(g: Extract<Gesture, { t: 'resize' }>): void {
+    const card = this.cards.get(g.id)
+    if (!card || !this.camera) return
+    const from = screenToWorld(g.camera, g.from)
+    const to = screenToWorld(this.camera, g.at)
+    g.rect = resizedRect(g.start, g.handle, { x: to.x - from.x, y: to.y - from.y }, {
+      fromCenter: g.fromCenter,
+      min: minSizeOf('image'),
+      max: MAX_FRAME_SIZE,
+    })
+    this.place(card, g.rect)
+    this.paintHeads()
+  }
+
   private composeSwept(origin: Point, end: Point): void {
     const target = this.framesTarget(this.framesIn(boxBetween(origin, end)), end)
     if (target) this.host.composeFrames(target.frames, target.host, target.at)
@@ -1146,7 +1272,9 @@ export class BoardView {
     const hit = document.elementFromPoint(e.clientX, e.clientY)
     const frame = hit?.closest<HTMLElement>('.ez-board-frame, .ez-board-frame-head')
     const id = frame?.dataset.frameId as FrameId | undefined
-    if (id && this.cards.get(id)?.iframe) this.setLive(id)
+    const card = id ? this.cards.get(id) : undefined
+    // An image has nothing to scroll or press: live, it would only swallow the wheel.
+    if (id && card?.iframe && card.frame.kind === 'page') this.setLive(id)
   }
 }
 

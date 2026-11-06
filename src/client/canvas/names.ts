@@ -30,6 +30,8 @@ export const TEST_IDS = {
   frame: 'ez-board-frame',
   /** `data-axis` = x|y */
   guide: 'ez-guide',
+  /** a selected image's resize handle, `data-handle` = nw|n|ne|e|se|s|sw|w */
+  handle: 'ez-board-handle',
   /** the camera controls */
   tools: 'ez-board-tools',
   /** the zoom readout, text like `100%` */
