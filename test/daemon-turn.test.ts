@@ -209,7 +209,7 @@ test('an agent that cannot be steered answers the next batch after the turn', as
 // is offered again rather than left for the end of a turn it was meant to change.
 test('a batch sent on the heels of the one that started the turn still goes into it', async () => {
   const port = await openWithAgent('http://localhost:9991', FAKE_AGENT)
-  const first = await send(port, 'first LATESTART 500 SLOW')
+  const first = await send(port, 'first LATESTART STEER SLOW')
   const second = await send(port, 'second')
   const done = await waitFor(async () => {
     const s = await turnState(port)
