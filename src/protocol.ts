@@ -29,6 +29,10 @@ export interface Anchor {
    *  shell writes it from the registered window the message came from, never
    *  from the frame's own claim, and the daemon checks the frame exists. */
   frame?: FrameRef
+  /** Set when the comment is about whole canvas frames rather than anything in
+   *  them: a frame's title clicked, or a region swept across frames. `frame` is
+   *  the one of them the comment was written on. */
+  frames?: FrameRef[]
 }
 
 /** Which canvas frame an element was picked in. Ids, not paths: the file is

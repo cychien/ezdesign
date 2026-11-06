@@ -222,3 +222,21 @@ test('a group past the cap says how many members did not fit', () => {
   const fits = lines.slice(0, MAX_GROUP_MEMBERS)
   assert.deepEqual(groupLines(fits), fits)
 })
+
+test('whole frames are named as frames, by title, with their canvas', () => {
+  const names = (r: { frameId: string }) => ({ canvas: '首頁探索', frame: r.frameId === 'f1' ? 'Hero A' : 'Hero B' })
+  const one = { canvasId: 'c', frameId: 'f1' }
+  const two = { canvasId: 'c', frameId: 'f2' }
+  assert.equal(
+    referenceLabel(ref({ source: '.ezdesign/canvases/c/frames/f1.html', frame: one, frames: [one] }), names),
+    '.ezdesign/canvases/c/frames/f1.html · [whole canvas frame "Hero A" on canvas "首頁探索"]',
+  )
+  assert.equal(
+    referenceLabel(ref({ contains: ['a.html · "Hero A"', 'b.html · "Hero B"'], frame: two, frames: [one, two] }), names),
+    '[group of 2: a.html · "Hero A"; b.html · "Hero B"] · [whole canvas frames "Hero A", "Hero B" on canvas "首頁探索"]',
+  )
+  assert.equal(
+    referenceLabel(ref({ frame: two, frames: [one, two] }), () => null),
+    '[whole canvas frames c/f1, c/f2]',
+  )
+})

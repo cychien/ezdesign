@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { attachmentIds, parseReferences, sanitizeAnchor, sanitizeCapture } from '../src/anchor.js'
+import { attachmentIds, parseReferences, sanitizeAnchor, sanitizeCapture, wholeFramesValid } from '../src/anchor.js'
 import { MAX_GROUP_MEMBERS } from '../src/label.js'
 
 test('an absent field means none, a malformed one is an error', () => {
@@ -232,4 +232,21 @@ test('a capture with none of the new fields is unchanged, and one with nothing t
   assert.deepEqual(sanitizeCapture({ html: '<i/>' }), { html: '<i/>' })
   assert.equal(sanitizeCapture({ html: '', rules: ['.a{}'] }), null)
   assert.equal(sanitizeCapture({ rules: ['.a{}'] }), null)
+})
+
+test('whole frames are live frames on the canvas of the frame they were written in, which is one of them', () => {
+  const live = (ref: { frameId: string }) => ref.frameId !== 'gone'
+  const own = { canvasId: 'c', frameId: 'f1' }
+  const sibling = { canvasId: 'c', frameId: 'f2' }
+  assert.equal(wholeFramesValid([own, sibling], own, live), true)
+  assert.equal(wholeFramesValid([own], own, live), true)
+  assert.equal(wholeFramesValid([sibling], own, live), false, 'the frame it was written in is among them')
+  assert.equal(wholeFramesValid([own, { canvasId: 'other', frameId: 'f2' }], own, live), false)
+  assert.equal(wholeFramesValid([own, { canvasId: 'c', frameId: 'gone' }], own, live), false)
+  assert.equal(wholeFramesValid([own, { canvasId: 'c' }], own, live), false)
+  assert.equal(wholeFramesValid([], own, live), false)
+  assert.equal(wholeFramesValid([own], undefined, live), false)
+  assert.equal(wholeFramesValid('f1', own, live), false)
+  const many = Array.from({ length: MAX_GROUP_MEMBERS + 1 }, (_, i) => ({ canvasId: 'c', frameId: i ? `f${i + 1}` : 'f1' }))
+  assert.equal(wholeFramesValid(many, own, live), false)
 })

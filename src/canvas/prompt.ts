@@ -59,6 +59,7 @@ export function canvasBrief(input: CanvasBriefInput): string[] {
       (more > 0 ? ` ${more} more: call list_canvases.` : ''),
     ...(where ? [where] : []),
     `Items with anchor.frame were made inside a canvas frame; anchor.source is then a line of that frame's file under ${CANVASES_DIR}/.`,
+    "Items with anchor.frames are about those whole frames, not an element in them: anchor.source (one frame) or anchor.contains (several) names each frame's file.",
     "A frame's HTML is yours: change it with update_frame or by editing that file. Its position is the user's and its width is fixed; when the content needs a different height, pass height to update_frame rather than adding the frame again. Never edit canvas.json or layout.json.",
     `To show the user designs, mockups or alternatives side by side, put each one in a frame on a canvas. Canvas tools (${CANVAS_SERVER_NAME}): ${CANVAS_TOOL_NAMES.join(', ')}.`,
     input.target

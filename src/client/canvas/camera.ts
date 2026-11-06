@@ -77,6 +77,10 @@ export function intersects(a: Rect, b: Rect): boolean {
   return !(a.x + a.width < b.x || b.x + b.width < a.x || a.y + a.height < b.y || b.y + b.height < a.y)
 }
 
+export function containsPoint(rect: Rect, p: Point): boolean {
+  return p.x >= rect.x && p.y >= rect.y && p.x <= rect.x + rect.width && p.y <= rect.y + rect.height
+}
+
 /** The world element's transform. One string, built in one place. */
 export function worldTransform(camera: Camera): string {
   return `translate(${-camera.x * camera.zoom}px, ${-camera.y * camera.zoom}px) scale(${camera.zoom})`

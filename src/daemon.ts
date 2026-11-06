@@ -62,6 +62,7 @@ import {
   parseReferences,
   sanitizeAnchor,
   sanitizeCapture,
+  wholeFramesValid,
 } from './anchor.js'
 import {
   DESIGN_EFFORTS,
@@ -2169,9 +2170,12 @@ class SessionRuntime implements ProjectRuntime {
       }
       // The shell stamped it from the window the comment came from, but the body
       // crossed the wire: a frame that does not exist is refused, not stored.
-      const frame = (anchor as Anchor).frame
+      const { frame, frames } = anchor as Anchor
       if (frame && !this.canvases.read.hasFrame(frame)) {
         return res.status(400).json({ error: 'unknown canvas frame' })
+      }
+      if (frames !== undefined && !wholeFramesValid(frames, frame, (ref) => this.canvases.read.hasFrame(ref))) {
+        return res.status(400).json({ error: 'frames must be live frames on the canvas of anchor.frame' })
       }
       const annotation: Annotation = {
         id: newId(),
