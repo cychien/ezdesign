@@ -12,6 +12,9 @@
  *              without SLOW in it ends the parked turn instead, with `end_turn`
  *    LATESTART <ms>  take that long to get the turn under way, during which a
  *              steer finds nothing to join
+ *    LATESTART STEER  get the turn under way only once a steer has found nothing
+ *              to join, so the first steer is always early, however loaded
+ *              the machine
  *    QUIET     say nothing of the prompt itself - with SLOW, a turn parked silent
  *    CHUNKS    stream CHUNK_COUNT message chunks back-to-back, then end the turn
  *    CONFIGPUSH  push a `config_option_update` nobody asked for, then end the turn
@@ -50,6 +53,8 @@ const log = []
 const turns = new Map()
 /** The steer handler of the turn each session is parked in, if it is. */
 const parked = new Map()
+/** Starts the turn of a session held by `LATESTART STEER`. */
+const startOnSteer = new Map()
 
 /** Mirrors the shape a real agent reports: a select whose choice reshapes the
  *  rest, a mode carrying the spec's `mode` category, and a boolean. `fast` is
@@ -317,7 +322,10 @@ const app = agent({ name: 'fake-acp-agent' })
     if (!canSteer) throw new Error('Method not found')
     if (_meta?.steering?.idleBehavior !== 'promptRequired') throw new Error('no idle fallback asked for')
     const turn = parked.get(sessionId)
-    if (!turn) return { outcome: 'promptRequired', reason: 'noRunningTurn' }
+    if (!turn) {
+      startOnSteer.get(sessionId)?.()
+      return { outcome: 'promptRequired', reason: 'noRunningTurn' }
+    }
     prompts.push({ sessionId, text, steered: true })
     turn(text)
     return { outcome: 'injected' }
@@ -335,7 +343,13 @@ const app = agent({ name: 'fake-acp-agent' })
     turns.set(sessionId, turn)
     const text = prompt.map((b) => (b.type === 'text' ? b.text : '')).join('')
     const lateStart = /LATESTART (\d+)/.exec(text)
-    if (lateStart) {
+    if (text.includes('LATESTART STEER')) {
+      await new Promise((resolve) => {
+        const start = () => (startOnSteer.delete(sessionId), resolve())
+        startOnSteer.set(sessionId, start)
+        turn.signal.addEventListener('abort', start, { once: true })
+      })
+    } else if (lateStart) {
       await new Promise((resolve) => {
         const timer = setTimeout(resolve, Number(lateStart[1]))
         turn.signal.addEventListener('abort', () => (clearTimeout(timer), resolve()), { once: true })

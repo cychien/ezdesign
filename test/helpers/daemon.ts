@@ -134,7 +134,7 @@ export class DaemonWorld {
       return h?.ok && h.pid === info.pid ? info : null
     }, 'a live daemon')
     const sessions = await this.control(live.port, '/control/sessions')
-    if (!sessions.ok) throw new Error(`daemon on ${live.port} answered ${sessions.status}`)
+    if (!sessions.ok) throw new Error(`daemon on ${live.port} answered ${sessions.status}: ${await sessions.text()}`)
     return live
   }
 
