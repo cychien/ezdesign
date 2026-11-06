@@ -4892,6 +4892,13 @@ html.ez-on-board body {
   display: none;
 }
 
+/* A region being drawn to comment on, as the overlay draws one inside a page. */
+.ez-board-marquee.ez-sweeping {
+  border-style: dashed;
+  border-color: var(--mark);
+  background: color-mix(in oklab, var(--mark) 9%, transparent);
+}
+
 /* Frame names, in screen pixels over the world: placed by `paintHeads`. */
 .ez-board-heads {
   position: absolute;
@@ -4927,13 +4934,28 @@ html.ez-on-board body {
   cursor: pointer;
 }
 
-.ez-board-frame.ez-pick-target {
+.ez-board-frame.ez-pick-target,
+.ez-board-frame.ez-annotate-target {
   outline: calc(2px / var(--ez-zoom, 1)) solid var(--ref-accent);
   outline-offset: calc(-1px / var(--ez-zoom, 1));
 }
 
 .ez-picking-frames .ez-board-frame-head:hover .ez-board-frame-title {
   color: var(--ref-accent);
+}
+
+/* While annotating, a title comments on its whole frame: outlined as a pick
+   target is, in the mark. */
+.ez-board.ez-annotating .ez-board-frame-head {
+  cursor: pointer;
+}
+
+.ez-board.ez-annotating .ez-board-frame-head:hover .ez-board-frame-title {
+  color: var(--mark);
+}
+
+.ez-board-frame.ez-annotate-target {
+  outline-color: var(--mark);
 }
 
 .ez-guides {
@@ -4978,7 +5000,8 @@ html.ez-on-board body {
 }
 
 /* The board owns the pointer unless the user is annotating, or has made one
-   frame live with a double-click; and never mid-gesture. */
+   frame live with a double-click; and never mid-gesture, since Chrome does not
+   keep a captured pointer from a cross-origin frame it passes over. */
 .ez-board-iframe {
   display: block;
   width: 100%;
@@ -4996,6 +5019,8 @@ html.ez-on-board body {
 
 .ez-board.ez-moving .ez-board-iframe,
 .ez-board.ez-space .ez-board-iframe,
+.ez-board.ez-tracking .ez-board-iframe,
+.ez-board.ez-sweep-armed .ez-board-frame:not(.ez-sweep-origin) .ez-board-iframe,
 .ez-board.ez-arranging .ez-board-iframe {
   pointer-events: none;
 }

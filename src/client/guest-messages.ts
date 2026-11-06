@@ -32,12 +32,6 @@ export interface Sender {
 
 export type Mode = 'off' | 'element' | 'region'
 
-export interface KeyChordWire {
-  key: string
-  metaKey: boolean
-  ctrlKey: boolean
-}
-
 /** What a relay overlay asks the shell to do for it: exactly the api calls an
  *  overlay makes, and no others. Answered with `ez:relay-done`. */
 export type RelayOp =
@@ -77,11 +71,39 @@ const mode = (v: unknown): Mode | null =>
   v === 'off' || v === 'element' || v === 'region' ? v : null
 const pickId = (raw: Raw) => str(raw.pickId)
 
+function point(v: unknown): { x: number; y: number } | null {
+  const p = obj(v)
+  const x = p ? num(p.x) : null
+  const y = p ? num(p.y) : null
+  return x === null || y === null ? null : { x, y }
+}
+
+
 /** The sender's place, written over whatever the anchor claimed: an app guest's
- *  anchors carry no `frame`, a canvas guest's carry exactly its own. */
+ *  anchors carry no `frame`, a canvas guest's carry exactly its own. `frames`
+ *  survives only on the sender's canvas and with the sender among them, so a
+ *  frame can speak about its siblings only alongside itself. */
 export function attributeAnchor(anchor: AnchorWire, sender: Sender): AnchorWire {
-  const { frame: _claimed, ...rest } = anchor
-  return sender.place ? { ...rest, frame: sender.place } : rest
+  const { frame: _claimed, frames: claimedFrames, ...rest } = anchor
+  const place = sender.place
+  if (!place) return rest
+  const frames = wholeFrames(claimedFrames, place)
+  return { ...rest, frame: place, ...(frames ? { frames } : {}) }
+}
+
+function wholeFrames(
+  claimed: unknown,
+  place: { canvasId: string; frameId: string },
+): { canvasId: string; frameId: string }[] | null {
+  if (!Array.isArray(claimed)) return null
+  const ids = new Set<string>()
+  for (const ref of claimed) {
+    const r = obj(ref)
+    if (r?.canvasId !== place.canvasId || typeof r.frameId !== 'string') return null
+    ids.add(r.frameId)
+  }
+  if (!ids.has(place.frameId)) return null
+  return [...ids].map((frameId) => ({ canvasId: place.canvasId, frameId }))
 }
 
 export const GUEST_PROTOCOL = {
@@ -113,6 +135,14 @@ export const GUEST_PROTOCOL = {
   /** `{reqId, files}` or `{reqId, error}` settling an `ez:library-pick`;
    *  `files` is empty when the user called it off. */
   'ez:library-picked': down(BOTH),
+  /** `{anchor, at}`: open a popup about whole frames, this one among them, at
+   *  `at` in this frame's viewport (null: its top-left). */
+  'ez:compose-frames': down(CANVAS),
+  /** The pointer left the frame mid-drag: the board has the box now. */
+  'ez:sweep-taken': down(CANVAS),
+  /** `{from, to}` in this frame's viewport: a box carried onto the board that
+   *  touched no other frame, handed back as this frame's own region. */
+  'ez:sweep-local': down(CANVAS),
 
   // ------------------------------------------------------------ guest -> shell
   'ez:ready': up(BOTH, (r) => {
@@ -132,7 +162,12 @@ export const GUEST_PROTOCOL = {
     const m = mode(r.mode)
     return m === null ? null : { mode: m }
   }),
-  'ez:popup': up(BOTH, (r) => ({ open: r.open === true })),
+  /** `frames`: the popup is about these whole frames of the sender's canvas,
+   *  for the board to outline. */
+  'ez:popup': up(BOTH, (r, sender) => {
+    const frames = sender.place ? wholeFrames(r.frames, sender.place) : null
+    return { open: r.open === true, ...(frames ? { frames: frames.map((f) => f.frameId) } : {}) }
+  }),
   'ez:pick-armed': up(BOTH, (r) => {
     const id = pickId(r)
     return id === null ? null : { pickId: id, host: r.host === 'note' ? ('note' as const) : ('popup' as const) }
@@ -190,7 +225,12 @@ export const GUEST_PROTOCOL = {
     const chord = obj(r.chord)
     if (!chord || typeof chord.key !== 'string') return null
     return {
-      chord: { key: chord.key, metaKey: chord.metaKey === true, ctrlKey: chord.ctrlKey === true },
+      chord: {
+        key: chord.key,
+        code: str(chord.code) ?? '',
+        metaKey: chord.metaKey === true,
+        ctrlKey: chord.ctrlKey === true,
+      },
       guest: sender.kind,
     }
   }),
@@ -207,6 +247,14 @@ export const GUEST_PROTOCOL = {
       ...(x !== null && y !== null ? { at: { x, y } } : {}),
     }
   }),
+  /** `{from}` in the frame's viewport: a region drag began, which the board
+   *  carries on across frames if the pointer leaves the frame. */
+  'ez:sweep-start': up(CANVAS, (r) => {
+    const from = point(r.from)
+    return from ? { from } : null
+  }),
+  /** That drag ended inside the frame. */
+  'ez:sweep-stop': up(CANVAS, () => ({})),
   /** Device-grid scroll sync. */
   'ez:scroll': up(APP, (r) => {
     const ratio = num(r.ratio)

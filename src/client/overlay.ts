@@ -111,7 +111,7 @@ let canExplore = false
  *  exactly the way the anchors it is searching for were built. */
 const swapper = new VariantSwapper(document, (element): Candidate => {
   const source = element.closest(`[${SOURCE_ATTR}]`)?.getAttribute(SOURCE_ATTR)
-  const text = (element.textContent ?? '').replace(/\s+/g, ' ').trim().slice(0, 80)
+  const text = readableText(element).slice(0, 80)
   return {
     ...(source ? { source } : {}),
     components: componentChain(element),
@@ -148,6 +148,9 @@ let markedRegion: Region | null = null
  *  here and becomes a frame only past the slop - which is what lets a plain
  *  click stay the page's while a plain drag draws a box. */
 let pendingFrame: Point | null = null
+/** The board was told this frame's region drag began (`ez:sweep-start`), so it
+ *  can carry the drag on should the pointer leave the frame. */
+let sweepAnnounced = false
 /** A completed drag ends with a `click`, aimed at whatever the release landed
  *  on. That click is part of the drag, not a pick of its own. */
 let swallowClick = false
@@ -292,6 +295,26 @@ function cssPath(element: Element): string {
 }
 
 /** `pin` is in page coordinates. */
+/** Never read out to anyone: a frame's `<style>` sits in its body, and this
+ *  overlay's own popup and markers hang off the page's. */
+const UNREAD = 'style, script, noscript, template, [data-ez-ui]'
+
+/** The words on the element, whitespace collapsed. */
+function readableText(element: Element): string {
+  if (!element.querySelector(UNREAD)) return (element.textContent ?? '').replace(/\s+/g, ' ').trim()
+  const parts: string[] = []
+  const walker = document.createTreeWalker(element, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT, {
+    acceptNode: (node) =>
+      node instanceof Element
+        ? node.matches(UNREAD)
+          ? NodeFilter.FILTER_REJECT
+          : NodeFilter.FILTER_SKIP
+        : NodeFilter.FILTER_ACCEPT,
+  })
+  while (walker.nextNode()) parts.push(walker.currentNode.nodeValue ?? '')
+  return parts.join('').replace(/\s+/g, ' ').trim()
+}
+
 function buildAnchor(
   element: Element,
   selectedText?: string,
@@ -300,7 +323,7 @@ function buildAnchor(
   const rect = element.getBoundingClientRect()
   const sourceHost = element.closest(`[${SOURCE_ATTR}]`)
   const sectionHost = element.closest('[data-section]')
-  const text = selectedText ?? (element.textContent ?? '').replace(/\s+/g, ' ').trim().slice(0, 80)
+  const text = selectedText ?? readableText(element).slice(0, 80)
   return {
     source: sourceHost?.getAttribute(SOURCE_ATTR) ?? undefined,
     components: componentChain(element),
@@ -592,7 +615,8 @@ function escape(): void {
     dropGathered()
     return
   }
-  if (mode === 'off') return
+  // Another frame holds the popup, and this press is its to take back.
+  if (mode === 'off' || held) return
   exitToIdle()
 }
 
@@ -860,7 +884,7 @@ function openPopup(
   popup.setAttribute('data-ez-subject', subject.kind)
   document.body.appendChild(popup)
   ui.popup = popup
-  post({ type: 'ez:popup', open: true })
+  post({ type: 'ez:popup', open: true, ...(subject.anchor.frames ? { frames: subject.anchor.frames } : {}) })
   popupRect = anchor
   paintPopup()
   // The click painted the highlight before this popup existed, so the label is
@@ -1078,6 +1102,7 @@ function madeHere(a: AnnotationWire): boolean {
  *  only trusted when the element is gone, and only inside the layout it was
  *  recorded in. */
 function markerPosition(a: AnnotationWire): { top: number; left: number } | null {
+  if (a.anchor.frames?.length) return { top: -window.scrollY, left: -window.scrollX }
   const target = resolveSelector(a.anchor.selector)
   const rect = target?.getBoundingClientRect()
   const live = rect && (rect.width > 0 || rect.height > 0) ? rect : null
@@ -1411,6 +1436,11 @@ function paintRegion(): void {
 function startFraming(at: Point): void {
   framing = { from: at, to: at }
   pendingFrame = null
+  if (link.kind === 'relay' && mode === 'region' && !pick && !ui.popup && !held) {
+    sweepAnnounced = true
+    post({ type: 'ez:sweep-start', from: { x: at.x - window.scrollX, y: at.y - window.scrollY } })
+  }
+
   document.documentElement.setAttribute('data-ez-framing', '')
   // A plain press is not preventDefault-ed - the sub-slop tail of it must stay a
   // real click for the page - so the browser had a few pixels to start selecting
@@ -1424,6 +1454,8 @@ function startFraming(at: Point): void {
 
 function endFraming(): void {
   pendingFrame = null
+  if (sweepAnnounced) post({ type: 'ez:sweep-stop' })
+  sweepAnnounced = false
   if (!framing) return
   framing = null
   document.documentElement.removeAttribute('data-ez-framing')
@@ -1478,7 +1510,7 @@ function hostAt(page: Point): Element | null {
 /** What the box covers, rather than everything the ancestor holds. */
 function framedText(elements: Element[]): string {
   return elements
-    .map((e) => (e.textContent ?? '').replace(/\s+/g, ' ').trim())
+    .map(readableText)
     .filter(Boolean)
     .join(' / ')
     .slice(0, 80)
@@ -1489,7 +1521,7 @@ function framedText(elements: Element[]): string {
  *  same file:line - so each line carries a snippet of the element's own text,
  *  which is the part that differs between instances. */
 function framedLabel(element: Element): string {
-  const text = (element.textContent ?? '').replace(/\s+/g, ' ').trim().slice(0, 24)
+  const text = readableText(element).slice(0, 24)
   return text ? `${describe(element)} · "${text}"` : describe(element)
 }
 
@@ -1522,6 +1554,33 @@ function regionRef(box: Region): RefWire {
  *  anchored to it tracks the region through scrolls. */
 const regionViewportRect = (box: Region): DOMRect =>
   new DOMRect(box.x - window.scrollX, box.y - window.scrollY, box.width, box.height)
+
+/** The pointer left this frame mid-drag and the board took the box on. */
+function sweepTaken(): void {
+  sweepAnnounced = false
+  endFraming()
+}
+
+/** The board settled a carried box on this frame alone: it is this frame's
+ *  region after all. `from` and `to` are in this viewport. */
+function composeSweptBack(from: Point, to: Point): void {
+  if (mode !== 'region' || ui.popup || held || pick) return
+  const page = (p: Point) => ({ x: p.x + window.scrollX, y: p.y + window.scrollY })
+  compose([{ box: regionFrom(page(from), page(to)) }])
+}
+
+/** A popup about whole frames, opened by the shell: their titles were clicked,
+ *  or a box swept across them. Nothing here is the subject, so nothing is
+ *  highlighted; the shell outlines the frames themselves. */
+function composeFrames(anchor: AnchorWire, at: Point | null): void {
+  if (mode === 'off' || ui.popup || held || pick) return
+  dismiss()
+  openPopup(
+    { kind: 'element', page: location.pathname, anchor },
+    () => (at ? new DOMRect(at.x, at.y, 0, 0) : new DOMRect(0, 0, window.innerWidth, 0)),
+    (comment, files, refs) => saveAnnotation('element', null, comment, files, refs, { anchor }),
+  )
+}
 
 // ---------------------------------------------------------------- gathering
 
@@ -2032,7 +2091,7 @@ function onKeyDown(e: KeyboardEvent): void {
   // shell's table, toggle the mode, and take the suspended popup - and its
   // uploads - down with it.
   if (pick || ui.popup || isTyping(e.target)) return
-  post({ type: 'ez:key', chord: { key: e.key, metaKey: e.metaKey, ctrlKey: e.ctrlKey } })
+  post({ type: 'ez:key', chord: { key: e.key, code: e.code, metaKey: e.metaKey, ctrlKey: e.ctrlKey } })
 }
 
 /** One message per frame at most: a scroll fires far faster than anything can
@@ -2238,6 +2297,9 @@ function boot(): void {
       anchor?: AnchorWire
       html?: string | null
       on?: boolean
+      at?: Point | null
+      from?: Point
+      to?: Point
     }
     // What the page is being asked to show in place of what it really has, and
     // whether an explore can be started at all.
@@ -2293,6 +2355,9 @@ function boot(): void {
       else if (data.draft) restoreDraft(data.draft)
     }
     if (data?.type === 'ez:restore' && data.draft) restoreDraft(data.draft)
+    if (data?.type === 'ez:sweep-taken') sweepTaken()
+    if (data?.type === 'ez:sweep-local' && data.from && data.to) composeSweptBack(data.from, data.to)
+    if (data?.type === 'ez:compose-frames' && data.anchor) composeFrames(data.anchor, data.at ?? null)
   })
 
   link.subscribe((snapshot) => {

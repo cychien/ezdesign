@@ -32,6 +32,11 @@
  *  A drag that reaches the board's edge pans it (`edgePan`) for as long as the
  *  pointer stays there, the frames or the box riding along under the pointer.
  *
+ *  While annotating, a click on a frame's title comments on that whole frame,
+ *  and in region mode a box - drawn on the background, or carried on from a
+ *  frame it left (`armSweep`) - comments on every frame it touches. The popup
+ *  lives in one of those frames' overlays, like every annotation popup.
+ *
  *  Edits are applied at once and sent one request at a time; what is still in
  *  flight is re-applied over every canvas the daemon pushes (`withPending`).
  *
@@ -57,7 +62,18 @@ import type { CanvasWire, FrameWire, LayoutOp } from '../../canvas/wire.js'
 import { type CanvasGuestPort, canvasGuestId } from '../frame-registry.js'
 import { type IconNode, icon } from '../icon.js'
 import type { Mode } from '../guest-messages.js'
-import { boxBetween, edgePan, fitAll, intersects, panned, screenToWorld, worldToScreen, worldTransform, zoomedAround } from './camera.js'
+import {
+  boxBetween,
+  containsPoint,
+  edgePan,
+  fitAll,
+  intersects,
+  panned,
+  screenToWorld,
+  worldToScreen,
+  worldTransform,
+  zoomedAround,
+} from './camera.js'
 import { type Guide, snapMove } from './guides.js'
 import {
   type BoardEdit,
@@ -92,6 +108,21 @@ export interface BoardHost {
   escape(): void
   /** A frame's title clicked while a pick is out: the whole frame answers it. */
   chooseFrame(frame: FrameWire): void
+  /** While annotating: a comment about these whole frames, written in `host`'s
+   *  popup at `at` in its viewport (null: its top-left). */
+  composeFrames(frames: FrameWire[], host: FrameWire, at: Point | null): void
+  /** The pointer left `frame` mid-drag: the board has its box now. */
+  takeSweep(frame: FrameWire): void
+  /** A box carried out of `frame` that touched no other: hand it back to the
+   *  frame as its own region, `from` and `to` in its viewport. */
+  returnSweep(frame: FrameWire, from: Point, to: Point): void
+}
+
+/** Whole frames a gesture settled on, and where to ask about them. */
+export interface FramesTarget {
+  frames: FrameWire[]
+  host: FrameWire
+  at: Point | null
 }
 
 /** How long the camera has to stay still for a gesture to be over. */
@@ -133,6 +164,9 @@ type Gesture =
       /** A shift-press on a frame already selected leaves the selection alone
        *  until the press turns out to be a click, which then deselects it. */
       toggleOnClick: FrameId | null
+      /** A title pressed while annotating: a click comments on the frame, and
+       *  only a drag selects it to move. */
+      composeOnClick: FrameId | null
     }
   | {
       t: 'marquee'
@@ -145,6 +179,9 @@ type Gesture =
       /** What a shift-press keeps selected. */
       base: ReadonlySet<FrameId>
       started: boolean
+      /** Region mode: the box comments on the frames it touches rather than
+       *  selecting them. */
+      sweep: boolean
     }
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, className: string, text?: string): HTMLElementTagNameMap[K] {
@@ -171,6 +208,16 @@ export class BoardView {
   private readonly cards = new Map<FrameId, Card>()
   private readonly mounted = new Set<FrameId>()
   private picking = false
+  private annotating: Mode = 'off'
+  /** Outlined as the subject of the open comment, or of the box being swept. */
+  private targets = new Set<FrameId>()
+  /** The frames whose comment is open: kept mounted, as a selection is. */
+  private composing = new Set<FrameId>()
+  /** A region drag under way in `frame`, which the board takes on if the
+   *  pointer leaves it. */
+  private armed: { frame: FrameWire; origin: Point } | null = null
+  /** A region drag that left its frame, carried on in world coordinates. */
+  private carried: { frame: FrameWire; origin: Point; at: Point } | null = null
   /** The frame whose title the pointer is over while picking. */
   private pickTarget: FrameId | null = null
   private readonly loading = new Set<FrameId>()
@@ -342,7 +389,126 @@ export class BoardView {
   /** E/R on: frames take the pointer so the overlay annotates; off: the board
    *  has it. */
   setAnnotating(mode: Mode): void {
+    this.annotating = mode
     this.el.classList.toggle('ez-annotating', mode !== 'off')
+    if (mode !== 'region') {
+      this.disarm()
+      this.dropCarried()
+    }
+  }
+
+  /** The comment about these frames opened (or, with none, closed). */
+  setComposing(ids: readonly FrameId[]): void {
+    this.composing = new Set(ids)
+    this.paintTargets(this.composing)
+  }
+
+  /** A region drag began in `frame` at `from` in its viewport. Chrome sends a
+   *  frame nothing of a drag once the pointer leaves it, so every other frame
+   *  stops taking the pointer: the drag then lands on the board, which carries
+   *  the box on over every frame. */
+  armSweep(frame: FrameWire, from: Point): void {
+    this.armed = { frame, origin: this.guestToWorld(frame, from) }
+    this.el.classList.add('ez-sweep-armed')
+    this.cards.get(frame.id)?.el.classList.add('ez-sweep-origin')
+  }
+
+  /** The drag ended inside its frame. */
+  disarmSweep(frame: FrameWire): void {
+    if (this.armed?.frame.id === frame.id) this.disarm()
+  }
+
+  private disarm(): void {
+    if (this.armed) this.cards.get(this.armed.frame.id)?.el.classList.remove('ez-sweep-origin')
+    this.armed = null
+    this.el.classList.remove('ez-sweep-armed')
+  }
+
+  private carry(e: PointerEvent): void {
+    const armed = this.armed
+    if (!armed || !this.camera) return
+    this.disarm()
+    this.carried = { ...armed, at: screenToWorld(this.camera, this.boardPoint(e)) }
+    this.el.classList.add('ez-tracking')
+    this.el.setPointerCapture(e.pointerId)
+    this.host.takeSweep(armed.frame)
+    this.paintCarried()
+  }
+
+  private dropCarried(): void {
+    this.carried = null
+    this.el.classList.remove('ez-tracking')
+    this.endSweep()
+  }
+
+  private paintCarried(): void {
+    const c = this.carried
+    if (!c) return
+    const box = boxBetween(c.origin, c.at)
+    this.paintSweep(box)
+    this.paintTargets(new Set(this.framesIn(box).map((f) => f.id)))
+  }
+
+  /** Several frames: a comment about them all. Only the one it started in: its
+   *  own region after all, clipped to it. */
+  private settleCarried(): void {
+    const c = this.carried
+    if (!c) return
+    this.dropCarried()
+    const touched = this.framesIn(boxBetween(c.origin, c.at))
+    if (touched.length > 1) {
+      const target = this.framesTarget(touched, c.at, c.frame)
+      if (target) this.host.composeFrames(target.frames, target.host, target.at)
+      return
+    }
+    const { rect } = c.frame
+    const local = (p: Point) => ({
+      x: Math.min(Math.max(p.x, rect.x), rect.x + rect.width) - rect.x,
+      y: Math.min(Math.max(p.y, rect.y), rect.y + rect.height) - rect.y,
+    })
+    this.host.returnSweep(c.frame, local(c.origin), local(c.at))
+  }
+
+  private guestToWorld(frame: FrameWire, p: Point): Point {
+    return { x: frame.rect.x + p.x, y: frame.rect.y + p.y }
+  }
+
+  private framesIn(box: Rect): FrameWire[] {
+    return this.frames.filter((f) => intersects(box, f.rect))
+  }
+
+  /** Asked in the frame under the release when it is one of them, so the popup
+   *  comes up under the pointer; else in the first one that can host it. */
+  private framesTarget(frames: FrameWire[], end: Point, fallback?: FrameWire): FramesTarget | null {
+    const hostable = (f: FrameWire) => !!this.cards.get(f.id)?.iframe
+    const under = [...frames].reverse().find((f) => containsPoint(f.rect, end) && hostable(f))
+    const host = under ?? (fallback && hostable(fallback) ? fallback : frames.find(hostable))
+    if (!host) return null
+    const at = { x: end.x - host.rect.x, y: end.y - host.rect.y }
+    return { frames, host, at: under ? at : null }
+  }
+
+  private paintSweep(world: Rect): void {
+    const camera = this.camera
+    if (!camera) return
+    const screen = boxBetween(worldToScreen(camera, world), worldToScreen(camera, { x: world.x + world.width, y: world.y + world.height }))
+    this.marquee.classList.add('ez-sweeping')
+    this.marquee.style.transform = `translate(${screen.x}px, ${screen.y}px)`
+    this.marquee.style.width = `${screen.width}px`
+    this.marquee.style.height = `${screen.height}px`
+    this.marquee.hidden = false
+  }
+
+  private endSweep(): void {
+    if (!this.marquee.classList.contains('ez-sweeping')) return
+    this.marquee.classList.remove('ez-sweeping')
+    this.marquee.hidden = true
+    this.paintTargets(this.composing)
+  }
+
+  private paintTargets(ids: ReadonlySet<FrameId>): void {
+    this.targets = new Set(ids)
+    for (const [id, card] of this.cards) card.el.classList.toggle('ez-annotate-target', this.targets.has(id))
   }
 
   /** While a pick is out, a frame's title answers it with the whole frame,
@@ -535,6 +701,7 @@ export class BoardView {
     for (const [id, card] of this.cards) {
       card.el.setAttribute('aria-selected', String(this.selection.has(id)))
       card.head.classList.toggle('ez-selected', this.selection.has(id))
+      card.el.classList.toggle('ez-annotate-target', this.targets.has(id))
     }
   }
 
@@ -599,7 +766,7 @@ export class BoardView {
 
   private remount(): void {
     if (!this.camera || !this.shown || this.stage.width === 0) return
-    const pinned = new Set<FrameId>([...(this.live ? [this.live] : []), ...this.selection])
+    const pinned = new Set<FrameId>([...(this.live ? [this.live] : []), ...this.selection, ...this.composing])
     const plan = planMounts(
       this.frames.map((f) => ({ id: f.id, rect: f.rect })),
       this.camera,
@@ -750,6 +917,7 @@ export class BoardView {
       this.el.focus({ preventScroll: true })
       this.el.setPointerCapture(e.pointerId)
       this.gesture = gesture
+      this.el.classList.add('ez-tracking')
     }
     if (this.spaceHeld || e.button === 1) {
       start({ t: 'pan', pointer: e.pointerId, x: e.clientX, y: e.clientY, camera: this.camera })
@@ -765,6 +933,26 @@ export class BoardView {
     }
     const cardEl = target.closest<HTMLElement>('.ez-board-frame, .ez-board-frame-head')
     const id = cardEl?.dataset.frameId as FrameId | undefined
+    const composeOnClick = id && this.annotating !== 'off' && target.closest('.ez-board-frame-head') ? id : null
+    if (id && composeOnClick) {
+      const from = this.boardPoint(e)
+      start({
+        t: 'move',
+        pointer: e.pointerId,
+        x: e.clientX,
+        y: e.clientY,
+        from,
+        at: from,
+        camera: this.camera,
+        ids: this.selection.has(id) ? new Set(this.selection) : new Set([id]),
+        started: false,
+        dx: 0,
+        dy: 0,
+        toggleOnClick: null,
+        composeOnClick,
+      })
+      return
+    }
     if (id && id !== this.live) {
       let toggleOnClick: FrameId | null = null
       if (e.shiftKey) {
@@ -787,12 +975,14 @@ export class BoardView {
         dx: 0,
         dy: 0,
         toggleOnClick,
+        composeOnClick: null,
       })
       return
     }
     if (!id) {
+      const sweep = this.annotating === 'region'
       this.setLive(null)
-      if (!e.shiftKey) this.select(new Set())
+      if (!e.shiftKey || sweep) this.select(new Set())
       this.host.escape()
       const from = this.boardPoint(e)
       start({
@@ -803,11 +993,23 @@ export class BoardView {
         at: from,
         base: new Set(this.selection),
         started: false,
+        sweep,
       })
     }
   }
 
   private onPointerMove(e: PointerEvent): void {
+    if (this.armed && !this.gesture) {
+      if (e.buttons & 1) this.carry(e)
+      else this.disarm()
+      return
+    }
+    if (this.carried && this.camera) {
+      this.carried.at = screenToWorld(this.camera, this.boardPoint(e))
+      if (e.buttons & 1) this.paintCarried()
+      else this.settleCarried()
+      return
+    }
     const g = this.gesture
     if (!g || e.pointerId !== g.pointer || !this.camera) return
     if (g.t === 'pan') {
@@ -825,6 +1027,7 @@ export class BoardView {
     if (!g.started) {
       if (Math.hypot(e.clientX - g.x, e.clientY - g.y) < DRAG_PX) return
       g.started = true
+      if (g.composeOnClick) this.select(new Set(g.ids))
       this.el.classList.add('ez-arranging')
     }
     g.at = { x: g.from.x + e.clientX - g.x, y: g.from.y + e.clientY - g.y }
@@ -854,12 +1057,18 @@ export class BoardView {
     this.paintGuides(snapped.guides)
   }
 
-  /** Selects every frame the box touches, on top of what a shift-press kept. */
+  /** Selects every frame the box touches, on top of what a shift-press kept;
+   *  a sweep outlines them instead. */
   private paintMarquee(g: Extract<Gesture, { t: 'marquee' }>): void {
     const camera = this.camera
     if (!camera) return
     const box = boxBetween(g.origin, screenToWorld(camera, g.at))
-    const hits = this.frames.filter((f) => intersects(box, f.rect)).map((f) => f.id)
+    const hits = this.framesIn(box).map((f) => f.id)
+    if (g.sweep) {
+      this.paintSweep(box)
+      this.paintTargets(new Set(hits))
+      return
+    }
     this.select(new Set([...g.base, ...hits]))
     const screen = boxBetween(worldToScreen(camera, g.origin), g.at)
     this.marquee.style.transform = `translate(${screen.x}px, ${screen.y}px)`
@@ -891,17 +1100,30 @@ export class BoardView {
   }
 
   private onPointerUp(e: PointerEvent, cancelled = false): void {
+    if (this.carried && this.camera) {
+      if (cancelled) return this.dropCarried()
+      this.carried.at = screenToWorld(this.camera, this.boardPoint(e))
+      this.settleCarried()
+      return
+    }
     const g = this.gesture
     if (!g || e.pointerId !== g.pointer) return
     this.gesture = null
     cancelAnimationFrame(this.edgePanRequested)
     this.edgePanRequested = 0
-    this.el.classList.remove('ez-panning', 'ez-arranging')
+    this.el.classList.remove('ez-panning', 'ez-arranging', 'ez-tracking')
     this.paintGuides([])
     this.marquee.hidden = true
+    if (g.t === 'marquee' && g.sweep) {
+      this.endSweep()
+      if (g.started && !cancelled && this.camera) this.composeSwept(g.origin, screenToWorld(this.camera, g.at))
+      return
+    }
     if (g.t !== 'move') return
     if (!g.started) {
       if (g.toggleOnClick) this.select(new Set([...this.selection].filter((id) => id !== g.toggleOnClick)))
+      const frame = g.composeOnClick && !cancelled ? this.cards.get(g.composeOnClick) : null
+      if (frame?.iframe) this.host.composeFrames([frame.frame], frame.frame, null)
       return
     }
     if (cancelled || (g.dx === 0 && g.dy === 0)) {
@@ -911,10 +1133,18 @@ export class BoardView {
     this.commit(planMove(this.frames, g.ids, g.dx, g.dy))
   }
 
+  private composeSwept(origin: Point, end: Point): void {
+    const target = this.framesTarget(this.framesIn(boxBetween(origin, end)), end)
+    if (target) this.host.composeFrames(target.frames, target.host, target.at)
+  }
+
   /** A double-click on a frame hands it the pointer, to scroll it or try its
    *  controls; Escape or a click on the background hands it back. */
   private onDoubleClick(e: MouseEvent): void {
-    const frame = (e.target as HTMLElement).closest<HTMLElement>('.ez-board-frame, .ez-board-frame-head')
+    // Hit-tested, not `e.target`: the press captured the pointer, which aims the
+    // click and dblclick at the board itself.
+    const hit = document.elementFromPoint(e.clientX, e.clientY)
+    const frame = hit?.closest<HTMLElement>('.ez-board-frame, .ez-board-frame-head')
     const id = frame?.dataset.frameId as FrameId | undefined
     if (id && this.cards.get(id)?.iframe) this.setLive(id)
   }

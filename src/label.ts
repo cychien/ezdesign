@@ -122,7 +122,8 @@ function anchorParts(
   }
   // Says which document the rest is about: the source above is a line in the
   // frame file, not in the app.
-  if (anchor.frame) {
+  if (anchor.frames?.length) parts.push(wholeFramesPart(anchor.frames, frames))
+  else if (anchor.frame) {
     const named = frames?.(anchor.frame)
     parts.push(
       named
@@ -132,6 +133,16 @@ function anchorParts(
   }
   if (parts.length === 0 && anchor.selector) parts.push(anchor.selector)
   return parts
+}
+
+function wholeFramesPart(refs: FrameRef[], frames?: FrameNames): string {
+  const named = refs.map((ref) => frames?.(ref) ?? null)
+  const noun = refs.length === 1 ? 'whole canvas frame' : 'whole canvas frames'
+  if (named.every((n) => n !== null)) {
+    const titles = named.map((n) => `"${n!.frame}"`).join(', ')
+    return `[${noun} ${titles} on canvas "${named[0]!.canvas}"]`
+  }
+  return `[${noun} ${refs.map((r) => `${r.canvasId}/${r.frameId}`).join(', ')}]`
 }
 
 /** Agent-facing one-liner for a referenced element. No viewport: this is a

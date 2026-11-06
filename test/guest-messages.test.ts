@@ -30,8 +30,10 @@ const SAMPLES: Record<string, Record<string, unknown>> = {
   'ez:explore': { anchor, capture: { html: '<h1/>' }, direction: 'bolder' },
   'ez:explore-held': { draft: { comment: 'x' } },
   'ez:recaptured': { reqId: 'r1', capture: { html: '<h1/>' } },
-  'ez:key': { chord: { key: 'Enter', metaKey: true, ctrlKey: false } },
+  'ez:key': { chord: { key: 'Enter', code: 'Enter', metaKey: true, ctrlKey: false } },
   'ez:wheel': { dx: 1, dy: 2 },
+  'ez:sweep-start': { from: { x: 1, y: 2 } },
+  'ez:sweep-stop': {},
   'ez:scroll': { ratio: 0.5 },
   'ez:relay': { reqId: 'r1', op: { op: 'discard-upload', id: 'a1' } },
   'ez:library-pick': { reqId: 'l1' },
@@ -61,7 +63,7 @@ test('CV-p3-protocol-table: a canvas guest cannot navigate or explore, and its k
   }
   assert.deepEqual(parseGuestMessage({ type: 'ez:key', ...SAMPLES['ez:key'] }, CANVAS), {
     type: 'ez:key',
-    chord: { key: 'Enter', metaKey: true, ctrlKey: false },
+    chord: { key: 'Enter', code: 'Enter', metaKey: true, ctrlKey: false },
     guest: 'canvas',
   })
 })
@@ -113,6 +115,41 @@ test('CV-p3-protocol-table: a relayed annotation is attributed and a bad relay o
   )
   assert.equal(parseGuestMessage({ type: 'ez:relay', reqId: 'r4', op: { op: 'upload', name: 'a', mime: 'b', file: 'nope' } }, CANVAS), null)
   assert.equal(parseGuestMessage({ type: 'ez:relay', reqId: 'r5', op: { op: 'send' } }, CANVAS), null)
+})
+
+test('whole frames survive only on the sender\'s canvas and with the sender among them', () => {
+  const relay = (frames: unknown, sender: Sender) =>
+    parseGuestMessage({ type: 'ez:relay', reqId: 'r', op: { op: 'annotate', body: { anchor: { frames } } } }, sender)
+  const anchorOf = (m: ReturnType<typeof relay>) => (m?.type === 'ez:relay' && m.op.op === 'annotate' ? m.op.body.anchor : null)
+  const own = { canvasId: 'c1', frameId: 'f1' }
+  const sibling = { canvasId: 'c1', frameId: 'f2' }
+  assert.deepEqual(anchorOf(relay([own, sibling, sibling], CANVAS)), { frame: own, frames: [own, sibling] })
+  assert.deepEqual(anchorOf(relay([sibling], CANVAS)), { frame: own })
+  assert.deepEqual(anchorOf(relay([own, { canvasId: 'c2', frameId: 'f9' }], CANVAS)), { frame: own })
+  assert.deepEqual(anchorOf(relay([own, { canvasId: 'c1' }], CANVAS)), { frame: own })
+  assert.deepEqual(anchorOf(relay('f1', CANVAS)), { frame: own })
+  const picked = parseGuestMessage({ type: 'ez:picked', pickId: 'p', ref: { anchor: { frames: [own] }, label: 'x' } }, APP)
+  assert.deepEqual(picked?.type === 'ez:picked' && picked.ref.anchor, {})
+})
+
+test('a popup names whole frames only of the sender\'s canvas, with the sender among them', () => {
+  const own = { canvasId: 'c1', frameId: 'f1' }
+  const sibling = { canvasId: 'c1', frameId: 'f2' }
+  assert.deepEqual(parseGuestMessage({ type: 'ez:popup', open: true, frames: [own, sibling] }, CANVAS), {
+    type: 'ez:popup',
+    open: true,
+    frames: ['f1', 'f2'],
+  })
+  assert.deepEqual(parseGuestMessage({ type: 'ez:popup', open: true, frames: [sibling] }, CANVAS), { type: 'ez:popup', open: true })
+  assert.deepEqual(parseGuestMessage({ type: 'ez:popup', open: true, frames: [own] }, APP), { type: 'ez:popup', open: true })
+})
+
+test('a sweep starts at a point given as numbers', () => {
+  assert.deepEqual(parseGuestMessage({ type: 'ez:sweep-start', from: { x: 1, y: 2 } }, CANVAS), {
+    type: 'ez:sweep-start',
+    from: { x: 1, y: 2 },
+  })
+  assert.equal(parseGuestMessage({ type: 'ez:sweep-start', from: { x: 1 } }, CANVAS), null)
 })
 
 test('CV-p3-protocol-table: receives agrees with the table for every shell-to-guest type', () => {

@@ -3,7 +3,7 @@
 
 import { MAX_VARIANT_HTML, MAX_VARIANT_NAME } from './explore.js'
 import { MAX_GROUP_MEMBERS } from './label.js'
-import type { Anchor, BatchTarget, BatchView, ChosenVariant, ExploreCapture, Reference } from './protocol.js'
+import type { Anchor, BatchTarget, BatchView, ChosenVariant, ExploreCapture, FrameRef, Reference } from './protocol.js'
 import { asCanvasId } from './canvas/types.js'
 
 /** A comment pointing at more elements than this is a bug or an attack, not a
@@ -112,6 +112,21 @@ export function sanitizeAnchor(raw: unknown): Anchor | null {
   const fr = frameRef(v.frame)
   if (fr) out.frame = fr
   return out
+}
+
+/** `Anchor.frames` as the daemon stores it: at most `MAX_GROUP_MEMBERS` live
+ *  frames, all on the canvas of `frame`, which is one of them. */
+export function wholeFramesValid(
+  frames: unknown,
+  frame: FrameRef | undefined,
+  live: (ref: FrameRef) => boolean,
+): boolean {
+  if (!frame || !Array.isArray(frames) || !frames.length || frames.length > MAX_GROUP_MEMBERS) return false
+  const refs = frames.map(frameRef)
+  return (
+    refs.every((ref) => ref !== undefined && ref.canvasId === frame.canvasId && live(ref)) &&
+    refs.some((ref) => ref!.frameId === frame.frameId)
+  )
 }
 
 /** Both ids or nothing: a half-named frame resolves to no file. */

@@ -109,6 +109,26 @@ test('an annotation must name a frame that exists', async () => {
   assert.equal((await post({ canvasId: CANVAS, frameId: FRAME })).status, 200)
 })
 
+test('an annotation about whole frames must name live frames on its own canvas', async () => {
+  const { world: w, control } = await world()
+  const dir = project(w, true)
+  const { port } = await w.openSession(control, { url: 'http://127.0.0.1:9/', project: dir })
+  const frame = { canvasId: CANVAS, frameId: FRAME }
+  const post = (frames: unknown) =>
+    fetch(`http://127.0.0.1:${port}/__ezdesign/api/annotations`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ kind: 'element', comment: 'x', anchor: { frame, frames } }),
+    })
+  const gone = await post([frame, { canvasId: CANVAS, frameId: 'cccccccccccc' }])
+  assert.equal(gone.status, 400)
+  assert.deepEqual(await gone.json(), { error: 'frames must be live frames on the canvas of anchor.frame' })
+  assert.equal((await post('everything')).status, 400)
+  const ok = await post([frame])
+  assert.equal(ok.status, 200)
+  assert.deepEqual(((await ok.json()) as { anchor: unknown }).anchor, { frame, frames: [frame] })
+})
+
 test('the shell routes run the lifecycle, and the empty start waits for a shell', async () => {
   const { world: w, control } = await world()
   const dir = project(w, false)

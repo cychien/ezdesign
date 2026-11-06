@@ -115,6 +115,7 @@ import { reduceNav } from './nav.js'
 import { threadOrder } from './thread.js'
 import { type ThreadChange, followBottom } from './follow-bottom.js'
 import type { NavEffect, NavEvent, NavState } from './nav.js'
+import { type KeyChord, plainKeyMatches } from './key-chord.js'
 import { modLabel, pickHint, reducePick } from './pick.js'
 import type { PickEffect, PickEvent, PickState } from './pick.js'
 import { type IconNode, icon } from './icon.js'
@@ -143,6 +144,8 @@ interface AnnotationWire {
     contains?: string[]
     /** Made inside a canvas frame; named by the frame's title in the queue. */
     frame?: { canvasId: string; frameId: string }
+    /** About these whole canvas frames, named by their titles in the queue. */
+    frames?: { canvasId: string; frameId: string }[]
   }
   /** Full records, not echoes: the queue holds the annotation itself, and the
    *  editor has to be able to hand every field back unchanged. */
@@ -506,14 +509,6 @@ agentWrap.append(agentPill, agentMenu)
 
 // ---------------------------------------------------------------- shortcuts
 
-/** Matched against real key events and against ones the overlay forwards from
- *  inside the page, so only the fields both can supply. */
-interface KeyChord {
-  key: string
-  metaKey: boolean
-  ctrlKey: boolean
-}
-
 interface Shortcut {
   /** As printed in the panel and in the control's own tooltip. */
   keys: string
@@ -537,8 +532,7 @@ interface Shortcut {
 /** Modifier-free letters and digits, because the browser has claimed most of the
  *  useful combinations - Chrome's Cmd+1..9 switch tabs, and Cmd+T/W/R/L/N are
  *  gone. That means guarding against typing rather than leaning on a modifier. */
-const plain = (key: string) => (e: KeyChord) =>
-  !e.metaKey && !e.ctrlKey && e.key.toLowerCase() === key.toLowerCase()
+const plain = (key: string) => (e: KeyChord) => plainKeyMatches(e, key)
 const cmd = (key: string) => (e: KeyChord) => (e.metaKey || e.ctrlKey) && e.key === key
 
 function isTyping(target: EventTarget | null): boolean {
@@ -3609,6 +3603,7 @@ function canvasPorts(): Parameters<typeof installCanvas>[0] {
     chooseFrame: (ref) => dispatchPick({ t: 'chosen', ref }),
     notice: (text) => stripNotice(text),
     annotateMode: () => annotateMode,
+    popupOpen: () => popupFrame !== null,
   }
 }
 
@@ -4487,6 +4482,11 @@ function paintQueue(annotations: AnnotationWire[]): void {
 }
 
 function annotationLabel(a: AnnotationWire): string {
+  const whole = a.anchor.frames
+  if (whole?.length) {
+    const titles = whole.map((ref) => canvasUi?.frameTitle(ref) ?? '?')
+    return whole.length === 1 ? `整個 ${titles[0]}` : `${whole.length} 個 frame · ${titles.join('、')}`
+  }
   const parts: string[] = []
   if (a.anchor.contains?.length) parts.push(`選取 ${a.anchor.contains.length} 項`)
   // In a canvas frame the source is a long path into `.ezdesign/`: the frame's

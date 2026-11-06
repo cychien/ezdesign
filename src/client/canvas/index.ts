@@ -11,20 +11,21 @@
  *  Installed on the first snapshot or canvas event, whichever comes first. */
 
 import type { BatchView, FrameRef } from '../../protocol.js'
-import { type CanvasId, IMAGE_TYPES, type TabId, asCanvasId } from '../../canvas/types.js'
+import { type CanvasId, type FrameId, IMAGE_TYPES, type Point, type TabId, asCanvasId } from '../../canvas/types.js'
 import type {
   AssetWire,
   CanvasEventWire,
   CanvasSnapshotWire,
   CanvasWire,
   DuplicateWire,
+  FrameWire,
   ImageFrameWire,
   LayoutStepWire,
   OpId,
   ViewWire,
 } from '../../canvas/wire.js'
-import type { RefWire } from '../draft.js'
-import type { CanvasGuest, CanvasGuestPort } from '../frame-registry.js'
+import type { AnchorWire, RefWire } from '../draft.js'
+import { type CanvasGuest, type CanvasGuestPort, canvasGuestId } from '../frame-registry.js'
 import type { GuestMessage, Mode, RelayOp } from '../guest-messages.js'
 import type { OverlaySnapshot } from '../overlay-link.js'
 import { BoardView } from './board-view.js'
@@ -54,6 +55,8 @@ export interface ShellPorts {
   /** Say something went wrong, where the user is looking. */
   notice: (text: string) => void
   annotateMode: () => Mode
+  /** One comment is composed at a time, in whichever preview holds it. */
+  popupOpen: () => boolean
 }
 
 /** The snapshot fields this module reads. */
@@ -61,8 +64,9 @@ export interface CanvasShellSnapshot {
   appTab: boolean
   canvas?: CanvasSnapshotWire
   state: OverlaySnapshot['state']
-  /** Forwarded to each canvas guest as they are, filtered by `anchor.frame`. */
-  annotations: readonly { anchor: { frame?: FrameRef } }[]
+  /** Forwarded to each canvas guest as they are: to `anchor.frame`, and to
+   *  every frame in `anchor.frames`. */
+  annotations: readonly { anchor: { frame?: FrameRef; frames?: FrameRef[] } }[]
 }
 
 export interface CanvasUi {
@@ -92,6 +96,15 @@ export interface CanvasUi {
   /** Show the tab a guest lives on: the App for an App preview, its canvas for
    *  a canvas frame. How `/element` brings the user back to the composer. */
   focusGuest(guestId: string): void
+}
+
+/** Whole frames as one anchor: the file of each, since a frame is a document
+ *  and the agent edits it as a file. Titles are looked up at label time. */
+function wholeFramesAnchor(canvasId: CanvasId, frames: readonly FrameWire[]): AnchorWire {
+  const refs = frames.map((f) => ({ canvasId, frameId: f.id }))
+  return frames.length === 1
+    ? { source: frames[0]!.file, frames: refs }
+    : { contains: frames.map((f) => `${f.file} · "${f.title}"`), frames: refs }
 }
 
 /** A canvas frame's keys reach the shell only as `ez:key`, which may not send,
@@ -185,6 +198,8 @@ export function installCanvas(ports: ShellPorts): CanvasUi {
   let shown: TabId | null = null
   let picking = false
   let snapshot: CanvasShellSnapshot | null = null
+  /** The guest whose open popup is about whole frames, outlined on its board. */
+  let composingIn: string | null = null
 
   ports.stageWrap.classList.add('ez-tabbed')
   const strip = new TabStrip({
@@ -240,12 +255,24 @@ export function installCanvas(ports: ShellPorts): CanvasUi {
           anchor: { source: frame.file, frame: { canvasId: id, frameId: frame.id } },
           label: frame.title,
         }),
+      composeFrames: (frames, host, at) => composeFrames(id, frames, host, at),
+      takeSweep: (frame) => ports.guests.post(canvasGuestId({ canvasId: id, frameId: frame.id }), { type: 'ez:sweep-taken' }),
+      returnSweep: (frame, from, to) =>
+        ports.guests.post(canvasGuestId({ canvasId: id, frameId: frame.id }), { type: 'ez:sweep-local', from, to }),
     })
     made.setAnnotating(ports.annotateMode())
     made.setPicking(picking)
     boards.set(id, made)
     ports.stageWrap.append(made.el)
     return made
+  }
+
+  /** Asked of the host frame's overlay, which owns every annotation popup; the
+   *  board outlines the frames once that popup is up. */
+  function composeFrames(canvasId: CanvasId, frames: FrameWire[], host: FrameWire, at: Point | null): void {
+    if (ports.popupOpen()) return
+    const guestId = canvasGuestId({ canvasId, frameId: host.id })
+    ports.guests.post(guestId, { type: 'ez:compose-frames', anchor: wholeFramesAnchor(canvasId, frames), at })
   }
 
   /** Which tab is on screen. The device stage is hidden, never detached, while
@@ -313,10 +340,8 @@ export function installCanvas(ports: ShellPorts): CanvasUi {
   function pushAnnotations(s: CanvasShellSnapshot): void {
     const byGuest = new Map<string, unknown[]>()
     s.annotations.forEach((a, i) => {
-      const frame = a.anchor.frame
-      if (!frame) return
-      const id = `canvas:${frame.canvasId}/${frame.frameId}`
-      byGuest.set(id, [...(byGuest.get(id) ?? []), { ...a, n: i + 1 }])
+      const ids = new Set([a.anchor.frame, ...(a.anchor.frames ?? [])].flatMap((f) => (f ? [canvasGuestId(f)] : [])))
+      for (const id of ids) byGuest.set(id, [...(byGuest.get(id) ?? []), { ...a, n: i + 1 }])
     })
     for (const b of boards.values()) {
       for (const guestId of b.guestIds()) {
@@ -382,8 +407,21 @@ export function installCanvas(ports: ShellPorts): CanvasUi {
           if (snapshot) pushAnnotations(snapshot)
           return false
         case 'ez:popup':
+          if (message.open && message.frames) {
+            composingIn = guest.id
+            b?.setComposing(message.frames as FrameId[])
+          } else if (!message.open && composingIn === guest.id) {
+            composingIn = null
+            b?.setComposing([])
+          }
           if (!message.open && b) returnKeysToShell(b, guest.iframe)
           return false
+        case 'ez:sweep-start':
+          if (b && frame) b.armSweep(frame, message.from)
+          return true
+        case 'ez:sweep-stop':
+          if (b && frame) b.disarmSweep(frame)
+          return true
         default:
           return false
       }
