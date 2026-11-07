@@ -61,6 +61,8 @@ test('a held watch tells of an install and a removal as they land, and nothing i
   assert.deepEqual(sent[3]!.extension, { installed: false, installedIn: [] })
 
   release()
+  // A read already under way when the last shell leaves still finishes; only new ones stop.
+  await watch.settled()
   chrome({ [EXTENSION_ID]: { path: '/x', disable_reasons: [] } })
   await new Promise((r) => setTimeout(r, 100))
   assert.equal(sent.length, 4, 'with no shell holding it, nothing is watched')
@@ -76,6 +78,7 @@ test('the watch is held once per shell and stops with the last', async () => {
   chrome({ [EXTENSION_ID]: { path: '/x', disable_reasons: [] } })
   await until(() => sent.length === 2, 'still watched for the second shell')
   second()
+  await watch.settled()
   chrome({ [EXTENSION_ID]: {} })
   await new Promise((r) => setTimeout(r, 100))
   assert.equal(sent.length, 2)
