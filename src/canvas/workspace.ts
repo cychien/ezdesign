@@ -37,7 +37,7 @@ import {
   unlinkSync,
 } from 'node:fs'
 import { join } from 'node:path'
-import { writeAtomic } from '../fs-atomic.js'
+import { cloneAtomic, writeAtomic } from '../fs-atomic.js'
 import type { FrameRef } from '../protocol.js'
 import {
   ASSETS_DIR,
@@ -80,7 +80,7 @@ import {
 import type {
   CanvasSnapshotWire,
   CanvasWire,
-  DuplicateWire,
+  PasteWire,
   ImageFrameWire,
   LayoutStepWire,
   ViewWire,
@@ -148,15 +148,17 @@ export interface UserCanvasPort {
    *  a step whose `opId` was applied recently is answered with the canvas as
    *  it is. */
   applyLayoutOps(canvasId: string, step: LayoutStepWire): Outcome<CanvasWire>
-  /** A copy of a frame's document as a new frame, with the client's id, so a
-   *  retried request creates nothing twice. The user's path never carries HTML:
-   *  the copy's bytes are read from the source's file. */
-  duplicate(canvasId: string, input: DuplicateWire): Outcome<CanvasWire>
+  /** Copies of frames, from this canvas or another of the project's, each with
+   *  the client's id, so a retried request creates nothing twice. All or none.
+   *  The user's path never carries HTML: the source files are cloned. A source
+   *  removed in the last week can still be pasted - its file is kept - which is
+   *  what makes a cut. */
+  paste(canvasId: string, input: PasteWire): Outcome<CanvasWire>
   /** A pasted image's bytes, stored under their hash: the same image twice is
    *  one file. */
   addAsset(canvasId: string, mime: string, bytes: Buffer): Outcome<AssetName>
   /** A stored image as a new frame, with the client's id, idempotent like
-   *  `duplicate`. The daemon writes the document. */
+   *  `paste`. The daemon writes the document. */
   addImageFrame(canvasId: string, input: ImageFrameWire): Outcome<CanvasWire>
   setView(view: ViewWire): void
 }
@@ -289,6 +291,11 @@ const DELETED_KEEP_MS = 7 * 24 * 60 * 60_000
 /** Where a frame with no rect on record is drawn: never lost off-board. */
 const NO_RECT: Rect = { x: 0, y: 0, width: 1280, height: 800 }
 
+/** The images a frame document shows, by the names it reaches them by. */
+function assetsShownBy(html: string): Set<string> {
+  return new Set([...html.matchAll(/assets\/([0-9a-f]{12}\.\w+)/g)].map((m) => m[1]!))
+}
+
 const sha1 = (bytes: string | Buffer) => createHash('sha1').update(bytes).digest('hex').slice(0, 12)
 
 function readJson<T>(path: string): T | null {
@@ -365,7 +372,7 @@ class Workspace {
       reopen: (canvasId) => this.reopen(canvasId),
       delete: (canvasId) => this.delete(canvasId),
       applyLayoutOps: (canvasId, step) => this.applyLayoutOps(canvasId, step),
-      duplicate: (canvasId, input) => this.duplicate(canvasId, input),
+      paste: (canvasId, input) => this.paste(canvasId, input),
       addAsset: (canvasId, mime, bytes) => this.addAsset(canvasId, mime, bytes),
       addImageFrame: (canvasId, input) => this.addImageFrame(canvasId, input),
       setView: (view) => this.setView(view),
@@ -650,7 +657,7 @@ class Workspace {
     for (const frame of held.manifest.frames) {
       try {
         const html = readFileSync(join(this.dir(held.manifest.id), frame.file), 'utf8')
-        for (const m of html.matchAll(/assets\/([0-9a-f]{12}\.\w+)/g)) shown.add(m[1]!)
+        for (const asset of assetsShownBy(html)) shown.add(asset)
       } catch {
         /* missing frame file */
       }
@@ -887,33 +894,54 @@ class Workspace {
     return ok(this.wire(id)!)
   }
 
-  private duplicate(canvasId: string, input: DuplicateWire): Outcome<CanvasWire> {
+  private paste(canvasId: string, input: PasteWire): Outcome<CanvasWire> {
     const writable = this.writable(canvasId)
     if (!writable.ok) return writable
     const held = writable.value
     const id = held.manifest.id
-    if (held.manifest.frames.some((f) => f.id === input.id)) return ok(this.wire(id)!)
-    const source = this.liveFrame(id, input.from)
-    if (!source) return { ok: false, problem: { code: 'FRAME_NOT_FOUND', canvasId: id, frameId: input.from } }
+    const fresh = input.frames.filter((copy) => !held.manifest.frames.some((f) => f.id === copy.id))
+    if (!fresh.length) return ok(this.wire(id)!)
+    const source = this.held(input.from)
+    if (!source) return this.notFound(input.from)
+    const sourceId = source.manifest.id
+    const within = sourceId === id
+
+    // Every source settled before anything is written: all or none.
+    const copies: { copy: PasteWire['frames'][number]; frame: ManifestFrame; path: string }[] = []
+    for (const copy of fresh) {
+      const frame = source.manifest.frames.find((f) => f.id === copy.from)
+      const path = frame && join(this.dir(sourceId), frame.file)
+      if (!frame || !path || !existsSync(path)) {
+        return { ok: false, problem: { code: 'FRAME_NOT_FOUND', canvasId: sourceId, frameId: copy.from } }
+      }
+      copies.push({ copy, frame, path })
+    }
     const live = held.manifest.frames.filter((f) => f.deletedAt === undefined)
-    if (live.length >= MAX_FRAMES_PER_CANVAS) {
+    if (live.length + copies.length > MAX_FRAMES_PER_CANVAS) {
       return { ok: false, problem: { code: 'TOO_MANY_FRAMES', limit: MAX_FRAMES_PER_CANVAS } }
     }
-    let bytes: Buffer
-    try {
-      bytes = readFileSync(join(this.dir(id), source.file))
-    } catch {
-      return { ok: false, problem: { code: 'FRAME_NOT_FOUND', canvasId: id, frameId: input.from } }
+
+    for (const { copy, frame, path } of copies) {
+      // Another canvas has its own images: the ones the frame shows go with it.
+      // Named by their bytes, so one already there is the same image.
+      if (!within) {
+        for (const asset of assetsShownBy(readFileSync(path, 'utf8'))) {
+          const to = join(this.dir(id), ASSETS_DIR, asset)
+          const from = join(this.dir(sourceId), ASSETS_DIR, asset)
+          if (existsSync(to) || !existsSync(from)) continue
+          mkdirSync(join(this.dir(id), ASSETS_DIR), { recursive: true })
+          cloneAtomic(from, to)
+        }
+      }
+      const file = `frames/${copy.id}.html`
+      cloneAtomic(path, join(this.dir(id), file))
+      const rect = source.layout.rects[frame.id] ?? NO_RECT
+      held.layout.rects[copy.id] = { ...rect, x: Math.round(copy.at.x), y: Math.round(copy.at.y) }
+      const title = within ? (cleanName(`${frame.title} 副本`, MAX_FRAME_TITLE) ?? frame.title) : frame.title
+      // The source's hash: a file changed behind it is caught when it is served.
+      held.manifest.frames.push({ id: copy.id, title, file, hash: frame.hash, createdAt: this.now() })
     }
-    const sourceRect = held.layout.rects[source.id] ?? NO_RECT
-    const at = input.at ?? placeBeside(sourceRect, live.map((f) => held.layout.rects[f.id] ?? NO_RECT))
-    const rect = { ...sourceRect, x: Math.round(at.x), y: Math.round(at.y) }
-    const file = `frames/${input.id}.html`
-    writeAtomic(join(this.dir(id), file), bytes.toString('utf8'))
-    held.layout.rects[input.id] = rect
     this.writeLayout(held)
-    const title = cleanName(`${source.title} 副本`, MAX_FRAME_TITLE) ?? source.title
-    held.manifest.frames.push({ id: input.id, title, file, hash: sha1(bytes), createdAt: this.now() })
     this.writeManifest(held)
     this.opts.onChange({ kind: 'updated', canvasId: id })
     return ok(this.wire(id)!)

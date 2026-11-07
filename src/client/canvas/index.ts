@@ -17,14 +17,15 @@ import type {
   CanvasEventWire,
   CanvasSnapshotWire,
   CanvasWire,
-  DuplicateWire,
   FrameWire,
   ImageFrameWire,
   LayoutStepWire,
   OpId,
+  PasteWire,
   ViewWire,
 } from '../../canvas/wire.js'
 import type { AnchorWire, RefWire } from '../draft.js'
+import { hasFrameClip, readFrameClip, writeFrameClip } from './clip.js'
 import { type CanvasGuest, type CanvasGuestPort, canvasGuestId } from '../frame-registry.js'
 import type { GuestMessage, Mode, RelayOp } from '../guest-messages.js'
 import type { OverlaySnapshot } from '../overlay-link.js'
@@ -122,7 +123,7 @@ export type CanvasRequest =
   | { do: 'reopen'; canvasId: CanvasId }
   | { do: 'delete'; canvasId: CanvasId }
   | { do: 'ops'; canvasId: CanvasId; step: LayoutStepWire }
-  | { do: 'duplicate'; canvasId: CanvasId; input: DuplicateWire }
+  | { do: 'paste'; canvasId: CanvasId; input: PasteWire }
   | { do: 'asset'; canvasId: CanvasId; image: Blob }
   | { do: 'image-frame'; canvasId: CanvasId; input: ImageFrameWire }
   | { do: 'view'; view: ViewWire }
@@ -146,8 +147,8 @@ export async function canvasRequest(api: ShellPorts['api'], request: CanvasReque
         return ['DELETE', `/canvases/${request.canvasId}`]
       case 'ops':
         return ['POST', `/canvases/${request.canvasId}/ops`, request.step]
-      case 'duplicate':
-        return ['POST', `/canvases/${request.canvasId}/frames`, request.input]
+      case 'paste':
+        return ['POST', `/canvases/${request.canvasId}/paste`, request.input]
       case 'asset':
         return ['POST', `/canvases/${request.canvasId}/assets`, request.image]
       case 'image-frame':
@@ -242,8 +243,8 @@ export function installCanvas(ports: ShellPorts): CanvasUi {
         (await request(
           edit.t === 'ops'
             ? { do: 'ops', canvasId: id, step: { opId: newOpId(), ops: edit.ops } }
-            : edit.t === 'duplicate'
-              ? { do: 'duplicate', canvasId: id, input: edit.input }
+            : edit.t === 'paste'
+              ? { do: 'paste', canvasId: id, input: edit.input }
               : { do: 'image-frame', canvasId: id, input: edit.input },
         )) as CanvasWire | null,
       storeImage: async (image) =>
@@ -327,9 +328,31 @@ export function installCanvas(ports: ShellPorts): CanvasUi {
     return board && (!focus || focus === document.body || board.el.contains(focus)) ? board : null
   }
 
+  /** The selection to the clipboard, by reference. Only with frames selected on
+   *  the board on screen: anything else is a copy the page should make. */
+  function copyFrames(e: ClipboardEvent, cut: boolean): void {
+    const board = focusedBoard()
+    if (!board || !e.clipboardData || e.defaultPrevented || document.querySelector('dialog[open]')) return
+    const clip = cut ? board.cutSelection(location.origin) : board.copySelection(location.origin)
+    if (!clip) return
+    e.preventDefault()
+    writeFrameClip(e.clipboardData, clip)
+  }
+  document.addEventListener('copy', (e) => copyFrames(e, false))
+  document.addEventListener('cut', (e) => copyFrames(e, true))
+
   document.addEventListener('paste', (e) => {
     const board = focusedBoard()
     if (!board || e.defaultPrevented || document.querySelector('dialog[open]')) return
+    if (hasFrameClip(e.clipboardData)) {
+      e.preventDefault()
+      const clip = readFrameClip(e.clipboardData)
+      if (!clip) return
+      // Another project's canvases are not this daemon session's to read.
+      if (clip.origin !== location.origin) return ports.notice('canvas：frame 只能貼到同一個專案的 canvas')
+      board.pasteFrames(clip)
+      return
+    }
     const images = [...(e.clipboardData?.files ?? [])].filter((f) => f.type in IMAGE_TYPES)
     if (!images.length) return
     e.preventDefault()

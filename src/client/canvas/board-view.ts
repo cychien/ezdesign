@@ -71,6 +71,7 @@ import {
   fitAll,
   intersects,
   panned,
+  revealed,
   screenToWorld,
   worldToScreen,
   worldTransform,
@@ -81,7 +82,7 @@ import {
   type BoardEdit,
   EditHistory,
   type EditStep,
-  planDuplicate,
+  planCopies,
   planImages,
   planMove,
   planRemove,
@@ -92,6 +93,9 @@ import { planMounts } from './mounting.js'
 import { HANDLES, type Handle, resizedRect } from './resize.js'
 import { LABELS, TEST_IDS } from './names.js'
 import { carriedLibraryItem, droppedLibraryItem, libraryImageFile } from '../library/drag.js'
+import type { FrameClip } from './clip.js'
+
+const mintCopyId = () => mintFrameId((b) => crypto.getRandomValues(b))
 
 /** No `allow-top-navigation`: a frame cannot take the shell's tab anywhere.
  *  `allow-same-origin` keeps the frame's own origin (the frame host, never the
@@ -707,10 +711,49 @@ export class BoardView {
   }
 
   private duplicateSelection(): void {
-    if (!this.selection.size) return
-    const step = planDuplicate(this.frames, this.selection, () => mintFrameId((b) => crypto.getRandomValues(b)))
+    const sources = this.selected()
+    if (!sources.length) return
+    this.placeCopies(planCopies(sources, this.canvas.id, this.frames, 'beside', mintCopyId, '複製'))
+  }
+
+  /** The selection, bottom to top, as the clipboard carries it. */
+  copySelection(origin: string): FrameClip | null {
+    const frames = this.selected()
+    return frames.length ? { origin, canvasId: this.canvas.id, frames } : null
+  }
+
+  /** A copy, then the frames go - softly, so a paste can still clone them. */
+  cutSelection(origin: string): FrameClip | null {
+    const clip = this.copySelection(origin)
+    if (!clip) return null
+    this.commit(planRemove(this.selection))
+    this.select(new Set())
+    return clip
+  }
+
+  /** Back onto the canvas they came from, beside their sources, the way a
+   *  duplicate lands; onto another, as a group in the middle of the view. The
+   *  copies come out selected, with the board's focus, for the next key. */
+  pasteFrames(clip: FrameClip): void {
+    const home = clip.canvasId === this.canvas.id && clip.frames.every((f) => this.frames.some((g) => g.id === f.id))
+    const place = home || !this.camera ? 'beside' : screenToWorld(this.camera, { x: this.stage.width / 2, y: this.stage.height / 2 })
+    this.placeCopies(planCopies(clip.frames, clip.canvasId, this.frames, place, mintCopyId, '貼上'))
+    this.el.focus({ preventScroll: true })
+  }
+
+  /** Copies land selected, and in sight: one placed past the edge of the view
+   *  would otherwise look like nothing happened. */
+  private placeCopies(step: ReturnType<typeof planCopies>): void {
     this.commit(step)
     this.select(new Set(step.copies))
+    const shown = step.apply.flatMap((edit) => (edit.t === 'paste' ? edit.shown.map((f) => f.rect) : []))
+    if (!this.camera) return
+    const next = revealed(this.camera, shown, this.stage)
+    if (next !== this.camera) this.setCamera(next)
+  }
+
+  private selected(): FrameWire[] {
+    return this.frames.filter((f) => this.selection.has(f.id))
   }
 
   /** Pasted images, each at its natural size, in a row centred on the view and

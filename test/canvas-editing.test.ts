@@ -1,18 +1,18 @@
 import assert from 'node:assert/strict'
-import { mkdtempSync, readFileSync, readdirSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import type { AssetName, CanvasId, FrameId, FrameKind, Rect, ShellView, TabId, ViewStore } from '../src/canvas/types.js'
 import type { CanvasWire, FrameWire, LayoutOp, OpId } from '../src/canvas/wire.js'
 import { openCanvasWorkspace } from '../src/canvas/workspace.js'
-import { parseLayoutStep } from '../src/canvas/routes.js'
+import { parseLayoutStep, parsePaste } from '../src/canvas/routes.js'
 import { snapMove } from '../src/client/canvas/guides.js'
 import {
   EditHistory,
   HISTORY_LIMIT,
   NUDGE_FOLD_MS,
-  planDuplicate,
+  planCopies,
   planImages,
   planMove,
   planRemove,
@@ -90,8 +90,18 @@ test('CV-p6-history: nudges fold within the window, and the stack is bounded', (
 test('a duplicate in flight shows beside its source, and copies of a selection do not stack', () => {
   const frames = [frame(1, { x: 0, y: 0, width: 400, height: 300 }), frame(2, { x: 0, y: 1000, width: 400, height: 300 })]
   let n = 100
-  const step = planDuplicate(frames, new Set([id(1), id(2)]), () => id(n++))
+  const step = planCopies(frames, canvasOf(frames).id, frames, 'beside', () => id(n++), '複製')
   assert.deepEqual(step.copies, [id(100), id(101)])
+  assert.equal(step.label, '複製 2 個 frame')
+  assert.deepEqual(step.apply.map((e) => e.t === 'paste' && e.input), [
+    {
+      from: canvasOf(frames).id,
+      frames: [
+        { from: id(1), id: id(100), at: { x: 480, y: 0 } },
+        { from: id(2), id: id(101), at: { x: 480, y: 1000 } },
+      ],
+    },
+  ], 'one request for the whole selection, naming frames and never their documents')
   const shown = withPending(canvasOf(frames), step.apply)
   assert.deepEqual(shown.map((f) => [f.id, f.rect.x, f.rect.y, f.src]), [
     [id(1), 0, 0, 'src1'],
@@ -100,6 +110,30 @@ test('a duplicate in flight shows beside its source, and copies of a selection d
     [id(101), 480, 1000, 'src2'],
   ])
   assert.deepEqual(step.undo, [{ t: 'remove', ids: [id(100), id(101)] }])
+})
+
+test('a paste onto another canvas lands as a group centred on the view, in the arrangement it was copied in', () => {
+  const copied = [frame(1, { x: 0, y: 0, width: 400, height: 300 }), frame(2, { x: 600, y: 100, width: 200, height: 500 })]
+  const onto = [frame(9, { x: 5000, y: 5000, width: 100, height: 100 })]
+  let n = 100
+  const step = planCopies(copied, 'aaaaaaaaaaaa' as CanvasId, onto, { x: 1000, y: 1000 }, () => id(n++), '貼上')
+  assert.equal(step.label, '貼上 2 個 frame')
+  const shown = withPending(canvasOf(onto), step.apply)
+  // The group is 800 x 600, so its corner goes to (600, 700); each keeps its offset in it.
+  assert.deepEqual(shown.map((f) => [f.id, f.rect, f.src]), [
+    [id(9), { x: 5000, y: 5000, width: 100, height: 100 }, 'src9'],
+    [id(100), { x: 600, y: 700, width: 400, height: 300 }, 'src1'],
+    [id(101), { x: 1200, y: 800, width: 200, height: 500 }, 'src2'],
+  ], 'drawn from the copied frames at once, before the daemon answers')
+  assert.deepEqual(step.redo, [{ t: 'restore', ids: [id(100), id(101)] }])
+})
+
+test('a paste aimed over frames already there slides along the row to the first clear spot', () => {
+  const copied = [frame(1, { x: 0, y: 0, width: 400, height: 300 })]
+  const onto = [frame(9, { x: 0, y: 0, width: 1000, height: 1000 })]
+  const step = planCopies(copied, 'aaaaaaaaaaaa' as CanvasId, onto, { x: 500, y: 500 }, () => id(100), '貼上')
+  const pasted = withPending(canvasOf(onto), step.apply).find((f) => f.id === id(100))!
+  assert.deepEqual(pasted.rect, { x: 1080, y: 350, width: 400, height: 300 }, 'past the frame it would have covered, at the height it was aimed')
 })
 
 test('dragging snaps to a neighbour within the threshold and draws its guide', () => {
@@ -139,7 +173,7 @@ const ok = <T>(o: { ok: true; value: T } | { ok: false; problem: unknown }): T =
   return o.value
 }
 
-test('CV-p6-op-idempotent: a replayed step and a repeated duplicate change nothing', () => {
+test('CV-p6-op-idempotent: a replayed step and a repeated paste change nothing', () => {
   const { project, ws } = workspace()
   const canvas = ok(ws.agent.create('c'))
   const f1 = ok(ws.agent.addFrame({ canvasId: canvas.id, title: 'one', html: '<!doctype html><html></html>' }))
@@ -153,8 +187,9 @@ test('CV-p6-op-idempotent: a replayed step and a repeated duplicate change nothi
   assert.deepEqual(replay.frames[0]!.rect, { x: 30, y: 40, width: 1280, height: 800 })
   assert.equal(layout(), afterO2)
   const copy = id(0xf9)
-  ok(ws.user.duplicate(canvas.id, { from: f1.id, id: copy }))
-  const twice = ok(ws.user.duplicate(canvas.id, { from: f1.id, id: copy }))
+  const paste = { from: canvas.id, frames: [{ from: f1.id, id: copy, at: { x: 2000, y: 0 } }] }
+  ok(ws.user.paste(canvas.id, paste))
+  const twice = ok(ws.user.paste(canvas.id, paste))
   assert.equal(twice.frames.filter((f) => f.id === copy).length, 1)
   assert.deepEqual(readdirSync(join(project, '.ezdesign', 'canvases', canvas.id, 'frames')).sort(), [`${copy}.html`, `${f1.id}.html`].sort())
   assert.equal(twice.frames.find((f) => f.id === copy)!.title, 'one 副本')
@@ -176,7 +211,7 @@ test('a page keeps the size it was added at: a move carries none, and a resize n
   assert.deepEqual(moved.frames[0]!.rect, { x: 50, y: 60, width: 390, height: 844 })
   const resized = ok(ws.user.applyLayoutOps(canvas.id, { opId: 'o2' as OpId, ops: [{ t: 'resize', frames: [{ id: phone.id, x: 0, y: 0, width: 999, height: 999 }] }] }))
   assert.deepEqual(resized.frames[0]!.rect, { x: 50, y: 60, width: 390, height: 844 })
-  const copy = ok(ws.user.duplicate(canvas.id, { from: phone.id, id: id(0xc0), at: { x: 1000, y: 0 } }))
+  const copy = ok(ws.user.paste(canvas.id, { from: canvas.id, frames: [{ from: phone.id, id: id(0xc0), at: { x: 1000, y: 0 } }] }))
   assert.deepEqual(copy.frames.find((f) => f.id === id(0xc0))!.rect, { x: 1000, y: 0, width: 390, height: 844 })
 })
 
@@ -248,4 +283,71 @@ test('pasted images land as one row centred on the view, undone and redone as on
   assert.deepEqual((one.apply[0] as { input: { rect: Rect } }).input.rect, { x: -200, y: -150, width: 401, height: 301 })
   const existing = frame(1, { x: 0, y: 0, width: 100, height: 100 })
   assert.deepEqual(withPending(canvasOf([existing]), step.apply), [existing], 'nothing to show until the daemon writes it')
+})
+
+test('a paste onto another canvas clones the documents and the images they show, keeping their titles', () => {
+  const { project, ws } = workspace()
+  const dirOf = (c: CanvasId) => join(project, '.ezdesign', 'canvases', c)
+  const source = ok(ws.agent.create('source'))
+  const asset = ok(ws.user.addAsset(source.id, 'image/png', Buffer.from('89504e470d0a1a0a', 'hex')))
+  const shot = ok(ws.user.addImageFrame(source.id, { id: id(0x51), asset, title: 'shot', rect: { x: 0, y: 0, width: 64, height: 32 } }))
+  const page = ok(ws.agent.addFrame({ canvasId: source.id, title: 'hero', html: '<!doctype html><html><body>hero</body></html>' }))
+  const target = ok(ws.agent.create('target'))
+
+  const pasted = ok(
+    ws.user.paste(target.id, {
+      from: source.id,
+      frames: [
+        { from: id(0x51), id: id(0xa1), at: { x: 10, y: 20 } },
+        { from: page.id, id: id(0xa2), at: { x: 300, y: 20 } },
+      ],
+    }),
+  )
+  assert.deepEqual(pasted.frames.map((f) => [f.id, f.title, f.kind, f.rect]), [
+    [id(0xa1), 'shot', 'image', { x: 10, y: 20, width: 64, height: 32 }],
+    [id(0xa2), 'hero', 'page', { x: 300, y: 20, width: page.rect.width, height: page.rect.height }],
+  ])
+  assert.ok(existsSync(join(dirOf(target.id), 'frames', 'assets', asset)), 'the image went with the frame showing it')
+  assert.equal(readFileSync(join(dirOf(target.id), 'frames', `${id(0xa2)}.html`), 'utf8'), '<!doctype html><html><body>hero</body></html>')
+  writeFileSync(join(dirOf(source.id), 'frames', `${page.id}.html`), '<!doctype html><html><body>changed</body></html>')
+  assert.match(readFileSync(join(dirOf(target.id), 'frames', `${id(0xa2)}.html`), 'utf8'), /hero/, 'a copy, not a link: editing the source leaves it')
+  assert.equal(ok(ws.user.paste(target.id, { from: source.id, frames: [{ from: shot.frames[0]!.id, id: id(0xa3), at: { x: 0, y: 900 } }] })).frames.length, 3)
+  assert.deepEqual(readdirSync(join(dirOf(target.id), 'frames', 'assets')), [asset], 'an image already there is not copied twice')
+})
+
+test('a paste is all or none, reaches a frame removed this week, and only a canvas of this project', () => {
+  const { project, ws } = workspace()
+  const canvas = ok(ws.agent.create('c'))
+  const f1 = ok(ws.agent.addFrame({ canvasId: canvas.id, title: 'one', html: '<!doctype html><html></html>' }))
+  const other = ok(ws.agent.create('other'))
+
+  const missing = ws.user.paste(other.id, {
+    from: canvas.id,
+    frames: [
+      { from: f1.id, id: id(0xb1), at: { x: 0, y: 0 } },
+      { from: id(0xdead), id: id(0xb2), at: { x: 0, y: 0 } },
+    ],
+  })
+  assert.equal(missing.ok, false)
+  assert.equal(missing.ok === false && missing.problem.code, 'FRAME_NOT_FOUND')
+  assert.deepEqual(readdirSync(join(project, '.ezdesign', 'canvases', other.id, 'frames')), [], 'nothing written for half a paste')
+
+  ok(ws.user.applyLayoutOps(canvas.id, { opId: 'cut' as OpId, ops: [{ t: 'remove', ids: [f1.id] }] }))
+  const cut = ok(ws.user.paste(other.id, { from: canvas.id, frames: [{ from: f1.id, id: id(0xb3), at: { x: 0, y: 0 } }] }))
+  assert.deepEqual(cut.frames.map((f) => f.title), ['one'], 'a cut source is still there to paste')
+
+  const elsewhere = ws.user.paste(other.id, { from: 'ffffffffffff' as CanvasId, frames: [{ from: f1.id, id: id(0xb4), at: { x: 0, y: 0 } }] })
+  assert.equal(elsewhere.ok === false && elsewhere.problem.code, 'CANVAS_NOT_FOUND')
+})
+
+test('a paste request names canvas, frames and points, and nothing twice', () => {
+  const at = { x: 1, y: 2 }
+  assert.deepEqual(parsePaste({ from: 'aaaaaaaaaaaa', frames: [{ from: id(1), id: id(2), at, html: '<b>' }] }), {
+    from: 'aaaaaaaaaaaa',
+    frames: [{ from: id(1), id: id(2), at }],
+  })
+  assert.equal(parsePaste({ from: 'aaaaaaaaaaaa', frames: [] }), null)
+  assert.equal(parsePaste({ from: 'aaaaaaaaaaaa', frames: [{ from: id(1), id: id(2), at }, { from: id(3), id: id(2), at }] }), null)
+  assert.equal(parsePaste({ from: '../etc', frames: [{ from: id(1), id: id(2), at }] }), null)
+  assert.equal(parsePaste({ from: 'aaaaaaaaaaaa', frames: [{ from: id(1), id: id(2) }] }), null)
 })
