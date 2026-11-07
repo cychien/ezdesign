@@ -132,6 +132,11 @@ let pick: Pick | null = null
  *  the mouse, and a pick whose target is already under the cursor would look
  *  like the command did nothing. */
 let lastPointer: { x: number; y: number } | null = null
+/** Where the pointer was when Shift went down. Shift alone is also how a capital
+ *  or a full-width mark is typed, and typing leaves the mouse where it is: only
+ *  a pointer moved past this far with Shift down is reaching for an element. */
+let shiftFrom: { x: number; y: number } | null = null
+const SHIFT_INTENT_PX = 4
 /** Whether the pick modifier is being held right now. The modifier is what turns
  *  a click into a pick, so it is also what turns the page into a picker: without
  *  it held, the page looks and behaves exactly like itself, which is what lets a
@@ -223,7 +228,8 @@ function popupLive(): boolean {
   return Boolean(ui.popup) && !pick?.suspended && !popupAside()
 }
 
-/** Stepped aside while Shift is adding to it, so the page under it can be reached. */
+/** Out of sight and let through while Shift is reaching past it for an element,
+ *  so the page under it can be reached; back once Shift is up. */
 function popupAside(): boolean {
   return ui.popup?.hasAttribute('data-ez-aside') ?? false
 }
@@ -1733,6 +1739,15 @@ function composerFocused(): boolean {
   return !!editable && editable.contains(document.activeElement)
 }
 
+/** Shift is down and the pointer has moved: the user is reaching for something
+ *  on the page, and the popup over it steps aside. */
+function reachingWithShift(e: MouseEvent): void {
+  if (!extendable() || popupAside()) return
+  const at = { x: e.clientX, y: e.clientY }
+  shiftFrom ??= at
+  if (Math.hypot(at.x - shiftFrom.x, at.y - shiftFrom.y) > SHIFT_INTENT_PX) stepAside()
+}
+
 function extend(item: Gathered): void {
   compose(toggled(popupItems!, item))
 }
@@ -1741,6 +1756,7 @@ function extend(item: Gathered): void {
  *  addition to an open popup goes. Also reached from a move with Shift up, for a
  *  keyup lost to focus. */
 function shiftReleased(): void {
+  shiftFrom = null
   if (pick) {
     if (pickGathered.length) deliverPick(gatheredRef(pickGathered))
     return
@@ -1798,7 +1814,7 @@ function setMode(next: Mode): void {
 function onMouseMove(e: MouseEvent): void {
   lastPointer = { x: e.clientX, y: e.clientY }
   if (!e.shiftKey) shiftReleased()
-  else if (!isOwnUi(e.target)) stepAside()
+  else reachingWithShift(e)
   if (framing) {
     // The button came up somewhere this document never heard about - over the
     // shell's chrome, or outside the window entirely. Nothing landed, so the box
@@ -1882,7 +1898,6 @@ function onMouseDown(e: MouseEvent): void {
   // not reach the page either, the way an armed mode's gestures never do.
   if (ui.popup || held) {
     e.preventDefault()
-    if (e.shiftKey) stepAside()
     if (mode === 'region' && e.shiftKey && extendable()) pendingFrame = pagePoint(e)
     return
   }
@@ -1932,6 +1947,7 @@ function onClick(e: MouseEvent): void {
     e.stopPropagation()
     if (mode === 'element' && e.shiftKey && extendable() && e.target instanceof Element) {
       extend({ element: e.target })
+      stepAside()
     }
     return
   }
@@ -1974,7 +1990,10 @@ function onMouseUp(e: MouseEvent): void {
     // uploads it is still holding.
     if (mode !== 'region' || held) return
     if (ui.popup) {
-      if (e.shiftKey && extendable()) extend({ box })
+      if (e.shiftKey && extendable()) {
+        extend({ box })
+        stepAside()
+      }
       return
     }
     if (e.shiftKey) gather({ box })
@@ -2090,9 +2109,12 @@ function onKeyDown(e: KeyboardEvent): void {
     setModHeld(true)
     return
   }
+  // Shift alone leaves the popup where it is: it is also how a capital or a
+  // full-width punctuation mark is typed into it. A pointer moved with it held,
+  // or an element added, is what sends the popup aside.
   if (e.key === 'Shift' && extendable()) {
-    if (mode === 'element') frameUnderPointer()
-    stepAside()
+    if (!e.repeat) shiftFrom = lastPointer
+    if (mode === 'element' && !composerFocused()) frameUnderPointer()
   } else if (e.key !== 'Shift' && popupAside() && composerFocused()) {
     // Shift was for a capital or a symbol after all: the popup comes back before
     // the character lands, and it lands in the composer, which never lost focus.
