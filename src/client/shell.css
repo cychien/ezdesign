@@ -5431,11 +5431,18 @@ html.ez-on-board body {
 
 .ez-library-drawer {
   display: flex;
+  flex-direction: column;
   flex: 1;
   min-width: 0;
 }
 
+.ez-library-drawer .ez-library-scroll {
+  min-height: 0;
+}
+
 .ez-library-drawer .ez-library-head {
+  position: static;
+  flex-shrink: 0;
   justify-items: stretch;
   gap: 10px;
   padding: 0 14px 12px;

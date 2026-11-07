@@ -106,8 +106,10 @@ export function installLibraryDrawer(
 
   const browser = browseWithDetail(api, scroll, { draggable: true })
   head.append(top, browser.searchBox, browser.tagRow)
-  scroll.append(head, browser.grid, browser.empty, browser.sentinel)
-  el.append(scroll)
+  // The head stays out of the scroll: in a column this narrow its scrollbar
+  // would otherwise run past the title and the search, which never move.
+  scroll.append(browser.grid, browser.empty, browser.sentinel)
+  el.append(head, scroll)
   return { el, refresh: browser.show }
 }
 
