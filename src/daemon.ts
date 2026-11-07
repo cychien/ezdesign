@@ -2,6 +2,7 @@ import { createHash, randomBytes, timingSafeEqual } from 'node:crypto'
 import { EventEmitter } from 'node:events'
 import { mkdirSync, readFileSync, statSync } from 'node:fs'
 import { type Server, createServer } from 'node:http'
+import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { Socket } from 'node:net'
@@ -133,6 +134,9 @@ import { refreshCaptureInstall } from './capture-install/index.js'
 import { type Library, LibraryError, openLibrary } from './library/index.js'
 import { lazyLibrary, libraryApiRouter, libraryAttachables, storedFileOptions } from './library-routes.js'
 import { extensionApiRouter } from './extension-routes.js'
+import { MacAppInstaller, macAppApiRouter, macAppPlacement } from './mac-app.js'
+import { SSE_SETUP, type SetupEventWire, type SetupWire } from './setup-wire.js'
+import { SetupWatch } from './setup-watch.js'
 import { announcementApiRouter } from './announcement-routes.js'
 import { ACCOUNT_CALLBACK_PATH, Account, type AccountWire, apiBaseUrl } from './account.js'
 import { accountApiRouter, crossSiteAccountCallback } from './account-routes.js'
@@ -750,7 +754,7 @@ function agentSwitchNote(command: string): string {
  *  sits beside is de-duplicated because a dev daemon restarts on every file save,
  *  which is a machine repeating itself, not a person changing their mind. */
 /** One named SSE event, for shell clients only. */
-function sseEvent(event: CanvasEventWire): string {
+function sseEvent(event: CanvasEventWire | SetupEventWire): string {
   return `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`
 }
 
@@ -765,6 +769,8 @@ interface RuntimeServices {
   attachOrigin(runtime: SessionRuntime, origin: string): void
   heldElsewhere(runtime: SessionRuntime, origin: string): boolean
   environmentReady(): Promise<unknown>
+  macApp: MacAppInstaller
+  setup: SetupWatch
 }
 
 class SessionRuntime implements ProjectRuntime {
@@ -1221,7 +1227,11 @@ class SessionRuntime implements ProjectRuntime {
     return canvas ? { kind: 'canvas', canvasId: canvas.id, label: canvas.name } : null
   }
 
-  private toShells(event: CanvasEventWire): void {
+  setupChanged(setup: SetupWire): void {
+    this.toShells({ type: SSE_SETUP, setup })
+  }
+
+  private toShells(event: CanvasEventWire | SetupEventWire): void {
     const data = sseEvent(event)
     for (const res of this.shellClients) res.write(data)
   }
@@ -2090,6 +2100,7 @@ class SessionRuntime implements ProjectRuntime {
     // The capture library is global, so every session shows the same one.
     api.use(libraryApiRouter({ library: this.library }))
     api.use(extensionApiRouter({ distDir, version: this.version, dataDir: libraryHome() }))
+    api.use(macAppApiRouter(this.services.macApp))
     api.use(announcementApiRouter())
     api.use(devServerApiRouter(this.devServer))
     api.use(
@@ -2136,11 +2147,15 @@ class SessionRuntime implements ProjectRuntime {
       // Every open canvas in the first flush, in tab order and ahead of the
       // snapshot, so a board opens with no fetch and the queue's first paint
       // can already name the frames its annotations are in.
+      let releaseSetup = () => {}
       if (shell) {
         this.shellClients.add(res)
         for (const canvas of this.canvases.read.openWires() ?? []) {
           res.write(sseEvent({ type: SSE_CANVAS, canvas }))
         }
+        releaseSetup = this.services.setup.hold()
+        const setup = this.services.setup.setup
+        if (setup) res.write(sseEvent({ type: SSE_SETUP, setup }))
       }
       res.write(`data: ${JSON.stringify(this.snapshot())}\n\n`)
       this.sseClients.add(res)
@@ -2149,6 +2164,7 @@ class SessionRuntime implements ProjectRuntime {
         clearInterval(heartbeat)
         this.sseClients.delete(res)
         this.shellClients.delete(res)
+        releaseSetup()
       })
     })
 
@@ -2919,6 +2935,7 @@ export async function daemonMain(version: string, opts: DaemonOptions = {}): Pro
   })
   projectsChanged = () => projects.changed()
 
+  const macApp = new MacAppInstaller(macAppPlacement())
   const services: RuntimeServices = {
     projects,
     attachOrigin: (runtime, origin) => sessions.attachOrigin(runtime, origin, { userAttached: false, now: Date.now() }),
@@ -2927,6 +2944,16 @@ export async function daemonMain(version: string, opts: DaemonOptions = {}): Pro
       return !!holder && holder !== runtime
     },
     environmentReady: () => environment,
+    macApp,
+    setup: new SetupWatch({
+      home: homedir(),
+      platform: process.platform,
+      dataDir: libraryHome(),
+      macApp,
+      onChange: (setup) => {
+        for (const s of sessions.list()) s.setupChanged(setup)
+      },
+    }),
   }
 
   sessions = new SessionDirectory(

@@ -12,6 +12,7 @@ import { type HostTarget, hostTargets } from './browsers.js'
 import { currentGeneration, installExtension } from './extension-files.js'
 
 export type { HostTarget } from './browsers.js'
+export { type RecordFile, extensionRecordFiles, readExtensionPresence } from './presence.js'
 
 /** `node:sqlite` unflagged. */
 export const HOST_NODE_FLOOR = '22.13.0'

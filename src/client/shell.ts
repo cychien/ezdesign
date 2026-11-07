@@ -43,6 +43,8 @@ import { type GuestKind, parseGuestMessage } from './guest-messages.js'
 import { type CanvasUi, installCanvas } from './canvas/index.js'
 import { type LibraryView, installLibrary } from './library/index.js'
 import { type AccountWire, installAccount } from './account.js'
+import { installSetupMenu } from './setup-menu.js'
+import { SSE_SETUP, type SetupEventWire } from '../setup-wire.js'
 import { installAnnouncement } from './announcement.js'
 import { ANNOUNCEMENTS } from './announcements/index.js'
 import { LIBRARY_TEST_IDS } from './library/names.js'
@@ -2968,7 +2970,10 @@ libraryBtn.title = '素材庫'
 libraryBtn.append(icon(Album02Icon as IconNode, 18))
 libraryBtn.onclick = () => showLibrary(!libraryShown, { animate: true })
 const account = installAccount(API)
-activityBar.append(reviewPanelBtn, libraryBtn, account.el)
+const activityFoot = h('div', 'ez-activity-foot')
+const setupMenu = installSetupMenu(API)
+activityFoot.append(setupMenu.el, account.el)
+activityBar.append(reviewPanelBtn, libraryBtn, activityFoot)
 
 /** Over the review rather than instead of it: the stage and the sidebar keep
  *  their size underneath, so nothing re-lays out on the way in or back. */
@@ -5523,10 +5528,11 @@ function setDaemonGone(gone: boolean): void {
 subscribeEvents({
   url: `${API}/events?shell=1`,
   workerUrl: `${PREFIX}/events-worker.js?v=${encodeURIComponent(BUILD)}`,
-  // Named events carry whole canvases, to shells only; the snapshot never does.
-  events: ['message', SSE_CANVAS, SSE_CANVAS_REMOVED],
+  // Named events carry whole canvases and the install menu's state, to shells only; the snapshot never does.
+  events: ['message', SSE_CANVAS, SSE_CANVAS_REMOVED, SSE_SETUP],
   onEvent: ({ type, data }) => {
     if (type === STREAM_STATE) return onStreamState(data as StreamState)
+    if (type === SSE_SETUP) return setupMenu.update((JSON.parse(data) as SetupEventWire).setup)
     if (type !== 'message') {
       canvasUi ??= installCanvas(canvasPorts())
       canvasUi.onEvent(JSON.parse(data) as CanvasEventWire)
