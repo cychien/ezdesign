@@ -30,6 +30,7 @@ import type { DraftNode, NumberedRef, RefWire } from './draft.js'
 import { type IconNode, icon } from './icon.js'
 import { type Make, type SlashCommand, attachSlashMenu } from './slash.js'
 import { attachmentByteLimit } from '../attachment-policy.js'
+import { carriedLibraryItem, droppedLibraryItem } from './library/drag.js'
 
 /** Where a composer's file chips go. The shell and an App overlay upload to
  *  the api themselves (`directAttachments`); a canvas overlay has no api and
@@ -92,6 +93,9 @@ interface Options {
    *  is already this session's attachments. Absent means no `/library` - an
    *  unframed page has no shell to open the library in. */
   chooseLibrary?: () => Promise<{ id: string; name: string }[]>
+  /** Copies library items dragged in from the drawer into this session's
+   *  attachments. Absent means the box does not take them. */
+  attachLibrary?: (ids: string[]) => Promise<{ id: string; name: string }[]>
 }
 
 export interface AttachController {
@@ -181,6 +185,7 @@ export function attachify({
   skills,
   targets,
   chooseLibrary,
+  attachLibrary,
 }: Options): AttachController {
   const editable = mk('div', className)
   editable.setAttribute('contenteditable', 'plaintext-only')
@@ -393,7 +398,18 @@ export function attachify({
     // ends the box, and it reads correctly when the sentence continues.
     const after = document.createTextNode(NBSP)
     node.parentNode?.insertBefore(after, node.nextSibling)
-    placeCaretAfter(after)
+    // Inserting at the end of a text node splits off an empty one. With the
+    // caret beside it, backspace lands in it rather than in the spacer, and
+    // the browser answers with a line break instead of deleting.
+    for (const side of [node.previousSibling, after.nextSibling]) {
+      if (side?.nodeType === Node.TEXT_NODE && side.nodeValue === '') side.remove()
+    }
+    // In the spacer itself, where the backspace handler above expects it.
+    const caret = document.createRange()
+    caret.setStart(after, after.length)
+    caret.collapse(true)
+    selection?.removeAllRanges()
+    selection?.addRange(caret)
   }
 
   function add(file: File): void {
@@ -451,6 +467,16 @@ export function attachify({
     if (!files.length) return
     insertAtCaret(pickChip(files))
     changed()
+  }
+
+  /** Where a drop lands in the text, the way a dropped file lands where it is let go. */
+  function caretToPoint(x: number, y: number): void {
+    const range = document.caretRangeFromPoint?.(x, y)
+    if (document.activeElement !== editable) editable.focus()
+    if (!range || !editable.contains(range.startContainer)) return
+    const selection = document.getSelection()
+    selection?.removeAllRanges()
+    selection?.addRange(range)
   }
 
   function take(list: FileList | undefined): File[] {
@@ -600,7 +626,8 @@ export function attachify({
 
   // ------------------------------------------------------------------ drop
 
-  const dragging = (e: DragEvent) => e.dataTransfer?.types.includes('Files') ?? false
+  const dragging = (e: DragEvent) =>
+    (e.dataTransfer?.types.includes('Files') ?? false) || (!!attachLibrary && !!carriedLibraryItem(e))
   let depth = 0
 
   function endDrag(): void {
@@ -630,6 +657,15 @@ export function attachify({
   })
 
   field.addEventListener('drop', (e) => {
+    const item = attachLibrary ? droppedLibraryItem(e) : null
+    if (item && attachLibrary) {
+      endDrag()
+      e.preventDefault()
+      e.stopPropagation()
+      caretToPoint(e.clientX, e.clientY)
+      void addFromLibrary(() => attachLibrary([item.id]))
+      return
+    }
     const files = take(e.dataTransfer?.files)
     endDrag()
     if (files.length === 0) return

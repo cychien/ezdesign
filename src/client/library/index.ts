@@ -1,16 +1,21 @@
 /** The capture library, browsed from the shell: everything the Chrome extension
  *  saved or the user pasted, across projects, searched by note and page title
  *  and filtered by tag.
- *  It covers the whole workspace while it shows, the way the sketch has it: a
- *  grid of references wants the width, and the review is one click away. */
+ *  As a page it covers the whole workspace, the way the sketch has it: a grid
+ *  of references wants the width, and the review is one click away. As a drawer
+ *  it sits beside the page under review, to look at the two together. */
+
+import Cancel01Icon from '@hugeicons/core-free-icons/Cancel01Icon'
 
 import type { LibraryItemWire } from '../../library-wire.js'
+import { type IconNode, icon } from '../icon.js'
 import { encodeThumbnail } from '../thumbnail.js'
-import { libraryBrowser } from './browse.js'
+import { type LibraryBrowser, libraryBrowser } from './browse.js'
 import { openDetail } from './detail.js'
+import { makeLibraryDraggable } from './drag.js'
 import { openInstallDialog } from './install.js'
 import { LIBRARY_TEST_IDS as IDS } from './names.js'
-import { libraryApi } from './api.js'
+import { type LibraryApi, libraryApi } from './api.js'
 
 export interface LibraryView {
   readonly el: HTMLElement
@@ -27,20 +32,16 @@ function h<K extends keyof HTMLElementTagNameMap>(tag: K, className?: string, te
   return el
 }
 
-export function installLibrary(apiBase: string): LibraryView {
-  const api = libraryApi(apiBase)
-
-  const el = h('section', 'ez-library')
-  el.setAttribute('aria-label', '素材庫')
-  el.dataset.testid = IDS.view
-  const scroll = h('div', 'ez-library-scroll')
-  const head = h('header', 'ez-library-head')
-  const title = h('h1', 'ez-library-title', '素材庫')
-
+/** Browsing where a card opens its detail: what the page and the drawer share.
+ *  Beside the page a card can also be carried to a composer or a canvas. */
+function browseWithDetail(api: LibraryApi, scroll: HTMLElement, { draggable = false } = {}): LibraryBrowser {
   const browser = libraryBrowser(api, {
     scroll,
-    decorate: (button, _item, index) => {
+    decorate: (button, item, index) => {
       button.onclick = () => showDetail(index)
+      if (draggable) {
+        makeLibraryDraggable(button, item, () => button.querySelector('.ez-library-card-frame img') ?? button.querySelector('.ez-library-card-media'))
+      }
     },
     blank: () => {
       const install = h('button', 'ez-library-empty-link', '安裝 ezdesign 插件')
@@ -54,6 +55,73 @@ export function installLibrary(apiBase: string): LibraryView {
       ]
     },
   })
+
+  function showDetail(index: number): void {
+    openDetail({
+      api,
+      items: browser.items,
+      index,
+      knownTags: browser.tags,
+      onChange: (item: LibraryItemWire) => {
+        browser.replace(item)
+        void browser.loadTags()
+      },
+      onRemove: (id) => {
+        browser.remove(id)
+        void browser.loadTags()
+      },
+      returnFocus: (id) => browser.grid.querySelector<HTMLElement>(`[data-item-id="${id}"]`),
+    })
+  }
+
+  return browser
+}
+
+export function installLibraryDrawer(
+  apiBase: string,
+  options: {
+    onClose(): void
+    /** Ahead of the title: in the app, its sidebar's toggle, which belongs beside the traffic lights. */
+    lead?: HTMLElement
+  },
+): LibraryView {
+  const api = libraryApi(apiBase)
+  const el = h('aside', 'ez-library-drawer')
+  el.setAttribute('aria-label', '素材庫')
+  el.dataset.testid = IDS.drawer
+  const scroll = h('div', 'ez-library-scroll')
+  const head = h('header', 'ez-library-head')
+  const top = h('div', 'ez-library-drawer-top')
+  const close = h('button', 'ez-library-drawer-close')
+  close.type = 'button'
+  close.dataset.testid = IDS.drawerClose
+  close.setAttribute('aria-label', '收起素材庫')
+  close.title = '收起素材庫'
+  close.append(icon(Cancel01Icon as IconNode, 16))
+  close.onclick = options.onClose
+  const name = h('div', 'ez-library-drawer-name')
+  if (options.lead) name.append(options.lead)
+  name.append(h('h2', 'ez-library-title', '素材庫'))
+  top.append(name, close)
+
+  const browser = browseWithDetail(api, scroll, { draggable: true })
+  head.append(top, browser.searchBox, browser.tagRow)
+  scroll.append(head, browser.grid, browser.empty, browser.sentinel)
+  el.append(scroll)
+  return { el, refresh: browser.show }
+}
+
+export function installLibrary(apiBase: string): LibraryView {
+  const api = libraryApi(apiBase)
+
+  const el = h('section', 'ez-library')
+  el.setAttribute('aria-label', '素材庫')
+  el.dataset.testid = IDS.view
+  const scroll = h('div', 'ez-library-scroll')
+  const head = h('header', 'ez-library-head')
+  const title = h('h1', 'ez-library-title', '素材庫')
+
+  const browser = browseWithDetail(api, scroll)
   head.append(title, browser.searchBox, browser.tagRow)
   scroll.append(head, browser.grid, browser.empty, browser.sentinel)
   const toast = h('p', 'ez-library-toast')
@@ -102,24 +170,6 @@ export function installLibrary(apiBase: string): LibraryView {
     e.preventDefault()
     void addPasted(files)
   })
-
-  function showDetail(index: number): void {
-    openDetail({
-      api,
-      items: browser.items,
-      index,
-      knownTags: browser.tags,
-      onChange: (item: LibraryItemWire) => {
-        browser.replace(item)
-        void browser.loadTags()
-      },
-      onRemove: (id) => {
-        browser.remove(id)
-        void browser.loadTags()
-      },
-      returnFocus: (id) => browser.grid.querySelector<HTMLElement>(`[data-item-id="${id}"]`),
-    })
-  }
 
   return { el, refresh: browser.show }
 }

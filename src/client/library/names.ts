@@ -3,6 +3,10 @@ export const LIBRARY_TEST_IDS = {
   /** the activity bar's button */
   open: 'ez-library-open',
   view: 'ez-library',
+  /** the library beside the page, and the activity bar's small button that opens it */
+  drawer: 'ez-library-drawer',
+  drawerOpen: 'ez-library-drawer-open',
+  drawerClose: 'ez-library-drawer-close',
   search: 'ez-library-search',
   /** role=group of toggle buttons, `aria-pressed` */
   tags: 'ez-library-tags',

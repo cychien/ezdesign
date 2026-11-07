@@ -51,6 +51,7 @@ import {
   type AssetName,
   type Camera,
   type FrameId,
+  IMAGE_TYPES,
   MAX_FRAME_SIZE,
   MAX_FRAME_TITLE,
   type Point,
@@ -90,6 +91,7 @@ import {
 import { planMounts } from './mounting.js'
 import { HANDLES, type Handle, resizedRect } from './resize.js'
 import { LABELS, TEST_IDS } from './names.js'
+import { carriedLibraryItem, droppedLibraryItem, libraryImageFile } from '../library/drag.js'
 
 /** No `allow-top-navigation`: a frame cannot take the shell's tab anywhere.
  *  `allow-same-origin` keeps the frame's own origin (the frame host, never the
@@ -325,6 +327,8 @@ export class BoardView {
     this.el.addEventListener('pointerup', (e) => this.onPointerUp(e))
     this.el.addEventListener('pointercancel', (e) => this.onPointerUp(e, true))
     this.el.addEventListener('dblclick', (e) => this.onDoubleClick(e))
+    this.el.addEventListener('dragover', (e) => this.onDragOver(e))
+    this.el.addEventListener('drop', (e) => this.onDrop(e))
     this.heads.addEventListener('pointerover', (e) => this.onHeadOver(e))
     this.heads.addEventListener('pointerleave', () => this.markPickTarget(null))
     this.apply(canvas)
@@ -710,8 +714,9 @@ export class BoardView {
   }
 
   /** Pasted images, each at its natural size, in a row centred on the view and
-   *  selected, as a paste lands in Figma. */
-  async pasteImages(files: readonly File[]): Promise<void> {
+   *  selected, as a paste lands in Figma; dropped ones are centred where they
+   *  were let go. `at` is a point on the board. */
+  async pasteImages(files: readonly File[], at?: Point): Promise<void> {
     const stored = await Promise.all(
       files.map(async (file) => {
         const natural = await naturalSize(file)
@@ -721,7 +726,7 @@ export class BoardView {
     )
     const images = stored.filter((image) => image !== null)
     if (!images.length || !this.camera) return
-    const center = screenToWorld(this.camera, { x: this.stage.width / 2, y: this.stage.height / 2 })
+    const center = screenToWorld(this.camera, at ?? { x: this.stage.width / 2, y: this.stage.height / 2 })
     const step = planImages(images, center, () => mintFrameId((b) => crypto.getRandomValues(b)))
     this.commit(step)
     this.select(new Set(step.added))
@@ -960,6 +965,34 @@ export class BoardView {
   }
 
   // ------------------------------------------------------------------ input
+
+  /** A still image from the library drawer, or image files from the desktop. */
+  private takesDrop(e: DragEvent): boolean {
+    const carried = carriedLibraryItem(e)
+    return carried ? carried.image : (e.dataTransfer?.types.includes('Files') ?? false)
+  }
+
+  private onDragOver(e: DragEvent): void {
+    if (!this.takesDrop(e)) return
+    e.preventDefault()
+    if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'
+  }
+
+  private onDrop(e: DragEvent): void {
+    if (!this.takesDrop(e)) return
+    e.preventDefault()
+    // The drag began on a card that still has focus, and the board takes keys
+    // only while it has it: what was just dropped is what Delete is meant for.
+    this.el.focus({ preventScroll: true })
+    const at = this.boardPoint(e)
+    // Read now: the drag's data is gone once the handler returns.
+    const carried = droppedLibraryItem(e)
+    const files = [...(e.dataTransfer?.files ?? [])].filter((f) => f.type in IMAGE_TYPES)
+    void (async () => {
+      const images = carried ? [await libraryImageFile(carried).catch(() => null)].filter((f) => f !== null) : files
+      if (images.length) await this.pasteImages(images, at)
+    })()
+  }
 
   private boardPoint(e: { clientX: number; clientY: number }): Point {
     const box = this.el.getBoundingClientRect()

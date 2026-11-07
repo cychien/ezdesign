@@ -5408,6 +5408,173 @@ html.ez-on-board body {
   overflow-y: auto;
 }
 
+/* The library beside the page: a column at the window's left edge that the
+   stage gives its width to. Its own top bar matches the tab strip's height and
+   rule, so the two read as one line across the window. */
+.ez-library-drawer-slot {
+  display: flex;
+  flex-shrink: 0;
+  min-width: 0;
+  border-right: 1px solid var(--border);
+  background: var(--background);
+}
+
+.ez-library-drawer-slot[hidden],
+.ez-drawer-resizer[hidden] {
+  display: none;
+}
+
+/* On the slot's own edge, which is its last pixel rather than the next column's first. */
+.ez-drawer-resizer::after {
+  left: 3px;
+}
+
+.ez-library-drawer {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+}
+
+.ez-library-drawer .ez-library-head {
+  justify-items: stretch;
+  gap: 10px;
+  padding: 0 14px 12px;
+}
+
+.ez-library-drawer-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 42px;
+  margin: 0 -14px 2px;
+  padding: 0 7px 0 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.ez-library-drawer-name {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.ez-library-drawer .ez-library-title {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.ez-library-drawer-close {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  background: none;
+  color: var(--muted-foreground);
+  cursor: pointer;
+}
+
+.ez-library-drawer-close:hover {
+  background: var(--muted);
+  color: var(--foreground);
+}
+
+.ez-library-drawer .ez-library-search {
+  width: 100%;
+  height: 32px;
+}
+
+/* One row that scrolls sideways: wrapped, a dozen tags would push the grid
+   half way down a column this narrow. */
+.ez-library-drawer .ez-library-tags {
+  flex-wrap: nowrap;
+  margin: 0 -14px;
+  padding: 0 14px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  mask-image: linear-gradient(to right, transparent, #000 14px, #000 calc(100% - 28px), transparent);
+}
+
+.ez-library-drawer .ez-library-tag {
+  flex-shrink: 0;
+}
+
+.ez-library-drawer .ez-library-grid {
+  grid-template-columns: repeat(auto-fill, minmax(116px, 1fr));
+  gap: 16px 12px;
+  padding: 4px 14px 24px;
+}
+
+.ez-library-drawer .ez-library-empty {
+  margin-top: 10vh;
+  padding: 0 16px;
+}
+
+/* While hovered, the library button grows a segment on its left, as tall as it
+   and joined to it: a chevron toward where the drawer opens. The button itself
+   is untouched and still opens the library over the review. */
+.ez-library-launch {
+  position: relative;
+  display: grid;
+}
+
+/* While a library item is carried, the canvas frames - documents of their own,
+   which would take the drag from the board under them - let it through. */
+[data-ez-library-drag] .ez-board-iframe {
+  pointer-events: none;
+}
+
+.ez-library-launch:is(:hover, :has(:focus-visible)):not([data-library-shown]) > .ez-activity-btn {
+  border-radius: 0 8px 8px 0;
+  background: var(--muted);
+  color: var(--foreground);
+}
+
+.ez-library-drawer-btn {
+  position: absolute;
+  inset: 0 100% 0 auto;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: 16px;
+  padding: 0 0 0 2px;
+  border: 0;
+  border-radius: 8px 0 0 8px;
+  background: var(--muted);
+  color: var(--muted-foreground);
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    opacity 0.12s ease,
+    background 0.12s ease,
+    color 0.12s ease;
+}
+
+.ez-library-drawer-btn path {
+  stroke-width: 2;
+}
+
+.ez-library-launch:is(:hover, :has(:focus-visible)) .ez-library-drawer-btn {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.ez-library-drawer-btn:hover,
+.ez-library-drawer-btn:focus-visible {
+  background: color-mix(in oklab, var(--foreground) 9%, var(--muted));
+  color: var(--foreground);
+}
+
+.ez-library-drawer-btn[aria-pressed='true'] {
+  color: var(--foreground);
+}
+
+.ez-library-launch[data-library-shown] .ez-library-drawer-btn {
+  display: none;
+}
+
 /* Sticky, so the search and the tags are at hand however far down the grid is. */
 .ez-library-head {
   position: sticky;
@@ -6363,6 +6530,31 @@ html.ez-on-board body {
 [data-host='desktop'] .ez-tabs-bar {
   padding-left: var(--traffic-light-room);
   -webkit-app-region: drag;
+}
+
+/* The drawer is what reaches the window's left edge then, so the traffic
+   lights are its to make room for. */
+[data-host='desktop'] #ez-shell[data-library-drawer] .ez-tabs-bar {
+  padding-left: 0;
+}
+
+/* And the app's sidebar toggle, which sits beside the traffic lights: the
+   drawer's own copy takes over from the tab strip's. */
+[data-host='desktop'] #ez-shell[data-library-drawer] .ez-tabs-bar .ez-sidebar-toggle {
+  display: none;
+}
+
+[data-host='desktop'] .ez-library-drawer-name .ez-sidebar-toggle {
+  -webkit-app-region: no-drag;
+}
+
+[data-host='desktop'] .ez-library-drawer-top {
+  padding-left: max(14px, var(--traffic-light-room));
+  -webkit-app-region: drag;
+}
+
+[data-host='desktop'] .ez-library-drawer-close {
+  -webkit-app-region: no-drag;
 }
 
 /* With the sidebar open the pane's own edge is the first tab's left line. */
