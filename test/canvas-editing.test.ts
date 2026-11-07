@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, readdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
-import type { AssetName, CanvasId, FrameId, Rect, ShellView, TabId, ViewStore } from '../src/canvas/types.js'
+import type { AssetName, CanvasId, FrameId, FrameKind, Rect, ShellView, TabId, ViewStore } from '../src/canvas/types.js'
 import type { CanvasWire, FrameWire, LayoutOp, OpId } from '../src/canvas/wire.js'
 import { openCanvasWorkspace } from '../src/canvas/workspace.js'
 import { parseLayoutStep } from '../src/canvas/routes.js'
@@ -16,11 +16,20 @@ import {
   planImages,
   planMove,
   planRemove,
+  planResize,
   withPending,
 } from '../src/client/canvas/history.js'
 
 const id = (n: number) => n.toString(16).padStart(12, '0') as FrameId
-const frame = (n: number, rect: Rect): FrameWire => ({ id: id(n), title: `f${n}`, rect, file: `f${n}.html`, hash: `h${n}`, src: `src${n}` })
+const frame = (n: number, rect: Rect, kind: FrameKind = 'page'): FrameWire => ({
+  id: id(n),
+  title: `f${n}`,
+  kind,
+  rect,
+  file: `f${n}.html`,
+  hash: `h${n}`,
+  src: `src${n}`,
+})
 const canvasOf = (frames: FrameWire[]): CanvasWire => ({ id: 'cccccccccccc' as CanvasId, name: 'c', archived: false, createdAt: 1, frames })
 
 /** The board's own model: apply ops the way the daemon does, skipping gone frames. */
@@ -155,17 +164,65 @@ test('CV-p6-op-idempotent: a replayed step and a repeated duplicate change nothi
   assert.equal(back.frames.length, 2, 'restore brings it back, and a step naming a gone frame skips it')
 })
 
-test('a frame keeps the size it was added at: no user edit carries one', () => {
+test('a page keeps the size it was added at: a move carries none, and a resize naming it is skipped', () => {
   const { ws } = workspace()
   const canvas = ok(ws.agent.create('c'))
   const phone = ok(ws.agent.addFrame({ canvasId: canvas.id, title: 'phone', html: '<!doctype html><html></html>', size: { width: 390, height: 844 } }))
+  assert.equal(phone.kind, 'page')
   assert.equal(parseLayoutStep({ opId: 'o1', ops: [{ t: 'place', frames: [{ id: phone.id, rect: { x: 0, y: 0, width: 999, height: 999 } }] }] }), null)
   const step = parseLayoutStep({ opId: 'o1', ops: [{ t: 'move', frames: [{ id: phone.id, x: 50, y: 60, width: 999, height: 999 }] }] })
   assert.deepEqual(step?.ops, [{ t: 'move', frames: [{ id: phone.id, x: 50, y: 60 }] }])
   const moved = ok(ws.user.applyLayoutOps(canvas.id, step!))
   assert.deepEqual(moved.frames[0]!.rect, { x: 50, y: 60, width: 390, height: 844 })
+  const resized = ok(ws.user.applyLayoutOps(canvas.id, { opId: 'o2' as OpId, ops: [{ t: 'resize', frames: [{ id: phone.id, x: 0, y: 0, width: 999, height: 999 }] }] }))
+  assert.deepEqual(resized.frames[0]!.rect, { x: 50, y: 60, width: 390, height: 844 })
   const copy = ok(ws.user.duplicate(canvas.id, { from: phone.id, id: id(0xc0), at: { x: 1000, y: 0 } }))
   assert.deepEqual(copy.frames.find((f) => f.id === id(0xc0))!.rect, { x: 1000, y: 0, width: 390, height: 844 })
+})
+
+test('an image frame resizes, down below a page\'s minimum, and is known as one after a restart', () => {
+  const { project, ws } = workspace()
+  const canvas = ok(ws.agent.create('c'))
+  const asset = ok(ws.user.addAsset(canvas.id, 'image/png', Buffer.from('89504e470d0a1a0a', 'hex')))
+  const shot = id(0x51)
+  const added = ok(ws.user.addImageFrame(canvas.id, { id: shot, asset, title: 'shot', rect: { x: 0, y: 0, width: 64, height: 32 } }))
+  assert.deepEqual(added.frames[0]!.rect, { x: 0, y: 0, width: 64, height: 32 }, 'no letterbox up to a page minimum')
+  assert.equal(added.frames[0]!.kind, 'image')
+  const step = parseLayoutStep({ opId: 'r1', ops: [{ t: 'resize', frames: [{ id: shot, x: 10.4, y: -5, width: 20, height: 4 }] }] })
+  assert.deepEqual(step?.ops, [{ t: 'resize', frames: [{ id: shot, x: 10.4, y: -5, width: 20, height: 4 }] }])
+  const small = ok(ws.user.applyLayoutOps(canvas.id, step!))
+  assert.deepEqual(small.frames[0]!.rect, { x: 10, y: -5, width: 20, height: 16 })
+  ok(ws.user.applyLayoutOps(canvas.id, { opId: 'm1' as OpId, ops: [{ t: 'move', frames: [{ id: shot, x: 100, y: 100 }] }] }))
+
+  ws.close()
+  const reopened = openCanvasWorkspace({
+    project,
+    view: { view: {}, setActiveTab() {}, setCamera() {}, forgetCamera() {} },
+    frameOrigin: () => 'http://localhost:5000',
+    overlay: () => ({ assets: '1', shellOrigin: 'http://127.0.0.1:5000' }),
+    hasApp: () => true,
+    onChange: () => {},
+  })
+  reopened.start()
+  const again = reopened.read.wire(canvas.id)!
+  assert.deepEqual(again.frames[0]!.rect, { x: 100, y: 100, width: 20, height: 16 }, 'a move keeps a size under the page minimum')
+  assert.equal(again.frames[0]!.kind, 'image', 'read off the document, not a record')
+  reopened.close()
+})
+
+test('a resize is one step whose undo is the rect it had, shown at once while in flight', () => {
+  const image = frame(1, { x: 0, y: 0, width: 400, height: 300 }, 'image')
+  const page = frame(2, { x: 500, y: 0, width: 400, height: 300 })
+  const step = planResize(image, { x: 0, y: 0, width: 200, height: 150 })
+  assert.equal(step.label, '調整圖片大小')
+  assert.deepEqual(step.apply, [{ t: 'ops', ops: [{ t: 'resize', frames: [{ id: image.id, x: 0, y: 0, width: 200, height: 150 }] }] }])
+  assert.deepEqual(step.undo, [{ t: 'resize', frames: [{ id: image.id, x: 0, y: 0, width: 400, height: 300 }] }])
+  assert.deepEqual(step.redo, step.apply[0]!.t === 'ops' ? step.apply[0]!.ops : null)
+  const shown = withPending(canvasOf([image, page]), [
+    ...step.apply,
+    { t: 'ops', ops: [{ t: 'resize', frames: [{ id: page.id, x: 0, y: 0, width: 1, height: 1 }] }] },
+  ])
+  assert.deepEqual(shown.map((f) => f.rect), [{ x: 0, y: 0, width: 200, height: 150 }, page.rect])
 })
 
 test('pasted images land as one row centred on the view, undone and redone as one step', () => {

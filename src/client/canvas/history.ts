@@ -16,7 +16,7 @@
  *    daemon, so the history never needs rewriting. Camera moves are not edits. */
 
 import { GAP, placeBeside } from '../../canvas/place.js'
-import type { AssetName, FrameId, Point, Size } from '../../canvas/types.js'
+import type { AssetName, FrameId, Point, Rect, Size } from '../../canvas/types.js'
 import type { CanvasWire, DuplicateWire, FrameWire, ImageFrameWire, LayoutOp } from '../../canvas/wire.js'
 
 /** What one request asks the daemon for. */
@@ -60,6 +60,17 @@ export function planMove(
     undo: [from],
     redo: [to],
     ...(opts.nudge ? { nudge: true as const } : {}),
+  }
+}
+
+/** An image frame's new rect, from the one it had. */
+export function planResize(frame: FrameWire, to: Rect): EditStep {
+  const resize = (rect: Rect): LayoutOp => ({ t: 'resize', frames: [{ id: frame.id, ...rect }] })
+  return {
+    label: '調整圖片大小',
+    apply: [{ t: 'ops', ops: [resize(to)] }],
+    undo: [resize(frame.rect)],
+    redo: [resize(to)],
   }
 }
 
@@ -145,6 +156,12 @@ export function withPending(canvas: CanvasWire, pending: readonly BoardEdit[]): 
         frames = frames.map((f) => {
           const to = at.get(f.id)
           return to ? { ...f, rect: { ...f.rect, x: to.x, y: to.y } } : f
+        })
+      } else if (op.t === 'resize') {
+        const at = new Map(op.frames.map(({ id, ...rect }) => [id, rect]))
+        frames = frames.map((f) => {
+          const to = f.kind === 'image' ? at.get(f.id) : undefined
+          return to ? { ...f, rect: to } : f
         })
       } else if (op.t === 'remove') {
         const gone = new Set(op.ids)

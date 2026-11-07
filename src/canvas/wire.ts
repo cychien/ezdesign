@@ -10,7 +10,7 @@
  *  every open canvas so a tab opens with no fetch. Frame HTML never travels
  *  here: each iframe loads its own document from the frame host. */
 
-import type { AssetName, Camera, CanvasId, CanvasSummary, FrameId, Point, Rect, TabId } from './types.js'
+import type { AssetName, Camera, CanvasId, CanvasSummary, FrameId, FrameKind, Point, Rect, TabId } from './types.js'
 
 /** The snapshot's canvas part: the tab strip is drawn from it. */
 export interface CanvasSnapshotWire {
@@ -27,6 +27,8 @@ export interface CanvasSnapshotWire {
 export interface FrameWire {
   id: FrameId
   title: string
+  /** Only an `image` frame takes resize handles. */
+  kind: FrameKind
   rect: Rect
   /** Project-relative, for the anchor and the agent. */
   file: string
@@ -63,9 +65,11 @@ export type CanvasEventWire =
  *  knows, so applying it twice lands the same way, and an op naming a frame that
  *  is gone (the agent removed it meanwhile) is skipped rather than refused. */
 export type LayoutOp =
-  /** A group move is one op with several frames. Nothing on the board resizes:
-   *  a frame keeps the size it was added at. */
+  /** A group move is one op with several frames. */
   | { t: 'move'; frames: ({ id: FrameId } & Point)[] }
+  /** The whole rect of an `image` frame. A page keeps the size it was added
+   *  at, so a resize naming one is skipped. */
+  | { t: 'resize'; frames: ({ id: FrameId } & Rect)[] }
   /** Soft: the frame leaves the board, its file stays, so undo needs no HTML. */
   | { t: 'remove'; ids: FrameId[] }
   /** Undo of a remove. */

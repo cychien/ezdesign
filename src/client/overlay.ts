@@ -2033,6 +2033,21 @@ function isTyping(target: EventTarget | null): boolean {
  *  being rewritten: this overlay is a guest in someone else's document, and a
  *  teardown mid-scroll would strand those styles on their page. Our own chrome
  *  is exempt so a long comment can still be scrolled inside the field. */
+const SCROLLS = new Set(['auto', 'scroll', 'overlay'])
+
+/** Whether `target` or anything holding it can still scroll by this delta. */
+function canScroll(target: EventTarget | null, dx: number, dy: number): boolean {
+  const root = document.scrollingElement
+  for (let node = target instanceof Element ? target : root; node; node = node.parentElement) {
+    const style = getComputedStyle(node)
+    const scrolls = (overflow: string) => (node === root ? overflow !== 'hidden' && overflow !== 'clip' : SCROLLS.has(overflow))
+    const room = (delta: number, at: number, max: number) => (delta < 0 ? at > 0 : delta > 0 && at < max - 1)
+    if (dy && scrolls(style.overflowY) && room(dy, node.scrollTop, node.scrollHeight - node.clientHeight)) return true
+    if (dx && scrolls(style.overflowX) && room(dx, node.scrollLeft, node.scrollWidth - node.clientWidth)) return true
+  }
+  return false
+}
+
 function onScrollAttempt(e: Event): void {
   // Mod+wheel is the grid's, wherever the pointer happens to be: the shell
   // cannot hear a wheel that lands on this document, so the page's own scroll
@@ -2042,8 +2057,13 @@ function onScrollAttempt(e: Event): void {
   const w = e.type === 'wheel' ? (e as WheelEvent) : null
   const zoom = !!w && (w.metaKey || w.ctrlKey)
   // A canvas frame only takes the wheel while annotating or picking; the board
-  // pans under it then, as it does with no mode on.
-  const boardPan = link.kind === 'relay' && (mode !== 'off' || pick !== null) && !isOwnUi(e.target)
+  // pans under it then, as it does with no mode on. A frame made live keeps the
+  // wheel only while something in it can still scroll that way: a frame is as
+  // tall as its page, so otherwise the wheel would go nowhere.
+  const boardPan =
+    link.kind === 'relay' &&
+    !isOwnUi(e.target) &&
+    (mode !== 'off' || pick !== null || (!!w && !canScroll(e.target, w.deltaX, w.deltaY)))
   if (w && (zoom || boardPan) && window.parent !== window) {
     e.preventDefault()
     const unit = w.deltaMode === 1 ? 16 : w.deltaMode === 2 ? window.innerHeight : 1

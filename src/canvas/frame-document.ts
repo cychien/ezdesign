@@ -61,6 +61,20 @@ export function imageFrameHtml(title: string, asset: AssetName): string {
   ].join('\n')
 }
 
+const IMAGE_FRAME_SHAPE = (() => {
+  const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const [beforeTitle, afterTitle] = imageFrameHtml('\u0000', '\u0001' as AssetName).split('<title>\u0000</title>')
+  const [beforeAsset, afterAsset] = afterTitle!.split('assets/\u0001" alt="\u0000"')
+  return new RegExp(
+    `^${escape(beforeTitle!)}<title>[^<]*</title>${escape(beforeAsset!)}assets/[0-9a-f]{12}\\.[a-z]+" alt="[^"]*"${escape(afterAsset!)}$`,
+  )
+})()
+
+/** Whether a frame's document is exactly what `imageFrameHtml` writes. */
+export function isImageFrameHtml(html: string): boolean {
+  return IMAGE_FRAME_SHAPE.test(html)
+}
+
 /** Whether a `Host` header names the frame host. Shared by the request switch
  *  and the upgrade handler, so the two cannot disagree. */
 export function isFrameHost(host: string | undefined): boolean {

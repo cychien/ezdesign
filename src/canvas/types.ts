@@ -83,6 +83,8 @@ export const MAX_CANVAS_NAME = 60
 export const MAX_FRAME_TITLE = 80
 export const DEFAULT_FRAME_WIDTH = 1280
 export const MIN_FRAME_SIZE: Size = { width: 240, height: 240 }
+/** A pasted image is resized by hand, down to a thumbnail. */
+export const MIN_IMAGE_SIZE: Size = { width: 16, height: 16 }
 export const MAX_FRAME_SIZE: Size = { width: 3840, height: 12000 }
 /** A pasted image. Stored as its own file, not inlined, so it is held to this
  *  rather than to `MAX_FRAME_HTML`. */
@@ -117,9 +119,16 @@ export function mimeOfAsset(name: AssetName): string {
 /** One live frame as every reader sees it: the manifest entry joined with its
  *  rect from the layout. Deleted frames are not in this projection at all, so
  *  no reader can forget to filter them. */
+/** `image`: the document the daemon writes for a pasted image, which the user
+ *  may resize. Anything else, whoever wrote it, is a `page` at its viewport
+ *  width. Read off the document itself, so a frame pasted before this was
+ *  recorded is an image too, and one the agent rewrote is no longer one. */
+export type FrameKind = 'page' | 'image'
+
 export interface CanvasFrame {
   id: FrameId
   title: string
+  kind: FrameKind
   /** Project-relative path of the document: `.ezdesign/canvases/<c>/frames/<f>.html`.
    *  The `file` in its anchors' `file:line`, and what the agent edits. */
   file: string

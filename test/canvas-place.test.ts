@@ -8,6 +8,7 @@ import {
   defaultHeightFor,
   growDown,
   imageFrameSize,
+  minSizeOf,
   normalizeRect,
   overlaps,
   placeBeside,
@@ -87,12 +88,19 @@ test('a rect from the wire is whole and inside the size limits', () => {
   assert.deepEqual([390, 768, 1280].map(defaultHeightFor), [844, 1024, 800])
 })
 
-test('a pasted image keeps its natural size, scaled down whole to fit, never under the minimum', () => {
+test('a pasted image keeps its natural size and aspect, scaled whole into the limits', () => {
   assert.deepEqual(imageFrameSize({ width: 1600, height: 1200 }), { width: 1600, height: 1200 })
   assert.deepEqual(imageFrameSize({ width: 7680, height: 4320 }), { width: 3840, height: 2160 })
   assert.deepEqual(imageFrameSize({ width: 1000, height: 30000 }), { width: 400, height: 12000 })
-  assert.deepEqual(imageFrameSize({ width: 64, height: 32 }), { width: 240, height: 240 })
-  assert.deepEqual(imageFrameSize({ width: 2000, height: 100 }), { width: 2000, height: 240 })
+  assert.deepEqual(imageFrameSize({ width: 64, height: 32 }), { width: 64, height: 32 })
+  assert.deepEqual(imageFrameSize({ width: 2000, height: 100 }), { width: 2000, height: 100 })
+  assert.deepEqual(imageFrameSize({ width: 8, height: 4 }), { width: 32, height: 16 }, 'scaled up whole to the minimum')
+  assert.deepEqual(imageFrameSize({ width: 4000, height: 2 }), { width: 3840, height: 16 }, 'only a sliver is clamped')
+})
+
+test('an image may be smaller than a page', () => {
+  assert.deepEqual(normalizeRect({ x: 0, y: 0, width: 20.4, height: 3 }, minSizeOf('image')), { x: 0, y: 0, width: 20, height: 16 })
+  assert.deepEqual(normalizeRect({ x: 0, y: 0, width: 20, height: 20 }, minSizeOf('page')), { x: 0, y: 0, width: 240, height: 240 })
 })
 
 test('a frame that grows pushes down what is under it, and what is under that, by the growth', () => {

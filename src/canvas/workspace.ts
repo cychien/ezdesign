@@ -45,9 +45,10 @@ import {
   checkFrameHtml,
   frameUrl,
   imageFrameHtml,
+  isImageFrameHtml,
   renderFrameDocument,
 } from './frame-document.js'
-import { autoPlace, defaultHeightFor, growDown, normalizeRect, placeBeside } from './place.js'
+import { autoPlace, defaultHeightFor, growDown, minSizeOf, normalizeRect, placeBeside } from './place.js'
 import { FrameFileWatcher } from './watch.js'
 import {
   type AssetName,
@@ -59,6 +60,7 @@ import {
   type CanvasSummary,
   DEFAULT_FRAME_WIDTH,
   type FrameId,
+  type FrameKind,
   IMAGE_TYPES,
   MAX_CANVAS_NAME,
   MAX_FRAMES_PER_CANVAS,
@@ -307,10 +309,14 @@ export function cleanName(raw: unknown, max: number): string | null {
 
 const ok = <T>(value: T): Outcome<T> => ({ ok: true, value })
 
+const sameRect = (a: Rect, b: Rect) => a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height
+
 class Workspace {
   private readonly canvases = new Map<CanvasId, Held>()
   /** `frameDocument` cache: `${canvasId}/${frameId}` -> the stamped document of one hash. */
   private readonly served = new Map<string, { hash: string; html: string }>()
+  /** A document's kind by its hash: content-addressed, so it never goes stale. */
+  private readonly kinds = new Map<string, FrameKind>()
   private readonly root: string
   private readonly watcher: FrameFileWatcher
   /** Frames the agent's current turn added, oldest first. */
@@ -500,6 +506,19 @@ class Workspace {
     return held.manifest.frames.find((f) => f.id === id && f.deletedAt === undefined) ?? null
   }
 
+  private kindOf(held: Held, frame: ManifestFrame): FrameKind {
+    const known = this.kinds.get(frame.hash)
+    if (known) return known
+    let kind: FrameKind = 'page'
+    try {
+      if (isImageFrameHtml(readFileSync(join(this.dir(held.manifest.id), frame.file), 'utf8'))) kind = 'image'
+    } catch {
+      return kind
+    }
+    this.kinds.set(frame.hash, kind)
+    return kind
+  }
+
   private project(held: Held): Canvas {
     const { manifest, layout } = held
     return {
@@ -513,6 +532,7 @@ class Workspace {
           (f): CanvasFrame => ({
             id: f.id,
             title: f.title,
+            kind: this.kindOf(held, f),
             file: `${CANVASES_DIR}/${manifest.id}/${f.file}`,
             hash: f.hash,
             rect: layout.rects[f.id] ?? NO_RECT,
@@ -537,6 +557,7 @@ class Workspace {
       frames: canvas.frames.map((f) => ({
         id: f.id,
         title: f.title,
+        kind: f.kind,
         rect: f.rect,
         file: f.file,
         hash: f.hash,
@@ -828,8 +849,18 @@ class Workspace {
         for (const { id: frameId, x, y } of op.frames) {
           const was = held.layout.rects[frameId]
           if (!live(frameId) || !was) continue
-          const next = normalizeRect({ ...was, x, y })
+          const next = { ...was, x: Math.round(x), y: Math.round(y) }
           if (was.x === next.x && was.y === next.y) continue
+          held.layout.rects[frameId] = next
+          movedRects = true
+        }
+      } else if (op.t === 'resize') {
+        for (const { id: frameId, ...to } of op.frames) {
+          const frame = live(frameId)
+          const was = held.layout.rects[frameId]
+          if (!frame || !was || this.kindOf(held, frame) !== 'image') continue
+          const next = normalizeRect(to, minSizeOf('image'))
+          if (sameRect(was, next)) continue
           held.layout.rects[frameId] = next
           movedRects = true
         }
@@ -876,7 +907,7 @@ class Workspace {
     }
     const sourceRect = held.layout.rects[source.id] ?? NO_RECT
     const at = input.at ?? placeBeside(sourceRect, live.map((f) => held.layout.rects[f.id] ?? NO_RECT))
-    const rect = normalizeRect({ ...at, width: sourceRect.width, height: sourceRect.height })
+    const rect = { ...sourceRect, x: Math.round(at.x), y: Math.round(at.y) }
     const file = `frames/${input.id}.html`
     writeAtomic(join(this.dir(id), file), bytes.toString('utf8'))
     held.layout.rects[input.id] = rect
@@ -923,9 +954,11 @@ class Workspace {
     const html = imageFrameHtml(title, input.asset)
     const file = `frames/${input.id}.html`
     writeAtomic(join(this.dir(id), file), html)
-    held.layout.rects[input.id] = normalizeRect(input.rect)
+    held.layout.rects[input.id] = normalizeRect(input.rect, minSizeOf('image'))
     this.writeLayout(held)
-    held.manifest.frames.push({ id: input.id, title, file, hash: sha1(html), createdAt: this.now() })
+    const hash = sha1(html)
+    this.kinds.set(hash, 'image')
+    held.manifest.frames.push({ id: input.id, title, file, hash, createdAt: this.now() })
     this.writeManifest(held)
     this.opts.onChange({ kind: 'updated', canvasId: id })
     return ok(this.wire(id)!)
