@@ -24,6 +24,7 @@ import BubbleChatIcon from '@hugeicons/core-free-icons/BubbleChatIcon'
 import BubbleChatOutcomeIcon from '@hugeicons/core-free-icons/BubbleChatOutcomeIcon'
 import Edit02Icon from '@hugeicons/core-free-icons/Edit02Icon'
 import Album02Icon from '@hugeicons/core-free-icons/Album02Icon'
+import ArrowLeft01Icon from '@hugeicons/core-free-icons/ArrowLeft01Icon'
 import DollarSquareIcon from '@hugeicons/core-free-icons/DollarSquareIcon'
 import HashtagIcon from '@hugeicons/core-free-icons/HashtagIcon'
 import type { SessionConfigOption } from '@agentclientprotocol/sdk'
@@ -41,7 +42,8 @@ import { type AttachController, attachify, directAttachments } from './attach.js
 import { type AppGuest, FrameRegistry, type Guest, senderOf } from './frame-registry.js'
 import { type GuestKind, parseGuestMessage } from './guest-messages.js'
 import { type CanvasUi, installCanvas } from './canvas/index.js'
-import { type LibraryView, installLibrary } from './library/index.js'
+import { type LibraryView, installLibrary, installLibraryDrawer } from './library/index.js'
+import { DRAWER_DEFAULT, DRAWER_MIN, clampDrawerWidth, maxDrawerWidth } from './drawer-width.js'
 import { type AccountWire, installAccount } from './account.js'
 import { installSetupMenu } from './setup-menu.js'
 import { SSE_SETUP, type SetupEventWire } from '../setup-wire.js'
@@ -49,6 +51,7 @@ import { installAnnouncement } from './announcement.js'
 import { ANNOUNCEMENTS } from './announcements/index.js'
 import { LIBRARY_TEST_IDS } from './library/names.js'
 import { chooseLibraryAttachments } from './library/picker.js'
+import { libraryApi } from './library/api.js'
 import { videoDigests } from './video-digest/runner.js'
 import type { BatchTarget, DigestFailure, ReferenceEcho, SentNoteWire } from '../protocol.js'
 import { referenceEcho, shortAnchor } from '../label.js'
@@ -2074,6 +2077,7 @@ const noteAttach = attachify({
   skills: () => fetchSkills(),
   targets: () => targetCommands(),
   chooseLibrary: () => chooseLibraryAttachments(API),
+  attachLibrary: (ids) => libraryApi(API).attach(ids),
 })
 const note = noteAttach.editable
 note.title = '寫補充說明（N）'
@@ -2537,6 +2541,7 @@ const editAttach = attachify({
   },
   commands: [elementCommand(() => editAttach)],
   chooseLibrary: () => chooseLibraryAttachments(API),
+  attachLibrary: (ids) => libraryApi(API).attach(ids),
 })
 
 /** Capture on the composer's wrapper, so this outranks both the slash menu inside
@@ -2969,11 +2974,23 @@ libraryBtn.setAttribute('aria-label', '素材庫')
 libraryBtn.title = '素材庫'
 libraryBtn.append(icon(Album02Icon as IconNode, 18))
 libraryBtn.onclick = () => showLibrary(!libraryShown, { animate: true })
+
+/** The library button's left half, while it is hovered: a chevron that opens
+ *  the library beside the page instead of over it. Not offered from the library
+ *  itself. */
+const drawerBtn = h('button', 'ez-library-drawer-btn')
+drawerBtn.type = 'button'
+drawerBtn.dataset.testid = LIBRARY_TEST_IDS.drawerOpen
+drawerBtn.append(icon(ArrowLeft01Icon as IconNode, 12))
+drawerBtn.onclick = () => setDrawerOpen(!drawerOpen)
+const libraryLaunch = h('div', 'ez-library-launch')
+libraryLaunch.append(libraryBtn, drawerBtn)
+
 const account = installAccount(API)
 const activityFoot = h('div', 'ez-activity-foot')
 const setupMenu = installSetupMenu(API)
 activityFoot.append(setupMenu.el, account.el)
-activityBar.append(reviewPanelBtn, libraryBtn, activityFoot)
+activityBar.append(reviewPanelBtn, libraryLaunch, activityFoot)
 
 /** Over the review rather than instead of it: the stage and the sidebar keep
  *  their size underneath, so nothing re-lays out on the way in or back. */
@@ -2992,8 +3009,9 @@ function showLibrary(shown: boolean, { animate = false } = {}): void {
     library.el.hidden = !shown
     library.el.toggleAttribute('data-entering', shown && animate)
   }
-  for (const covered of [stageWrap, resizer, sidebarSlot]) covered.inert = shown
+  for (const covered of [drawerSlot, drawerResizer, stageWrap, resizer, sidebarSlot]) covered.inert = shown
   libraryBtn.setAttribute('aria-pressed', String(shown))
+  libraryLaunch.toggleAttribute('data-library-shown', shown)
   paintSidebarWidth()
   if (shown) library!.refresh()
   if (libraryInUrl() !== shown) {
@@ -3004,9 +3022,117 @@ function showLibrary(shown: boolean, { animate = false } = {}): void {
   }
 }
 
+// ---------------------------------------------------------------- library drawer
+
+/** The library at the window's left edge, beside the page: it takes its width
+ *  from the stage rather than covering it. Built on first open. */
+const drawerSlot = h('div', 'ez-library-drawer-slot')
+drawerSlot.hidden = true
+const drawerResizer = h('div', 'ez-resizer ez-drawer-resizer')
+drawerResizer.hidden = true
+drawerResizer.tabIndex = 0
+drawerResizer.setAttribute('role', 'separator')
+drawerResizer.setAttribute('aria-orientation', 'vertical')
+drawerResizer.setAttribute('aria-label', '調整素材庫寬度')
+drawerResizer.setAttribute('aria-valuemin', String(DRAWER_MIN))
+drawerResizer.title = '拖曳調整寬度，雙擊還原'
+
+const DRAWER_OPEN_KEY = 'ezdesign:library-drawer-open'
+const DRAWER_WIDTH_KEY = 'ezdesign:library-drawer-width'
+let drawer: LibraryView | null = null
+let drawerOpen = false
+let drawerPreferred = DRAWER_DEFAULT
+try {
+  drawerOpen = localStorage.getItem(DRAWER_OPEN_KEY) === '1'
+  const stored = Number(localStorage.getItem(DRAWER_WIDTH_KEY))
+  if (Number.isFinite(stored) && stored > 0) drawerPreferred = stored
+} catch {}
+
+const ACTIVITY_BAR_WIDTH = 44
+/** What the page and the drawer share: the window less the sidebar and the bar. */
+const drawerRoom = () => innerWidth - ACTIVITY_BAR_WIDTH - (sidebarCollapsed ? 0 : clampSidebar(preferredWidth))
+const clampDrawer = (w: number) => clampDrawerWidth(w, drawerRoom())
+
+function paintDrawer(): void {
+  drawerSlot.hidden = !drawerOpen
+  drawerResizer.hidden = !drawerOpen
+  root.toggleAttribute('data-library-drawer', drawerOpen)
+  const label = drawerOpen ? '收起左側素材庫' : '在左側打開素材庫'
+  drawerBtn.setAttribute('aria-label', label)
+  drawerBtn.title = label
+  drawerBtn.setAttribute('aria-pressed', String(drawerOpen))
+  if (!drawerOpen) return
+  const width = clampDrawer(drawerPreferred)
+  drawerSlot.style.width = `${width}px`
+  drawerResizer.setAttribute('aria-valuenow', String(width))
+  drawerResizer.setAttribute('aria-valuemax', String(maxDrawerWidth(drawerRoom())))
+}
+
+function setDrawerOpen(open: boolean): void {
+  if (open && !drawer) {
+    drawer = installLibraryDrawer(API, {
+      onClose: () => setDrawerOpen(false),
+      ...(host.kind === 'desktop' ? { lead: sidebarToggle(host.toggleSidebar) } : {}),
+    })
+    drawerSlot.append(drawer.el)
+  }
+  if (!open && drawer?.el.contains(document.activeElement)) drawerBtn.focus()
+  drawerOpen = open
+  paintSidebarWidth()
+  if (open) drawer!.refresh()
+  try {
+    localStorage.setItem(DRAWER_OPEN_KEY, open ? '1' : '0')
+  } catch {}
+}
+
+function resizeDrawer(width: number): void {
+  drawerPreferred = clampDrawer(width)
+  paintSidebarWidth()
+}
+
+function persistDrawerWidth(): void {
+  try {
+    localStorage.setItem(DRAWER_WIDTH_KEY, String(drawerPreferred))
+  } catch {}
+}
+
+drawerResizer.addEventListener('pointerdown', (e) => {
+  if (e.button !== 0) return
+  const startX = e.clientX
+  const startWidth = clampDrawer(drawerPreferred)
+  drawerResizer.setPointerCapture(e.pointerId)
+  document.body.classList.add('ez-resizing')
+  const move = (ev: PointerEvent) => resizeDrawer(startWidth + ev.clientX - startX)
+  drawerResizer.addEventListener('pointermove', move)
+  drawerResizer.addEventListener(
+    'lostpointercapture',
+    () => {
+      drawerResizer.removeEventListener('pointermove', move)
+      document.body.classList.remove('ez-resizing')
+      persistDrawerWidth()
+    },
+    { once: true },
+  )
+})
+
+drawerResizer.addEventListener('dblclick', () => {
+  resizeDrawer(DRAWER_DEFAULT)
+  persistDrawerWidth()
+})
+
+drawerResizer.addEventListener('keydown', (e) => {
+  const step = e.shiftKey ? 48 : 16
+  const width = clampDrawer(drawerPreferred)
+  if (e.key === 'ArrowRight') resizeDrawer(width + step)
+  else if (e.key === 'ArrowLeft') resizeDrawer(width - step)
+  else return
+  persistDrawerWidth()
+  e.preventDefault()
+})
+
 // The resizer sits beside the sidebar rather than in it: it is one of the ways a
 // folded-away sidebar comes back, so it cannot go inert with the rest.
-root.append(stageWrap, resizer, sidebarSlot, activityBar, statusPill)
+root.append(drawerSlot, drawerResizer, stageWrap, resizer, sidebarSlot, activityBar, statusPill)
 
 // ---------------------------------------------------------------- panning
 
@@ -3247,8 +3373,11 @@ function beginCardDrag(e: PointerEvent, frame: Frame): void {
 const WIDTH_KEY = 'ezdesign:sidebar-width'
 const COLLAPSED_KEY = 'ezdesign:sidebar-collapsed'
 
-const maxSidebar = () => maxSidebarWidth(innerWidth)
-const clampSidebar = (w: number) => clampSidebarWidth(w, innerWidth)
+/** The drawer's floor is kept clear of the sidebar, so the two share what is
+ *  left by the stage and the drawer gives way first. */
+const sidebarRoom = () => innerWidth - (drawerOpen ? DRAWER_MIN : 0)
+const maxSidebar = () => maxSidebarWidth(sidebarRoom())
+const clampSidebar = (w: number) => clampSidebarWidth(w, sidebarRoom())
 
 /** What the user asked for, which is not always what fits: a narrow window
  *  clamps the applied width without spending the preference, so widening the
@@ -3273,6 +3402,7 @@ function paintSidebarWidth(): void {
   reviewPanelBtn.title = `${label}（${MOD_LABEL} \\）`
   resizer.setAttribute('aria-valuenow', String(sidebarCollapsed ? 0 : width))
   resizer.setAttribute('aria-valuemax', String(maxSidebar()))
+  paintDrawer()
   // The stage is what is left over, so its share - and the scale a device has to
   // be shown at to fit in it - moves with every one of these.
   paintFrames()
@@ -3329,10 +3459,13 @@ function focusNote(): void {
 }
 
 paintSidebarWidth()
+if (drawerOpen) setDrawerOpen(true)
 if (libraryInUrl()) showLibrary(true)
 document.addEventListener('visibilitychange', () => {
   // Saves happen in other tabs; coming back is when they are worth showing.
-  if (libraryShown && document.visibilityState === 'visible') library?.refresh()
+  if (document.visibilityState !== 'visible') return
+  if (libraryShown) library?.refresh()
+  if (drawerOpen) drawer?.refresh()
 })
 addEventListener('resize', () => {
   paintSidebarWidth()
