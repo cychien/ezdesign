@@ -525,8 +525,8 @@
   display: none;
 }
 
-/* Shift is adding to it. Transparent rather than hidden, so the composer keeps
-   focus and a key typed with Shift still lands in it. */
+/* Shift is reaching past it for an element. Transparent rather than hidden, so
+   the composer keeps focus and a key typed with Shift still lands in it. */
 .ez-popup[data-ez-aside] {
   opacity: 0;
   pointer-events: none;
