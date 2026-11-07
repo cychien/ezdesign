@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import type { CanvasId, FrameId } from '../src/canvas/types.js'
-import { boxBetween, edgePan, fitAll, intersects, sanitizeCamera, screenToWorld, zoomedAround } from '../src/client/canvas/camera.js'
+import { boxBetween, edgePan, fitAll, intersects, revealed, sanitizeCamera, screenToWorld, zoomedAround } from '../src/client/canvas/camera.js'
 import { MAX_CONCURRENT_LOADS, planMounts } from '../src/client/canvas/mounting.js'
 import { tabsModel } from '../src/client/canvas/tabs.js'
 
@@ -28,6 +28,18 @@ test('fit-all centres every frame with its margin and never zooms past 1', () =>
     zoom: 1,
   })
   assert.deepEqual(fitAll([], { width: 100, height: 100 }), { x: 0, y: 0, zoom: 1 })
+})
+
+test('bringing frames into sight moves the camera as little as it can', () => {
+  const stage = { width: 1000, height: 800 }
+  const camera = { x: 0, y: 0, zoom: 0.5 }
+  const inView = [{ x: 200, y: 200, width: 400, height: 300 }]
+  assert.equal(revealed(camera, inView, stage), camera, 'already in sight: the same camera, not a copy of it')
+  const past = [{ x: 3000, y: 0, width: 400, height: 300 }]
+  assert.deepEqual(revealed(camera, past, stage), { x: 3200 - 1000, y: 150 - 800, zoom: 0.5 }, 'panned to centre it, the zoom kept')
+  const huge = [{ x: 3000, y: 0, width: 4000, height: 300 }]
+  assert.deepEqual(revealed(camera, huge, stage), fitAll(huge, stage), 'too big to fit at this zoom: fitted')
+  assert.equal(revealed(camera, [], stage), camera)
 })
 
 test('a stored camera out of range falls back rather than blanking the board', () => {

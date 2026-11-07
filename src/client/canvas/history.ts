@@ -3,11 +3,11 @@
  *  Pure, like `pick.ts` and `nav.ts`, so undo across an agent's concurrent
  *  change is testable without a DOM.
  *
- *  - A gesture (drag, duplicate, delete, a nudge run) is one `EditStep`.
+ *  - A gesture (drag, duplicate, paste, delete, a nudge run) is one `EditStep`.
  *    Its undo and redo are layout ops known when the step is made: removes are
  *    soft on the daemon, so undoing a delete is a `restore` that needs no HTML,
- *    and a duplicate's copy has a client-minted id, so undoing it is a `remove`
- *    of that id and redoing it a `restore`.
+ *    and a copy has a client-minted id, so undoing it is a `remove` of that id
+ *    and redoing it a `restore`.
  *  - Ops are absolute, so the board applies a step at once, sends it, and
  *    re-applies what is still in flight over every canvas the daemon pushes
  *    (`withPending`); its own echo moves nothing.
@@ -15,14 +15,15 @@
  *    board, and an undo naming a frame the agent removed is skipped by the
  *    daemon, so the history never needs rewriting. Camera moves are not edits. */
 
-import { GAP, placeBeside } from '../../canvas/place.js'
-import type { AssetName, FrameId, Point, Rect, Size } from '../../canvas/types.js'
-import type { CanvasWire, DuplicateWire, FrameWire, ImageFrameWire, LayoutOp } from '../../canvas/wire.js'
+import { GAP, boundsOf, placeBeside, placeFree } from '../../canvas/place.js'
+import type { AssetName, CanvasId, FrameId, Point, Rect, Size } from '../../canvas/types.js'
+import type { CanvasWire, FrameWire, ImageFrameWire, LayoutOp, PasteWire } from '../../canvas/wire.js'
 
 /** What one request asks the daemon for. */
 export type BoardEdit =
   | { t: 'ops'; ops: LayoutOp[] }
-  | { t: 'duplicate'; input: DuplicateWire }
+  /** `shown` is the copies as the board draws them until the daemon has them. */
+  | { t: 'paste'; input: PasteWire; shown: FrameWire[] }
   | { t: 'image'; input: ImageFrameWire }
 
 export interface EditStep {
@@ -74,26 +75,50 @@ export function planResize(frame: FrameWire, to: Rect): EditStep {
   }
 }
 
-/** One duplicate per selected frame, each placed with `placeBeside` against the
- *  frames as they will be after the earlier copies, so copies do not stack. */
-export function planDuplicate(
-  frames: readonly FrameWire[],
-  ids: ReadonlySet<FrameId>,
+/** Copies of `sources`, frames of canvas `from`, onto a board showing `onto`, as
+ *  one step. `beside` puts each beside its source, placed with `placeBeside`
+ *  against the board and the copies before it, so the copies of a selection do
+ *  not stack - the duplicate, and a paste back into the canvas it came from. A
+ *  point puts the whole group there, centred, in the arrangement it had, or
+ *  along that row to the first spot clear of the frames already there. */
+export function planCopies(
+  sources: readonly FrameWire[],
+  from: CanvasId,
+  onto: readonly FrameWire[],
+  place: 'beside' | Point,
   mint: () => FrameId,
+  verb: '複製' | '貼上',
 ): EditStep & { copies: FrameId[] } {
-  const rects = frames.map((f) => f.rect)
-  const apply: BoardEdit[] = []
-  const copies: FrameId[] = []
-  for (const source of frames.filter((f) => ids.has(f.id))) {
-    const at = placeBeside(source.rect, rects)
-    rects.push({ ...at, width: source.rect.width, height: source.rect.height })
+  const rects = onto.map((f) => f.rect)
+  const box = boundsOf(sources.map((f) => f.rect))!
+  // The group moves as one box: centred on the point, then along its row past
+  // anything already there.
+  const corner =
+    place === 'beside'
+      ? null
+      : placeFree(
+          { x: Math.round(place.x - box.width / 2), y: Math.round(place.y - box.height / 2) },
+          box,
+          rects,
+        )
+  const frames: PasteWire['frames'] = []
+  const shown: FrameWire[] = []
+  for (const source of sources) {
+    let at: Point
+    if (corner) {
+      at = { x: corner.x + source.rect.x - box.x, y: corner.y + source.rect.y - box.y }
+    } else {
+      at = placeBeside(source.rect, rects)
+      rects.push({ ...at, width: source.rect.width, height: source.rect.height })
+    }
     const id = mint()
-    copies.push(id)
-    apply.push({ t: 'duplicate', input: { from: source.id, id, at } })
+    frames.push({ from: source.id, id, at })
+    shown.push({ ...source, id, rect: { ...source.rect, ...at } })
   }
+  const copies = frames.map((f) => f.id)
   return {
-    label: copies.length > 1 ? `複製 ${copies.length} 個 frame` : '複製 frame',
-    apply,
+    label: copies.length > 1 ? `${verb} ${copies.length} 個 frame` : `${verb} frame`,
+    apply: [{ t: 'paste', input: { from, frames }, shown }],
     undo: [{ t: 'remove', ids: copies }],
     redo: [{ t: 'restore', ids: copies }],
     copies,
@@ -142,10 +167,8 @@ export function planRemove(ids: ReadonlySet<FrameId>): EditStep {
 export function withPending(canvas: CanvasWire, pending: readonly BoardEdit[]): FrameWire[] {
   let frames = [...canvas.frames]
   for (const edit of pending) {
-    if (edit.t === 'duplicate') {
-      const source = frames.find((f) => f.id === edit.input.from)
-      if (!source || frames.some((f) => f.id === edit.input.id)) continue
-      frames.push({ ...source, id: edit.input.id, rect: { ...source.rect, ...edit.input.at } })
+    if (edit.t === 'paste') {
+      for (const copy of edit.shown) if (!frames.some((f) => f.id === copy.id)) frames.push(copy)
       continue
     }
     // No document to show until the daemon has written one.

@@ -10,7 +10,7 @@
  *      POST   /canvases/:canvasId/reopen          -> CanvasWire
  *      DELETE /canvases/:canvasId                 -> {ok: true}        (archived only, else 409)
  *      POST   /canvases/:canvasId/ops  LayoutStepWire -> CanvasWire
- *      POST   /canvases/:canvasId/frames DuplicateWire -> CanvasWire
+ *      POST   /canvases/:canvasId/paste PasteWire -> CanvasWire
  *      POST   /canvases/:canvasId/assets  <image bytes> -> AssetWire
  *      POST   /canvases/:canvasId/image-frames ImageFrameWire -> CanvasWire
  *      PUT    /view                ViewWire       -> {ok: true}
@@ -30,6 +30,7 @@ import { FRAME_ROUTE, isFrameHost } from './frame-document.js'
 import {
   type CanvasProblem,
   type FrameId,
+  MAX_FRAMES_PER_CANVAS,
   MAX_IMAGE_BYTES,
   type Outcome,
   type Point,
@@ -41,7 +42,7 @@ import {
   asFrameId,
   asTabId,
 } from './types.js'
-import type { AssetWire, DuplicateWire, ImageFrameWire, LayoutOp, LayoutStepWire, OpId, ViewWire } from './wire.js'
+import type { AssetWire, ImageFrameWire, LayoutOp, LayoutStepWire, OpId, PasteWire, ViewWire } from './wire.js'
 import type { CanvasReader, UserCanvasPort } from './workspace.js'
 
 export interface CanvasRouteHost {
@@ -184,14 +185,21 @@ export function parseLayoutStep(raw: unknown): LayoutStepWire | null {
   return { opId: opId as OpId, ops: parsed }
 }
 
-export function parseDuplicate(raw: unknown): DuplicateWire | null {
+export function parsePaste(raw: unknown): PasteWire | null {
   if (typeof raw !== 'object' || raw === null) return null
-  const { from, id, at: rawAt } = raw as Record<string, unknown>
-  const source = asFrameId(from)
-  const copy = asFrameId(id)
-  const at = rawAt === undefined ? undefined : point(rawAt)
-  if (!source || !copy || at === null) return null
-  return { from: source, id: copy, ...(at ? { at } : {}) }
+  const { from: rawFrom, frames: rawFrames } = raw as Record<string, unknown>
+  const from = asCanvasId(rawFrom)
+  if (!from || !Array.isArray(rawFrames) || !rawFrames.length || rawFrames.length > MAX_FRAMES_PER_CANVAS) return null
+  const frames: PasteWire['frames'] = []
+  for (const entry of rawFrames as unknown[]) {
+    const { from: source, id: copy, at: rawAt } = (entry ?? {}) as Record<string, unknown>
+    const fromId = asFrameId(source)
+    const id = asFrameId(copy)
+    const at = point(rawAt)
+    if (!fromId || !id || !at) return null
+    frames.push({ from: fromId, id, at })
+  }
+  return new Set(frames.map((f) => f.id)).size === frames.length ? { from, frames } : null
 }
 
 function rect(raw: unknown): Rect | null {
@@ -259,10 +267,10 @@ export function canvasApiRouter(host: CanvasRouteHost): Router {
     if (!step) return res.status(400).json({ error: 'not a layout step' })
     answer(res, user.applyLayoutOps(req.params.canvasId, step), (wire) => wire)
   })
-  api.post('/canvases/:canvasId/frames', (req, res) => {
-    const input = parseDuplicate(req.body)
-    if (!input) return res.status(400).json({ error: 'not a duplicate' })
-    answer(res, user.duplicate(req.params.canvasId, input), (wire) => wire)
+  api.post('/canvases/:canvasId/paste', (req, res) => {
+    const input = parsePaste(req.body)
+    if (!input) return res.status(400).json({ error: 'not a paste' })
+    answer(res, user.paste(req.params.canvasId, input), (wire) => wire)
   })
   api.post('/canvases/:canvasId/assets', (req, res) => {
     const mime = (req.get('content-type') ?? '').split(';')[0]!.trim().toLowerCase()

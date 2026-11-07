@@ -48,6 +48,25 @@ export function fitAll(rects: readonly Rect[], stage: Size, padding = 48): Camer
   }
 }
 
+/** The camera moved as little as it can for `rects` to be in sight, `padding`
+ *  clear of the edges: unchanged if they already are, panned at the same zoom to
+ *  centre them if they fit, fitted if they do not. */
+export function revealed(camera: Camera, rects: readonly Rect[], stage: Size, padding = 48): Camera {
+  if (rects.length === 0) return camera
+  const left = Math.min(...rects.map((r) => r.x))
+  const top = Math.min(...rects.map((r) => r.y))
+  const right = Math.max(...rects.map((r) => r.x + r.width))
+  const bottom = Math.max(...rects.map((r) => r.y + r.height))
+  const view = viewportRect(camera, stage, -padding)
+  if (left >= view.x && top >= view.y && right <= view.x + view.width && bottom <= view.y + view.height) return camera
+  if (right - left > view.width || bottom - top > view.height) return fitAll(rects, stage, padding)
+  return {
+    x: (left + right) / 2 - stage.width / 2 / camera.zoom,
+    y: (top + bottom) / 2 - stage.height / 2 / camera.zoom,
+    zoom: camera.zoom,
+  }
+}
+
 /** A camera read back from `view.json`: anything not finite or out of range
  *  becomes `fallback` rather than a blank board. */
 export function sanitizeCamera(raw: unknown, fallback: Camera): Camera {

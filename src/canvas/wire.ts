@@ -86,15 +86,14 @@ export interface LayoutStepWire {
   ops: LayoutOp[]
 }
 
-/** `POST /canvases/:id/frames`: the user's duplicate. The client mints the copy's
- *  id, so a retried request creates nothing twice. The user's path never carries
- *  HTML: the copy's bytes are read from the source frame's file. */
-export interface DuplicateWire {
-  from: FrameId
-  id: FrameId
-  /** Where the copy goes; absent means beside the source. It keeps the
-   *  source's size. */
-  at?: Point
+/** `POST /canvases/:id/paste`: frames copied by reference, from this canvas -
+ *  the user's duplicate - or from another of the project's. The client mints
+ *  each copy's id, so a retried request creates nothing twice, and says where it
+ *  goes; a copy keeps its source's size. The user's path never carries HTML: the
+ *  daemon clones the source files, and the images they show. */
+export interface PasteWire {
+  from: CanvasId
+  frames: { from: FrameId; id: FrameId; at: Point }[]
 }
 
 /** `POST /canvases/:id/assets`, answered for an image sent as the raw body. */

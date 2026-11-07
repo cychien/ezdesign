@@ -120,6 +120,12 @@ export function autoPlace(existing: readonly Rect[], turn: readonly Rect[], size
   return next ?? { x: bounds.x, y: bounds.y + bounds.height + ROW_GAP }
 }
 
+/** A paste onto another canvas: where it was aimed if that is clear, else the
+ *  first free spot right of it on that row - never over a frame already there. */
+export function placeFree(at: Point, size: Size, existing: readonly Rect[]): Point {
+  return freeAlongRow(at, size, existing, Infinity)!
+}
+
 /** The user's duplicate: on its source's row, at the first free spot right of it. */
 export function placeBeside(source: Rect, existing: readonly Rect[]): Point {
   return freeAlongRow({ x: source.x + source.width + GAP, y: source.y }, source, existing, Infinity)!
