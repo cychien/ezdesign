@@ -3,7 +3,8 @@ import { join } from 'node:path'
 import { app, shell } from 'electron'
 import electronUpdater, { type UpdateInfo } from 'electron-updater'
 import type { DesktopUpdateOffer } from '../../src/desktop-wire.js'
-import { bundleOf, checkBundle, downloadVerified, replaceable, swapAfterExit, unpackApp, zipFor } from './self-update.js'
+import { MAC_APP_ID, RELEASES_URL, checkBundle, downloadVerified, unpackApp, updateFeed, zipFor } from '../../src/mac-app-bundle.js'
+import { bundleOf, replaceable, swapAfterExit } from './self-update.js'
 
 const { autoUpdater } = electronUpdater
 
@@ -11,12 +12,7 @@ declare const __SIGNED_RELEASE__: boolean
 
 export const FIRST_CHECK_DELAY_MS = 10_000
 export const CHECK_EVERY_MS = 4 * 60 * 60_000
-export const RELEASES_URL = 'https://github.com/cychien/ezdesign/releases/latest'
-const APP_ID = 'dev.ezdesign.app'
-
-/** Every asset of the newest release, by name. `EZDESIGN_UPDATE_FEED` points a
- *  build at another feed, so the whole update can be run against a local one. */
-const FEED = process.env.EZDESIGN_UPDATE_FEED ?? `${RELEASES_URL}/download`
+const FEED = updateFeed()
 
 export interface AutoUpdate {
   checkNow(): void
@@ -73,7 +69,7 @@ async function prepare(info: UpdateInfo): Promise<() => void> {
   const zip = join(dir, 'update.zip')
   await downloadVerified(`${FEED}/${file.url}`, file.sha512, zip)
   const next = await unpackApp(zip, join(dir, 'app'))
-  await checkBundle(next, { id: APP_ID, version: info.version })
+  await checkBundle(next, { id: MAC_APP_ID, version: info.version })
   return () => {
     const env = Object.fromEntries(Object.entries(process.env).filter((e): e is [string, string] => e[0].startsWith('EZDESIGN_') && !!e[1]))
     swapAfterExit({ pid: process.pid, current, next, env })

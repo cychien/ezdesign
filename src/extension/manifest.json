@@ -29,6 +29,12 @@
       "32": "icon-32.png"
     }
   },
+  "externally_connectable": {
+    "matches": [
+      "http://127.0.0.1/*",
+      "http://localhost/*"
+    ]
+  },
   "optional_permissions": [
     "webRequest"
   ],

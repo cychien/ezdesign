@@ -34,6 +34,9 @@ declare namespace chrome {
     const onMessage: events.Event<
       (message: unknown, sender: MessageSender, sendResponse: (response?: unknown) => void) => boolean | undefined
     >
+    const onMessageExternal: events.Event<
+      (message: unknown, sender: MessageSender, sendResponse: (response?: unknown) => void) => boolean | undefined
+    >
     const onInstalled: events.Event<(details: { reason: 'install' | 'update' | 'chrome_update' | 'shared_module_update'; previousVersion?: string }) => void>
     const onStartup: events.Event<() => void>
   }

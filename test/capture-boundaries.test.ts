@@ -25,6 +25,11 @@ test('node:sqlite is loaded lazily, by the store alone', () => {
   assert.ok(sqlite.some((i) => i.dynamic), 'the store loads node:sqlite')
 })
 
+test('the extension id imports nothing, so the shell, the extension and the wire can all bundle it', () => {
+  const own = imports.filter((i) => rel(i.from) === 'src/extension-id.ts')
+  assert.deepEqual(own, [], show(own))
+})
+
 test("the library's policy file imports nothing, so the extension can bundle it", () => {
   const own = imports.filter((i) => rel(i.from) === 'src/library/policy.ts')
   assert.deepEqual(own, [], show(own))
@@ -50,8 +55,10 @@ test('the published vite entry cannot reach the library', () => {
   assert.deepEqual(reached, [])
 })
 
-test('the wire imports only zod, and the wire and the library never see each other', () => {
-  const wire = imports.filter((i) => rel(i.from) === 'src/capture-wire.ts' && i.spec !== 'zod')
+test('the wire imports only zod and the extension id, and the wire and the library never see each other', () => {
+  const wire = imports.filter(
+    (i) => rel(i.from) === 'src/capture-wire.ts' && i.spec !== 'zod' && rel(i.target) !== 'src/extension-id.ts',
+  )
   assert.deepEqual(wire, [], show(wire))
   const leak = imports.filter(
     (i) =>
@@ -64,6 +71,7 @@ test('the wire imports only zod, and the wire and the library never see each oth
 test('the extension bundles only browser-safe sources', () => {
   const allowed = new Set([
     'src/capture-wire.ts',
+    'src/extension-id.ts',
     'src/library/policy.ts',
     'src/client/region.ts',
     'src/client/thumbnail.ts',

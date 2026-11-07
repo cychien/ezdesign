@@ -64,11 +64,16 @@ Then type `/ezdesign` in Claude Code, Codex or Gemini CLI, and the agent opens t
 
 ### Or use the Mac app
 
-Download it from [Releases](https://github.com/cychien/ezdesign/releases/latest): `ezdesign-arm64.dmg`
+From a review in the browser, open the install menu at the foot of the right-hand bar (the download
+icon) and press **安裝** beside Mac app. ezdesign downloads the build for your Mac, verifies it,
+puts it in Applications and opens it. Installed this way, macOS opens it without asking.
+
+Or download it yourself from [Releases](https://github.com/cychien/ezdesign/releases/latest): `ezdesign-arm64.dmg`
 for Apple silicon, `ezdesign-x64.dmg` for Intel. Pick a project in its sidebar and start its dev
 server from the App tab; the agent connects on its own.
 
-The app is not signed with an Apple Developer ID, so macOS stops it the first time:
+The app is not signed with an Apple Developer ID, so macOS stops a copy downloaded by hand the
+first time:
 
 1. Open the DMG and drag **ezdesign** into **Applications**, then open it. macOS says it cannot
    verify the developer; choose **Done**.
@@ -194,6 +199,9 @@ call. Frames are served from a separate origin, so agent-written pages cannot re
 
 The Chrome extension saves references into one library under `~/.ezdesign/library/`, shared by
 every project. Saving works anytime, with or without a review open.
+
+Set it up from the install menu at the foot of a review's right-hand bar, which walks you through
+it, or from a terminal:
 
 ```sh
 npx -y @cychien/ezdesign@latest extension install

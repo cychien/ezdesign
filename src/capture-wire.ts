@@ -1,8 +1,9 @@
 import { z } from 'zod'
+import { EXTENSION_ID } from './extension-id.js'
+
+export { EXTENSION_ID }
 
 export const HOST_NAME = 'com.cychien.ezdesign'
-
-export const EXTENSION_ID = 'bgcgoejgebannhlbgfinbghahicahapb'
 
 export const ALLOWED_ORIGINS: readonly string[] = [`chrome-extension://${EXTENSION_ID}/`]
 

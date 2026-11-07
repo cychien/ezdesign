@@ -3,6 +3,7 @@
 
 import type { CaptureId, HostState, PageCommand, PageReplies, WorkerRequest } from '../shared/messages.js'
 import { DIALOG_PORT_PREFIX } from '../shared/messages.js'
+import { EXTENSION_PING } from '../../extension-id.js'
 import type { TabRef } from '../shared/plan.js'
 import { type CaptureSeam, SEAM_GLOBAL, type SeamClickData, type SeamTab } from '../shared/seam.js'
 import { createCaptures } from './capture.js'
@@ -144,6 +145,12 @@ chrome.runtime.onConnect.addListener((port) => {
 })
 
 chrome.tabs.onRemoved.addListener((tabId) => captures.tabClosed(tabId))
+
+// The review shell asks, so it can say the moment the extension is removed.
+chrome.runtime.onMessageExternal.addListener((message, _sender, sendResponse) => {
+  if ((message as { t?: unknown } | null)?.t === EXTENSION_PING) sendResponse({ version: extensionVersion() })
+  return undefined
+})
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   const request = message as WorkerRequest

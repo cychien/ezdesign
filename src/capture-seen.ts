@@ -12,16 +12,16 @@ export interface ExtensionSeen {
   at: number
 }
 
-const seenFile = (dataDir: string) => join(nativeHostDir(dataDir), 'extension-seen.json')
+export const extensionSeenFile = (dataDir: string): string => join(nativeHostDir(dataDir), 'extension-seen.json')
 
 export function recordExtensionSeen(dataDir: string, version: string): void {
-  mkdirSync(dirname(seenFile(dataDir)), { recursive: true })
-  writeAtomic(seenFile(dataDir), `${JSON.stringify({ version, at: Date.now() } satisfies ExtensionSeen)}\n`)
+  mkdirSync(dirname(extensionSeenFile(dataDir)), { recursive: true })
+  writeAtomic(extensionSeenFile(dataDir), `${JSON.stringify({ version, at: Date.now() } satisfies ExtensionSeen)}\n`)
 }
 
 export function readExtensionSeen(dataDir: string): ExtensionSeen | null {
   try {
-    const { version, at } = JSON.parse(readFileSync(seenFile(dataDir), 'utf8')) as Partial<ExtensionSeen>
+    const { version, at } = JSON.parse(readFileSync(extensionSeenFile(dataDir), 'utf8')) as Partial<ExtensionSeen>
     return typeof version === 'string' && typeof at === 'number' ? { version, at } : null
   } catch {
     return null

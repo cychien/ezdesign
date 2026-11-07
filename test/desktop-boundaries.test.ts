@@ -36,7 +36,13 @@ test('the wire modules a page bundles import nothing at runtime', () => {
 })
 
 test('the app takes from the npm package only its host module and the wire', () => {
-  const allowed = new Set(['src/desktop-host.ts', 'src/desktop-wire.ts', 'src/self-node.ts', 'src/projects/wire.ts'])
+  const allowed = new Set([
+    'src/desktop-host.ts',
+    'src/desktop-wire.ts',
+    'src/self-node.ts',
+    'src/projects/wire.ts',
+    'src/mac-app-bundle.ts',
+  ])
   const bad = imports.filter(
     (i) => inside(i.from, 'desktop/src') && i.spec.startsWith('.') && !inside(i.target, 'desktop/src') && !allowed.has(rel(i.target)),
   )
