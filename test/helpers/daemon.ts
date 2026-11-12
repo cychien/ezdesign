@@ -69,6 +69,8 @@ export class DaemonWorld {
   readonly dataDir = mkdtempSync(join(tmpdir(), 'ezdesign-daemon-'))
   readonly env: NodeJS.ProcessEnv
   readonly children = new Set<ChildProcess>()
+  /** Spawned with `--succeed`: a second daemon on purpose, not one deciding to adopt. */
+  private readonly successors = new Set<ChildProcess>()
   private held: Server[] = []
 
   /** A world on a control range of its own. */
@@ -100,7 +102,11 @@ export class DaemonWorld {
       stdio: options.log ? ['ignore', 'pipe', 'pipe'] : 'ignore',
     })
     this.children.add(child)
-    child.on('exit', () => this.children.delete(child))
+    if (extraArgs.includes('--succeed')) this.successors.add(child)
+    child.on('exit', () => {
+      this.children.delete(child)
+      this.successors.delete(child)
+    })
     return child
   }
 
@@ -226,6 +232,13 @@ export class DaemonWorld {
    *  and all - a stopping daemon answers 503 before it has exited. */
   async stopDaemon(port: number): Promise<void> {
     const pid = (await this.health(port))?.pid
+    // A daemon spawned while this one runs is still deciding to adopt it and
+    // exit. Stopped before it decides, it finds no daemon and becomes one
+    // behind the test's back, restoring the same sessions on the same ports.
+    if (pid !== undefined) {
+      const deciding = () => [...this.children].filter((c) => c.pid !== pid && !this.successors.has(c))
+      await waitFor(async () => deciding().length === 0, 'spawned daemons to adopt this one')
+    }
     await fetch(`http://127.0.0.1:${port}/control/stop`, { method: 'POST' }).catch(() => {})
     await waitFor(async () => {
       if (pid === undefined) return !(await this.health(port))
