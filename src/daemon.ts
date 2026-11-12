@@ -61,6 +61,7 @@ import {
   parseBatchTarget,
   parseBatchView,
   parseReferences,
+  partsValid,
   sanitizeAnchor,
   sanitizeCapture,
   wholeFramesValid,
@@ -374,6 +375,8 @@ function acpPrompt(
       : []),
     'Each item resolves to source: trust `anchor.source` (file:line) when present, else',
     'use `anchor.components` / `anchor.section` / `anchor.selector` / `anchor.text`.',
+    'An anchor with `parts` is one group spread over several frames or device previews: each part',
+    'resolves on its own, the same way.',
     '`[file n]` in a comment is `attachments[n-1]` (read the file at `path`, or, for a video,',
     'what its `video.read` says); one with an `origin` is a reference from their library:',
     '`origin.pageUrl` is where it was captured, `origin.note` what they wrote about it, and',
@@ -1219,6 +1222,24 @@ class SessionRuntime implements ProjectRuntime {
   /** A `#` from `/send` with the name the user picked it by, or null when it
    *  names a place this review does not have: no app attached, no such canvas,
    *  or no canvas tools for the agent to reach any canvas with. */
+  /** The `$` skills and the `#` place a composer named, as a request body
+   *  carries them. Every skill is checked against what is actually on disk: a
+   *  name becomes a command in a prompt, and a name nobody vetted is a line of
+   *  the user's text handed to the agent as an instruction. */
+  private parseDirectives(body: unknown): { skills: string[]; target: BatchTarget | undefined } | { error: string } {
+    const raw = (typeof body === 'object' && body !== null ? body : {}) as Record<string, unknown>
+    const skills = Array.isArray(raw.skills) ? raw.skills.filter((v): v is string => typeof v === 'string') : []
+    if (skills.length) {
+      const known = new Set(listSkills(this.project).map((s) => s.name))
+      if (skills.some((name) => !known.has(name))) return { error: 'unknown skill' }
+    }
+    const asked = parseBatchTarget(raw.target)
+    if (asked === null) return { error: 'target must be a place' }
+    const target = asked && this.resolveTarget(asked)
+    if (target === null) return { error: '找不到指定的位置' }
+    return { skills, target }
+  }
+
   private resolveTarget(request: TargetRequest): BatchTarget | null {
     if (request.kind === 'app') return this.app.kind === 'attached' ? { kind: 'app', label: 'App' } : null
     if (!this.agentHasCanvasTools) return null
@@ -2193,6 +2214,12 @@ class SessionRuntime implements ProjectRuntime {
       if (frames !== undefined && !wholeFramesValid(frames, frame, (ref) => this.canvases.read.hasFrame(ref))) {
         return res.status(400).json({ error: 'frames must be live frames on the canvas of anchor.frame' })
       }
+      const { parts } = anchor as Anchor
+      if (parts !== undefined && !partsValid(parts, frame, (ref) => this.canvases.read.hasFrame(ref))) {
+        return res.status(400).json({ error: 'parts must name live frames on the canvas of anchor.frame' })
+      }
+      const directives = this.parseDirectives(req.body)
+      if ('error' in directives) return res.status(400).json({ error: directives.error })
       const annotation: Annotation = {
         id: newId(),
         kind,
@@ -2201,6 +2228,8 @@ class SessionRuntime implements ProjectRuntime {
         createdAt: Date.now(),
         ...(files.length ? { attachments: files } : {}),
         ...(refs.length ? { references: refs } : {}),
+        ...(directives.skills.length ? { skills: directives.skills } : {}),
+        ...(directives.target ? { target: directives.target } : {}),
       }
       this.store.addAnnotation(annotation)
       this.broadcast()
@@ -2265,6 +2294,14 @@ class SessionRuntime implements ProjectRuntime {
         if (!refs) return res.status(400).json({ error: 'references must be an array of anchors' })
         patch.references = refs
       }
+      // Both or neither: the box is saved whole, and a box with no `#` left in it
+      // takes the place off.
+      if (req.body?.skills !== undefined || req.body?.target !== undefined) {
+        const directives = this.parseDirectives(req.body)
+        if ('error' in directives) return res.status(400).json({ error: directives.error })
+        patch.skills = directives.skills
+        patch.target = directives.target ?? null
+      }
       // The same rule the annotation was created under: a pasted screenshot or a
       // pointed-at element can be the whole remark, but an annotation that carries
       // nothing at all is one the user meant to delete.
@@ -2298,23 +2335,11 @@ class SessionRuntime implements ProjectRuntime {
       if (this.store.holdsPendingVideo(files)) return res.status(409).json({ error: '影片還在處理，處理完才能交給 agent' })
       const refs = parseReferences(req.body?.references)
       if (!refs) return res.status(400).json({ error: 'references must be an array of anchors' })
-      const skills = Array.isArray(req.body?.skills)
-        ? (req.body.skills as unknown[]).filter((v): v is string => typeof v === 'string')
-        : []
-      // Every one checked against what is actually on disk: a name becomes a
-      // command in a prompt, and a name nobody vetted is a line of the user's
-      // text being handed to the agent as an instruction. Checked as a set, so a
-      // batch naming the same skill twice costs one read rather than two.
-      const known = new Set(listSkills(this.project).map((s) => s.name))
-      if (skills.some((name) => !known.has(name))) {
-        return res.status(400).json({ error: 'unknown skill' })
-      }
+      const directives = this.parseDirectives(req.body)
+      if ('error' in directives) return res.status(400).json({ error: directives.error })
+      const { skills, target } = directives
       const view = parseBatchView(req.body?.view)
       if (view === null) return res.status(400).json({ error: 'view must be a tab' })
-      const asked = parseBatchTarget(req.body?.target)
-      if (asked === null) return res.status(400).json({ error: 'target must be a place' })
-      const target = asked && this.resolveTarget(asked)
-      if (target === null) return res.status(400).json({ error: '找不到指定的位置' })
       const batch = this.store.sendBatch(req.body?.note ?? null, files, refs, skills, view, target)
       if (!batch) return res.status(400).json({ error: 'nothing to send' })
       this.store.appendConversation({

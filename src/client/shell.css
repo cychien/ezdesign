@@ -5070,6 +5070,13 @@ html.ez-on-board body {
   background: color-mix(in oklab, var(--mark) 9%, transparent);
 }
 
+/* A pick's box, in the pink the overlay draws a pick's box in: it lands in a
+   ref chip, not in an annotation of its own. */
+.ez-board-marquee.ez-sweeping.ez-sweep-pick {
+  border-color: var(--ref-accent);
+  background: color-mix(in oklab, var(--ref-accent) 9%, transparent);
+}
+
 /* Frame names, in screen pixels over the world: placed by `paintHeads`. */
 .ez-board-heads {
   position: absolute;
@@ -5125,8 +5132,15 @@ html.ez-on-board body {
   color: var(--mark);
 }
 
+/* After the mark's rule, so a frame that is both the open comment's subject
+   and the pick's answer shows the pick it is being chosen for. */
 .ez-board-frame.ez-annotate-target {
   outline-color: var(--mark);
+}
+
+.ez-board-frame.ez-pick-chosen {
+  outline: calc(2px / var(--ez-zoom, 1)) solid var(--ref-accent);
+  outline-offset: calc(-1px / var(--ez-zoom, 1));
 }
 
 .ez-guides {

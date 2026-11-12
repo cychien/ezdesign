@@ -41,6 +41,7 @@ import type {
   VideoFrames,
 } from './protocol.js'
 import type { VideoSettle, VideoStatusWire } from './attachment-wire.js'
+import { foldItemDirectives } from './item-directives.js'
 
 /** Whether two anchors point at the same place on the page, for the one
  *  question that needs to know: can these two explore rounds both have their
@@ -575,7 +576,10 @@ export class SessionStore implements ViewStore {
    *  `removeAnnotation` drops them because the annotation itself is gone. */
   updateAnnotation(
     id: string,
-    patch: Partial<Pick<Annotation, 'comment' | 'attachments' | 'references'>>,
+    patch: Partial<Pick<Annotation, 'comment' | 'attachments' | 'references' | 'skills'>> & {
+      /** Null takes the place off; absent leaves it. */
+      target?: BatchTarget | null
+    },
   ): boolean {
     const list = this.annotations
     const target = list.find((a) => a.id === id)
@@ -592,6 +596,14 @@ export class SessionStore implements ViewStore {
     if (patch.references !== undefined) {
       if (patch.references.length) target.references = patch.references
       else delete target.references
+    }
+    if (patch.skills !== undefined) {
+      if (patch.skills.length) target.skills = patch.skills
+      else delete target.skills
+    }
+    if (patch.target !== undefined) {
+      if (patch.target) target.target = patch.target
+      else delete target.target
     }
     this.writeJson('queue.json', list)
     return true
@@ -622,7 +634,8 @@ export class SessionStore implements ViewStore {
     target?: BatchTarget,
   ): FeedbackBatch | null {
     if (this.holdsPendingVideo(attachments)) throw new Error('a video still being digested cannot be sent')
-    const items = this.annotations
+    const folded = foldItemDirectives(skills, target, this.annotations)
+    const items = folded.items
     // A skill on its own is a batch: "run this over what you can see" is a
     // request, even with nothing annotated and nothing typed.
     if (
@@ -640,8 +653,8 @@ export class SessionStore implements ViewStore {
       note: note?.trim() || null,
       ...(attachments.length ? { attachments } : {}),
       ...(references.length ? { references } : {}),
-      ...(skills.length ? { skills } : {}),
-      ...(target ? { target } : {}),
+      ...(folded.skills.length ? { skills: folded.skills } : {}),
+      ...(folded.target ? { target: folded.target } : {}),
       ...(view ? { view } : {}),
       sentAt: Date.now(),
     }

@@ -84,11 +84,38 @@ function point(v: unknown): { x: number; y: number } | null {
  *  survives only on the sender's canvas and with the sender among them, so a
  *  frame can speak about its siblings only alongside itself. */
 export function attributeAnchor(anchor: AnchorWire, sender: Sender): AnchorWire {
-  const { frame: _claimed, frames: claimedFrames, ...rest } = anchor
+  const { frame: _claimed, frames: claimedFrames, parts: claimedParts, ...rest } = anchor
   const place = sender.place
-  if (!place) return rest
+  const parts = ownParts(claimedParts, sender)
+  if (!place) return { ...rest, ...(parts ? { parts } : {}) }
   const frames = wholeFrames(claimedFrames, place)
-  return { ...rest, frame: place, ...(frames ? { frames } : {}) }
+  return { ...rest, frame: place, ...(frames ? { frames } : {}), ...(parts ? { parts } : {}) }
+}
+
+/** `parts` survive the way `frames` do: every part on the sender's own canvas,
+ *  the sender's own frame among them, and a whole-frame part about exactly the
+ *  frame it names. An App guest's parts name no frame at all. One level only. */
+function ownParts(claimed: unknown, sender: Sender): AnchorWire[] | null {
+  if (!Array.isArray(claimed) || claimed.length < 2) return null
+  const place = sender.place
+  const parts: AnchorWire[] = []
+  for (const raw of claimed) {
+    const part = obj(raw) as (AnchorWire & Raw) | null
+    if (!part || 'parts' in part) return null
+    const { frame, frames, ...rest } = part
+    if (!place) {
+      parts.push(rest)
+      continue
+    }
+    const ref = obj(frame)
+    if (ref?.canvasId !== place.canvasId || typeof ref.frameId !== 'string') return null
+    const own = { canvasId: place.canvasId, frameId: ref.frameId }
+    const whole = frames === undefined ? null : wholeFrames(frames, own)
+    if (frames !== undefined && whole?.length !== 1) return null
+    parts.push({ ...rest, frame: own, ...(whole ? { frames: whole } : {}) })
+  }
+  if (place && !parts.some((p) => p.frame?.frameId === place.frameId)) return null
+  return parts
 }
 
 function wholeFrames(
@@ -135,9 +162,23 @@ export const GUEST_PROTOCOL = {
   /** `{reqId, files}` or `{reqId, error}` settling an `ez:library-pick`;
    *  `files` is empty when the user called it off. */
   'ez:library-picked': down(BOTH),
-  /** `{anchor, at}`: open a popup about whole frames, this one among them, at
-   *  `at` in this frame's viewport (null: its top-left). */
-  'ez:compose-frames': down(CANVAS),
+  /** `{anchor, at}`: open a popup about a selection that spans documents -
+   *  whole frames, or members Shift added in several - or point the open one at
+   *  it. `at` is in this frame's viewport (null: by this frame's own members,
+   *  else its top-left). */
+  'ez:compose-group': down(BOTH),
+  /** `{purpose, multi}`: whether this guest's share is part of a selection
+   *  spanning other documents. While it is, Shift coming up is the shell's to
+   *  settle, not this guest's. */
+  'ez:selection': down(BOTH),
+  /** `{purpose}`: the selection is spent or refused; drop this guest's share. */
+  'ez:selection-end': down(BOTH),
+  /** `{acp, places}`: what a composer's `$` and `#` may offer. */
+  'ez:composer': down(BOTH),
+  /** `{reqId, skills}` settling an `ez:skills-request`. */
+  'ez:skills': down(BOTH),
+  /** The pointer is over another document now: its hover frame goes. */
+  'ez:pointer-away': down(BOTH),
   /** The pointer left the frame mid-drag: the board has the box now. */
   'ez:sweep-taken': down(CANVAS),
   /** `{from, to}` in this frame's viewport: a box carried onto the board that
@@ -162,11 +203,24 @@ export const GUEST_PROTOCOL = {
     const m = mode(r.mode)
     return m === null ? null : { mode: m }
   }),
-  /** `frames`: the popup is about these whole frames of the sender's canvas,
-   *  for the board to outline. */
-  'ez:popup': up(BOTH, (r, sender) => {
-    const frames = sender.place ? wholeFrames(r.frames, sender.place) : null
-    return { open: r.open === true, ...(frames ? { frames: frames.map((f) => f.frameId) } : {}) }
+  'ez:popup': up(BOTH, (r) => ({ open: r.open === true })),
+  /** This guest's share of a Shift selection, as one anchor (null: none left)
+   *  and one line per member. The anchor is attributed like every other. */
+  'ez:share': up(BOTH, (r, sender) => {
+    const purpose = r.purpose === 'pick' ? ('pick' as const) : r.purpose === 'compose' ? ('compose' as const) : null
+    const anchor = obj(r.anchor) as AnchorWire | null
+    if (purpose === null || (r.anchor !== null && !anchor)) return null
+    const lines = Array.isArray(r.lines) ? r.lines.filter((l): l is string => typeof l === 'string') : []
+    return { purpose, anchor: anchor ? attributeAnchor(anchor, sender) : null, lines }
+  }),
+  /** Shift came up in this guest's document. */
+  'ez:shift-released': up(BOTH, () => ({})),
+  /** The pointer came into this guest's document. */
+  'ez:pointer-here': up(BOTH, () => ({})),
+  /** A composer's `$`: which skills the agent can run. */
+  'ez:skills-request': up(BOTH, (r) => {
+    const reqId = str(r.reqId)
+    return reqId === null ? null : { reqId }
   }),
   'ez:pick-armed': up(BOTH, (r) => {
     const id = pickId(r)

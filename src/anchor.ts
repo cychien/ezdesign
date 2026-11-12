@@ -85,7 +85,7 @@ function viewport(v: unknown): Anchor['viewport'] {
  *  exactly as it arrived. Same trust level, same argument for bounding it - but
  *  changing what a queued annotation holds is a separate change from adding
  *  references, so it is left alone here rather than folded in quietly. */
-export function sanitizeAnchor(raw: unknown): Anchor | null {
+export function sanitizeAnchor(raw: unknown, depth = 0): Anchor | null {
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return null
   const v = raw as Record<string, unknown>
   const out: Anchor = {}
@@ -111,7 +111,41 @@ export function sanitizeAnchor(raw: unknown): Anchor | null {
   if (vp) out.viewport = vp
   const fr = frameRef(v.frame)
   if (fr) out.frame = fr
+  const whole = frameRefs(v.frames)
+  if (whole) out.frames = whole
+  // One level only: a part is one document's share, never a group of groups.
+  if (depth === 0 && Array.isArray(v.parts)) {
+    const parts = v.parts.slice(0, MAX_GROUP_MEMBERS).flatMap((p) => {
+      const part = sanitizeAnchor(p, 1)
+      return part ? [part] : []
+    })
+    if (parts.length) out.parts = parts
+  }
   return out
+}
+
+function frameRefs(v: unknown): FrameRef[] | undefined {
+  if (!Array.isArray(v)) return undefined
+  const refs = v.slice(0, MAX_GROUP_MEMBERS).flatMap((r) => {
+    const ref = frameRef(r)
+    return ref ? [ref] : []
+  })
+  return refs.length ? refs : undefined
+}
+
+/** `Anchor.parts` as the daemon stores it: every frame a part names is live and
+ *  on the canvas of `frame`, and a part about whole frames holds to the same
+ *  rule `frames` does. An App anchor's parts name no frame at all. */
+export function partsValid(parts: unknown, frame: FrameRef | undefined, live: (ref: FrameRef) => boolean): boolean {
+  if (!Array.isArray(parts) || parts.length < 2 || parts.length > MAX_GROUP_MEMBERS) return false
+  return parts.every((raw) => {
+    if (typeof raw !== 'object' || raw === null || 'parts' in raw) return false
+    const part = raw as Anchor
+    if (!part.frame) return !frame && part.frames === undefined
+    const ref = frameRef(part.frame)
+    if (!ref || !frame || ref.canvasId !== frame.canvasId || !live(ref)) return false
+    return part.frames === undefined || wholeFramesValid(part.frames, ref, live)
+  })
 }
 
 /** `Anchor.frames` as the daemon stores it: at most `MAX_GROUP_MEMBERS` live

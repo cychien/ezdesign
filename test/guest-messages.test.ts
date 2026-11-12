@@ -37,6 +37,10 @@ const SAMPLES: Record<string, Record<string, unknown>> = {
   'ez:scroll': { ratio: 0.5 },
   'ez:relay': { reqId: 'r1', op: { op: 'discard-upload', id: 'a1' } },
   'ez:library-pick': { reqId: 'l1' },
+  'ez:share': { purpose: 'compose', anchor, lines: ['h1 · src/App.tsx:3'] },
+  'ez:shift-released': {},
+  'ez:pointer-here': {},
+  'ez:skills-request': { reqId: 'k1' },
 }
 
 const upTypes = Object.entries(GUEST_PROTOCOL)
@@ -132,16 +136,46 @@ test('whole frames survive only on the sender\'s canvas and with the sender amon
   assert.deepEqual(picked?.type === 'ez:picked' && picked.ref.anchor, {})
 })
 
-test('a popup names whole frames only of the sender\'s canvas, with the sender among them', () => {
+test('parts survive only on the sender\'s canvas, with the sender among them, one level deep', () => {
+  const relay = (parts: unknown, sender: Sender) =>
+    parseGuestMessage({ type: 'ez:relay', reqId: 'r', op: { op: 'annotate', body: { anchor: { contains: ['a', 'b'], parts } } } }, sender)
+  const anchorOf = (m: ReturnType<typeof relay>) => (m?.type === 'ez:relay' && m.op.op === 'annotate' ? m.op.body.anchor : null)
   const own = { canvasId: 'c1', frameId: 'f1' }
   const sibling = { canvasId: 'c1', frameId: 'f2' }
-  assert.deepEqual(parseGuestMessage({ type: 'ez:popup', open: true, frames: [own, sibling] }, CANVAS), {
-    type: 'ez:popup',
-    open: true,
-    frames: ['f1', 'f2'],
+  const mine = { source: 'f1.html:3', frame: own }
+  const theirs = { source: 'f2.html:9', frame: sibling }
+  const wholeSibling = { source: 'f2.html', frame: sibling, frames: [sibling] }
+  assert.deepEqual(anchorOf(relay([mine, theirs], CANVAS)), { contains: ['a', 'b'], frame: own, parts: [mine, theirs] })
+  assert.deepEqual(anchorOf(relay([mine, wholeSibling], CANVAS)), { contains: ['a', 'b'], frame: own, parts: [mine, wholeSibling] })
+  // Without the sender, on another canvas, a whole-frame part about another
+  // frame than its own, a group of groups, or a lone part: all dropped whole.
+  assert.deepEqual(anchorOf(relay([theirs, theirs], CANVAS)), { contains: ['a', 'b'], frame: own })
+  assert.deepEqual(anchorOf(relay([mine, { frame: { canvasId: 'c2', frameId: 'f9' } }], CANVAS)), { contains: ['a', 'b'], frame: own })
+  assert.deepEqual(anchorOf(relay([mine, { ...theirs, frames: [own] }], CANVAS)), { contains: ['a', 'b'], frame: own })
+  assert.deepEqual(anchorOf(relay([mine, { parts: [mine, theirs] }], CANVAS)), { contains: ['a', 'b'], frame: own })
+  assert.deepEqual(anchorOf(relay([mine], CANVAS)), { contains: ['a', 'b'], frame: own })
+  // An App guest's parts are previews of one page: they name no frame.
+  const shared = parseGuestMessage(
+    { type: 'ez:share', purpose: 'pick', anchor: { contains: ['a', 'b'], parts: [{ selector: 'h1', frame: own }, { selector: 'p' }] }, lines: ['a', 7] },
+    APP,
+  )
+  assert.deepEqual(shared, {
+    type: 'ez:share',
+    purpose: 'pick',
+    anchor: { contains: ['a', 'b'], parts: [{ selector: 'h1' }, { selector: 'p' }] },
+    lines: ['a'],
   })
-  assert.deepEqual(parseGuestMessage({ type: 'ez:popup', open: true, frames: [sibling] }, CANVAS), { type: 'ez:popup', open: true })
-  assert.deepEqual(parseGuestMessage({ type: 'ez:popup', open: true, frames: [own] }, APP), { type: 'ez:popup', open: true })
+})
+
+test('a share names its purpose, and an empty one is null', () => {
+  assert.deepEqual(parseGuestMessage({ type: 'ez:share', purpose: 'compose', anchor: null }, CANVAS), {
+    type: 'ez:share',
+    purpose: 'compose',
+    anchor: null,
+    lines: [],
+  })
+  assert.equal(parseGuestMessage({ type: 'ez:share', purpose: 'region', anchor: null }, CANVAS), null)
+  assert.equal(parseGuestMessage({ type: 'ez:share', purpose: 'pick', anchor: 'h1' }, CANVAS), null)
 })
 
 test('a sweep starts at a point given as numbers', () => {

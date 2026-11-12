@@ -33,6 +33,12 @@ export interface Anchor {
    *  them: a frame's title clicked, or a region swept across frames. `frame` is
    *  the one of them the comment was written on. */
   frames?: FrameRef[]
+  /** Set when the group spans several documents: elements Shift-picked in more
+   *  than one canvas frame or device preview, or frames mixed with elements.
+   *  Each part is one document's share, an anchor of its own (with its own
+   *  `frame`, or `frames` for a whole frame); `contains` lists every member and
+   *  `frame` is the one the comment was written on. */
+  parts?: Anchor[]
 }
 
 /** Which canvas frame an element was picked in. Ids, not paths: the file is
@@ -204,6 +210,11 @@ export interface Annotation {
   createdAt: number
   attachments?: Attachment[]
   references?: Reference[]
+  /** Skills named in the comment's own box; `[skill n]` in `comment` is
+   *  `skills[n-1]` until the batch is sent, when they fold into the batch's. */
+  skills?: string[]
+  /** The `#` the comment's own box named; `[target 1]` in `comment` is it. */
+  target?: BatchTarget
 }
 
 /** What the agent is shown of the element it is exploring, captured in the page
