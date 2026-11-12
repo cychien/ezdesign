@@ -24,7 +24,7 @@ import type {
   PasteWire,
   ViewWire,
 } from '../../canvas/wire.js'
-import type { AnchorWire, RefWire } from '../draft.js'
+import type { WholeFrame } from '../selection.js'
 import { hasFrameClip, readFrameClip, writeFrameClip } from './clip.js'
 import { type CanvasGuest, type CanvasGuestPort, canvasGuestId } from '../frame-registry.js'
 import type { GuestMessage, Mode, RelayOp } from '../guest-messages.js'
@@ -51,13 +51,21 @@ export interface ShellPorts {
   onTabShown: (tab: TabId | null) => void
   /** Escape, or a click on the empty board: stand down any pick or popup. */
   escape: () => void
-  /** A whole frame, chosen by its title while a pick is out. */
-  chooseFrame: (ref: RefWire) => void
+  /** Whole frames chosen on the board while annotating or picking: a title
+   *  clicked, or a box swept over them. */
+  selectFrames: (choice: FramesChoice) => void
   /** Say something went wrong, where the user is looking. */
   notice: (text: string) => void
   annotateMode: () => Mode
-  /** One comment is composed at a time, in whichever preview holds it. */
-  popupOpen: () => boolean
+}
+
+/** Whole frames for the selection: each with the guest it is, the guest a
+ *  composer would open in, and where in it. `add` is Shift. */
+export interface FramesChoice {
+  frames: { whole: WholeFrame; source: string }[]
+  host: string
+  at: Point | null
+  add: boolean
 }
 
 /** The snapshot fields this module reads. */
@@ -67,7 +75,13 @@ export interface CanvasShellSnapshot {
   state: OverlaySnapshot['state']
   /** Forwarded to each canvas guest as they are: to `anchor.frame`, and to
    *  every frame in `anchor.frames`. */
-  annotations: readonly { anchor: { frame?: FrameRef; frames?: FrameRef[] } }[]
+  annotations: readonly { anchor: SnapshotAnchor }[]
+}
+
+interface SnapshotAnchor {
+  frame?: FrameRef
+  frames?: FrameRef[]
+  parts?: SnapshotAnchor[]
 }
 
 export interface CanvasUi {
@@ -94,18 +108,21 @@ export interface CanvasUi {
   batchView(appPage: string): BatchView
   /** A frame's title, for the queue's labels. */
   frameTitle(ref: FrameRef): string | undefined
+  /** Outlined as the subject of the selection being composed (in the mark) or
+   *  picked (in the pick's pink). */
+  outline(frames: readonly FrameRef[], purpose: 'compose' | 'pick'): void
   /** Show the tab a guest lives on: the App for an App preview, its canvas for
    *  a canvas frame. How `/element` brings the user back to the composer. */
   focusGuest(guestId: string): void
 }
 
-/** Whole frames as one anchor: the file of each, since a frame is a document
- *  and the agent edits it as a file. Titles are looked up at label time. */
-function wholeFramesAnchor(canvasId: CanvasId, frames: readonly FrameWire[]): AnchorWire {
-  const refs = frames.map((f) => ({ canvasId, frameId: f.id }))
-  return frames.length === 1
-    ? { source: frames[0]!.file, frames: refs }
-    : { contains: frames.map((f) => `${f.file} · "${f.title}"`), frames: refs }
+/** Which of an annotation's places `guestId` is: the part made in it, or the
+ *  annotation itself when it is not spread over several. */
+function placeIn(anchor: SnapshotAnchor, guestId: string): SnapshotAnchor | null {
+  const mine = (a: SnapshotAnchor) =>
+    [a.frame, ...(a.frames ?? [])].some((f) => f !== undefined && canvasGuestId(f) === guestId)
+  if (anchor.parts?.length) return anchor.parts.find(mine) ?? null
+  return mine(anchor) ? anchor : null
 }
 
 /** A canvas frame's keys reach the shell only as `ez:key`, which may not send,
@@ -199,8 +216,6 @@ export function installCanvas(ports: ShellPorts): CanvasUi {
   let shown: TabId | null = null
   let picking = false
   let snapshot: CanvasShellSnapshot | null = null
-  /** The guest whose open popup is about whole frames, outlined on its board. */
-  let composingIn: string | null = null
 
   ports.stageWrap.classList.add('ez-tabbed')
   const strip = new TabStrip({
@@ -251,29 +266,25 @@ export function installCanvas(ports: ShellPorts): CanvasUi {
         ((await request({ do: 'asset', canvasId: id, image })) as AssetWire | null)?.asset ?? null,
       saveCamera: (camera) => void request({ do: 'view', view: { camera: { canvasId: id, camera } } }),
       escape: ports.escape,
-      chooseFrame: (frame) =>
-        ports.chooseFrame({
-          anchor: { source: frame.file, frame: { canvasId: id, frameId: frame.id } },
-          label: frame.title,
+      selectFrames: (frames, host, at, add) =>
+        ports.selectFrames({
+          frames: frames.map((f) => ({
+            whole: { canvasId: id, frameId: f.id, file: f.file, title: f.title },
+            source: canvasGuestId({ canvasId: id, frameId: f.id }),
+          })),
+          host: canvasGuestId({ canvasId: id, frameId: host.id }),
+          at,
+          add,
         }),
-      composeFrames: (frames, host, at) => composeFrames(id, frames, host, at),
       takeSweep: (frame) => ports.guests.post(canvasGuestId({ canvasId: id, frameId: frame.id }), { type: 'ez:sweep-taken' }),
-      returnSweep: (frame, from, to) =>
-        ports.guests.post(canvasGuestId({ canvasId: id, frameId: frame.id }), { type: 'ez:sweep-local', from, to }),
+      returnSweep: (frame, from, to, add) =>
+        ports.guests.post(canvasGuestId({ canvasId: id, frameId: frame.id }), { type: 'ez:sweep-local', from, to, add }),
     })
     made.setAnnotating(ports.annotateMode())
     made.setPicking(picking)
     boards.set(id, made)
     ports.stageWrap.append(made.el)
     return made
-  }
-
-  /** Asked of the host frame's overlay, which owns every annotation popup; the
-   *  board outlines the frames once that popup is up. */
-  function composeFrames(canvasId: CanvasId, frames: FrameWire[], host: FrameWire, at: Point | null): void {
-    if (ports.popupOpen()) return
-    const guestId = canvasGuestId({ canvasId, frameId: host.id })
-    ports.guests.post(guestId, { type: 'ez:compose-frames', anchor: wholeFramesAnchor(canvasId, frames), at })
   }
 
   /** Which tab is on screen. The device stage is hidden, never detached, while
@@ -359,16 +370,17 @@ export function installCanvas(ports: ShellPorts): CanvasUi {
     void board.pasteImages(images)
   })
 
-  /** Each canvas guest is handed only its own frame's annotations. */
+  /** Each canvas guest is handed only its own frame's annotations, and of one
+   *  spread over several frames only its own part - what its marker sits on. */
   function pushAnnotations(s: CanvasShellSnapshot): void {
-    const byGuest = new Map<string, unknown[]>()
-    s.annotations.forEach((a, i) => {
-      const ids = new Set([a.anchor.frame, ...(a.anchor.frames ?? [])].flatMap((f) => (f ? [canvasGuestId(f)] : [])))
-      for (const id of ids) byGuest.set(id, [...(byGuest.get(id) ?? []), { ...a, n: i + 1 }])
-    })
+    const all = s.annotations.map((a, i) => ({ ...a, n: i + 1 }))
     for (const b of boards.values()) {
       for (const guestId of b.guestIds()) {
-        const subset = { state: s.state, annotations: byGuest.get(guestId) ?? [] }
+        const own = all.flatMap((a) => {
+          const anchor = placeIn(a.anchor, guestId)
+          return anchor ? [{ ...a, anchor }] : []
+        })
+        const subset = { state: s.state, annotations: own }
         const signature = JSON.stringify(subset)
         if (pushed.get(guestId) === signature) continue
         pushed.set(guestId, signature)
@@ -430,13 +442,6 @@ export function installCanvas(ports: ShellPorts): CanvasUi {
           if (snapshot) pushAnnotations(snapshot)
           return false
         case 'ez:popup':
-          if (message.open && message.frames) {
-            composingIn = guest.id
-            b?.setComposing(message.frames as FrameId[])
-          } else if (!message.open && composingIn === guest.id) {
-            composingIn = null
-            b?.setComposing([])
-          }
           if (!message.open && b) returnKeysToShell(b, guest.iframe)
           return false
         case 'ez:sweep-start':
@@ -484,6 +489,14 @@ export function installCanvas(ports: ShellPorts): CanvasUi {
       const canvas = /^canvas:([0-9a-f]{12})\//.exec(guestId)?.[1]
       const tab = canvas ? asCanvasId(canvas) : 'app'
       if (tab && tab !== shown) select(tab)
+    },
+
+    outline(frames, purpose) {
+      for (const [id, b] of boards) {
+        const ids = frames.flatMap((f) => (f.canvasId === id ? [f.frameId as FrameId] : []))
+        if (purpose === 'pick') b.setPicked(ids)
+        else b.setComposing(ids)
+      }
     },
 
     frameTitle(ref) {

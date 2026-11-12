@@ -240,3 +240,24 @@ test('whole frames are named as frames, by title, with their canvas', () => {
     '[whole canvas frames c/f1, c/f2]',
   )
 })
+
+test('a group spread over several frames is told one frame at a time, each in its own terms', () => {
+  const names = (r: { frameId: string }) => ({ canvas: '首頁探索', frame: r.frameId === 'f1' ? 'Hero A' : 'Hero B' })
+  const one = { canvasId: 'c', frameId: 'f1' }
+  const two = { canvasId: 'c', frameId: 'f2' }
+  assert.equal(
+    referenceLabel(
+      ref({
+        contains: ['h1 · a.html:14', 'b.html · "Hero B"'],
+        frame: one,
+        parts: [
+          { source: 'a.html:14', text: '大標題', frame: one },
+          { source: 'b.html', frame: two, frames: [two] },
+        ],
+      }),
+      names,
+    ),
+    '[group of 2 across 2 places: (1) a.html:14 · "大標題" · [canvas frame "Hero A" on canvas "首頁探索"]; ' +
+      '(2) b.html · [whole canvas frame "Hero B" on canvas "首頁探索"]]',
+  )
+})

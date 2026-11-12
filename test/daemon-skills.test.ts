@@ -9,8 +9,8 @@ after(() => world.dispose())
 
 /** A project with two skills on disk. The daemon checks every name a batch sends
  *  against these before it will build a prompt out of them. */
-function projectWithSkills(): string {
-  const project = join(world.dataDir, 'project')
+function projectWithSkills(name = 'project'): string {
+  const project = join(world.dataDir, name)
   for (const name of ['dataviz', 'review-pass']) {
     const dir = join(project, '.claude', 'skills', name)
     mkdirSync(dir, { recursive: true })
@@ -87,4 +87,42 @@ test('a batch naming a skill that is not installed is refused', async () => {
   const res = await api(port, '/send', { note: 'x', skills: ['dataviz', 'not-a-skill'] })
   assert.equal(res.status, 400)
   assert.match((await res.json()).error, /unknown skill/)
+})
+
+// A comment's own `$` and `#` are checked the way the note's are, and fold into
+// the batch the comment is sent in: one list of skills, the first hoisted.
+test('a comment naming a skill and a place carries them, and the batch it is sent in runs them', async () => {
+  const { port: control } = await world.liveDaemon()
+  const { port } = await world.openSession(control, {
+    url: 'http://localhost:9997',
+    project: projectWithSkills('commented'),
+    agent: FAKE_AGENT,
+  })
+  await waitFor(async () => {
+    const s = (await world.state(port)) as { acp?: { state?: string } }
+    return s.acp?.state === 'idle'
+  }, 'the agent to be ready')
+  const anchor = { source: 'src/App.tsx:3' }
+  const refused = await api(port, '/annotations', { kind: 'element', comment: 'x', anchor, skills: ['not-a-skill'] })
+  assert.equal(refused.status, 400)
+  const placeless = await api(port, '/annotations', { kind: 'element', comment: 'x', anchor, target: { kind: 'nowhere' } })
+  assert.equal(placeless.status, 400)
+  const ok = await api(port, '/annotations', {
+    kind: 'element',
+    comment: '跑 [skill 1] 放 [target 1]',
+    anchor,
+    skills: ['review-pass'],
+    target: { kind: 'app' },
+  })
+  assert.equal(ok.status, 200)
+  const saved = (await ok.json()) as { skills?: string[]; target?: { kind: string; label: string } }
+  assert.deepEqual(saved.skills, ['review-pass'])
+  assert.deepEqual(saved.target, { kind: 'app', label: 'App' })
+
+  await api(port, '/send', { note: '先 [skill 1]', skills: ['dataviz'] })
+  const prompts = await promptsSeen(port)
+  const turn = prompts.find((t) => t.includes('放 #App'))
+  assert.ok(turn, `no turn carried the comment: ${JSON.stringify(prompts)}`)
+  assert.equal(turn.split('\n')[0], '$dataviz')
+  assert.match(turn, /跑 \$review-pass 放 #App/)
 })

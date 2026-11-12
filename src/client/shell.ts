@@ -25,8 +25,6 @@ import BubbleChatOutcomeIcon from '@hugeicons/core-free-icons/BubbleChatOutcomeI
 import Edit02Icon from '@hugeicons/core-free-icons/Edit02Icon'
 import Album02Icon from '@hugeicons/core-free-icons/Album02Icon'
 import ArrowLeft01Icon from '@hugeicons/core-free-icons/ArrowLeft01Icon'
-import DollarSquareIcon from '@hugeicons/core-free-icons/DollarSquareIcon'
-import HashtagIcon from '@hugeicons/core-free-icons/HashtagIcon'
 import type { SessionConfigOption } from '@agentclientprotocol/sdk'
 import type { AcpAskAnswer, AcpAskField, AcpAskOption } from '../acp-ask.js'
 import { askComplete, askSendsOnPick } from '../acp-ask.js'
@@ -68,6 +66,7 @@ import { confirmSkipped, rememberConfirm } from './confirm-skip.js'
 import { collectPageStorage } from './page-storage.js'
 import { type Usage, planName, usageNote, usageRows } from './usage-note.js'
 import type { SlashCommand } from './slash.js'
+import { type SkillInfo, directiveRows, placeCommands, skillCommands } from './directives.js'
 import type { Device, Size } from './devices.js'
 import {
   GRID_GAP,
@@ -122,6 +121,15 @@ import { type ThreadChange, followBottom } from './follow-bottom.js'
 import type { NavEffect, NavEvent, NavState } from './nav.js'
 import { type KeyChord, plainKeyMatches } from './key-chord.js'
 import { modLabel, pickHint, reducePick } from './pick.js'
+import {
+  EMPTY as NO_SELECTION,
+  type Purpose,
+  type SelectionEffect,
+  type SelectionEvent,
+  type SelectionState,
+  extendable as selectionExtendable,
+  reduceSelection,
+} from './selection.js'
 import type { PickEffect, PickEvent, PickState } from './pick.js'
 import { type IconNode, icon } from './icon.js'
 import { brandLockupSvg } from '../brand.js'
@@ -151,7 +159,12 @@ interface AnnotationWire {
     frame?: { canvasId: string; frameId: string }
     /** About these whole canvas frames, named by their titles in the queue. */
     frames?: { canvasId: string; frameId: string }[]
+    /** One group over several frames or previews, each part its own anchor. */
+    parts?: { frame?: { canvasId: string; frameId: string }; viewport?: { preset?: string } }[]
   }
+  /** What the comment's own `$` and `#` named; markers in `comment` count these. */
+  skills?: string[]
+  target?: BatchTarget
   /** Full records, not echoes: the queue holds the annotation itself, and the
    *  editor has to be able to hand every field back unchanged. */
   attachments?: {
@@ -1723,9 +1736,81 @@ const frames = new FrameRegistry<StageFrame>()
 let popupFrame: string | null = null
 
 function setPopupFrame(next: string | null): void {
+  const was = popupFrame
   popupFrame = next
-  frames.postAll({ type: 'ez:hold', held: next !== null }, next ?? undefined)
+  if (was && was !== next) dispatchSelection('compose', { t: 'popup', source: was, open: false })
+  if (next) dispatchSelection('compose', { t: 'popup', source: next, open: true })
+  paintHolds()
 }
+
+/** Every frame but the popup's is held. `extendable` says whether Shift may
+ *  still add to the popup from here: it is about a Shift selection. */
+function holdMessage() {
+  return {
+    type: 'ez:hold',
+    held: popupFrame !== null,
+    extendable: popupFrame !== null && selectionExtendable(selections.compose),
+  } as const
+}
+
+function paintHolds(): void {
+  frames.postAll(holdMessage(), popupFrame ?? undefined)
+}
+
+// ---------------------------------------------------------------- selection
+
+/** A Shift selection past one document - see `selection.ts`. The overlays own
+ *  their members; these own what spans them. */
+const selections: Record<Purpose, SelectionState> = { compose: NO_SELECTION, pick: NO_SELECTION }
+
+function dispatchSelection(purpose: Purpose, e: SelectionEvent): void {
+  const out = reduceSelection(purpose, selections[purpose], e)
+  selections[purpose] = out.state
+  for (const effect of out.effects) applySelectionEffect(purpose, effect)
+  if (purpose === 'compose' && out.effects.length) paintHolds()
+}
+
+function applySelectionEffect(purpose: Purpose, effect: SelectionEffect): void {
+  switch (effect.do) {
+    case 'multi':
+      frames.post(effect.source, { type: 'ez:selection', purpose, multi: effect.on })
+      return
+    case 'compose':
+      frames.post(effect.host, { type: 'ez:compose-group', anchor: effect.anchor, at: effect.at })
+      return
+    case 'choose':
+      dispatchPick({ t: 'chosen', ref: effect.ref })
+      return
+    case 'end':
+      for (const source of effect.sources) frames.post(source, { type: 'ez:selection-end', purpose })
+      return
+    case 'outline':
+      canvasUi?.outline(effect.frames, purpose)
+      return
+  }
+}
+
+/** Shift came up, wherever it was heard: a selection that spans documents is
+ *  settled here, once, and every other document hears it too - the one the
+ *  user was last Shift-clicking in may not have the focus. */
+function shiftReleased(heardIn?: string): void {
+  if (annotateMode === 'off' && !pickState) return
+  dispatchSelection(pickState ? 'pick' : 'compose', { t: 'settle' })
+  frames.postAll({ type: 'ez:shift-up' }, heardIn)
+}
+
+/** The document the pointer is in, so the one it left drops its hover frame:
+ *  a pointer that goes straight from one frame into another leaves the first
+ *  hearing nothing. */
+let pointerIn: string | null = null
+
+function pointerMoved(into: string | null): void {
+  if (into === pointerIn) return
+  pointerIn = into
+  frames.postAll({ type: 'ez:pointer-away' }, into ?? undefined)
+}
+
+document.addEventListener('mousemove', () => pointerMoved(null), { passive: true })
 
 /** Where the previews actually are, and where a frame mounted later has to
  *  start. The path the shell was opened on goes stale the moment the app
@@ -2053,29 +2138,10 @@ const noteAttach = attachify({
       enabled: () => !!snapshot?.acp && (snapshot.chats?.length ?? 0) > 1,
       run: () => void openResume(),
     },
-    {
-      id: 'skills',
-      label: 'Skills',
-      hint: '輸入 $ 使用 skill',
-      keywords: ['skill', 'skills', '$', '技能'],
-      icon: DollarSquareIcon as IconNode,
-      // Skills have their own menu, behind `$`: this one row is how a user who
-      // only knows `/` finds it. Typed rather than inserted, so it opens there.
-      enabled: () => !!snapshot?.acp,
-      run: () => document.execCommand('insertText', false, '$'),
-    },
-    {
-      id: 'target',
-      label: 'Place',
-      hint: '輸入 # 指定結果放到哪',
-      keywords: ['place', 'target', 'destination', 'app', 'canvas', '#', '放到', '位置', '畫布'],
-      icon: HashtagIcon as IconNode,
-      enabled: () => targetCommands().length > 0,
-      run: () => document.execCommand('insertText', false, '#'),
-    },
+    ...directiveRows({ skills: hasSkills, places: hasPlaces }),
   ],
-  skills: () => fetchSkills(),
-  targets: () => targetCommands(),
+  skills: () => fetchSkills(noteAttach),
+  targets: () => placeCommands(placeList(), (place) => noteAttach.insertTarget(place)),
   chooseLibrary: () => chooseLibraryAttachments(API),
   attachLibrary: (ids) => libraryApi(API).attach(ids),
 })
@@ -2539,7 +2605,9 @@ const editAttach = attachify({
     paintEditState()
     capQueue()
   },
-  commands: [elementCommand(() => editAttach)],
+  commands: [elementCommand(() => editAttach), ...directiveRows({ skills: hasSkills, places: hasPlaces })],
+  skills: () => fetchSkills(editAttach),
+  targets: () => placeCommands(placeList(), (place) => editAttach.insertTarget(place)),
   chooseLibrary: () => chooseLibraryAttachments(API),
   attachLibrary: (ids) => libraryApi(API).attach(ids),
 })
@@ -3581,6 +3649,7 @@ function dispatchPick(e: PickEvent): void {
     pickComposer.cancelRef()
     paintSendState()
   }
+  if (was && !pickState) dispatchSelection('pick', { t: 'reset' })
 }
 
 /** The frames an effect is aimed at: the one it names, or all of them. */
@@ -3738,10 +3807,12 @@ function canvasPorts(): Parameters<typeof installCanvas>[0] {
       paintPickPill()
     },
     escape: () => void abortPick('escape'),
-    chooseFrame: (ref) => dispatchPick({ t: 'chosen', ref }),
+    selectFrames: (choice) => {
+      if (!pickState && annotateMode === 'off') return
+      dispatchSelection(pickState ? 'pick' : 'compose', { t: 'frames', ...choice })
+    },
     notice: (text) => stripNotice(text),
     annotateMode: () => annotateMode,
-    popupOpen: () => popupFrame !== null,
   }
 }
 
@@ -3941,7 +4012,7 @@ function openEdit(a: AnnotationWire): void {
   // element is silently dropped - the box would then open with the caret at
   // offset 0 and typing would land in front of the comment.
   editAttach.editable.focus()
-  editAttach.restore(bodyFromComment(a.comment, a.references ?? [], a.attachments ?? []))
+  editAttach.restore(bodyFromComment(a.comment, a.references ?? [], a.attachments ?? [], a.skills, a.target))
   paintEditState()
 }
 
@@ -3984,6 +4055,8 @@ async function saveEdit(): Promise<void> {
         comment: editAttach.text(),
         attachments: editAttach.ids(),
         references: editAttach.refs(),
+        skills: editAttach.skills(),
+        target: editAttach.target(),
       }),
     })
     if (!res.ok) return
@@ -4224,62 +4297,56 @@ function paintAgents(): void {
 
 // ------------------------------------------------------------------- skills
 
-interface SkillWire {
-  name: string
-  description: string
-  source: 'project' | 'user' | 'plugin'
-}
-
-async function fetchSkills(): Promise<SlashCommand[]> {
+async function fetchSkillList(): Promise<SkillInfo[]> {
   // Only ACP mode has an agent to hand a skill to; a poll-mode agent is running
   // somebody else's loop and a slash command means nothing to it.
   if (!snapshot?.acp) return []
-  const res = await api('/acp/skills')
-  if (!res.ok) return []
-  const { skills } = (await res.json()) as { skills: SkillWire[] }
-  // No glyph and no source label. The row is the name the user is about to type,
-  // and a column of identical lightning bolts beside a list of skills says only
-  // that they are all skills, which the `$` already said. Where a skill came from
-  // is not what anyone is choosing on.
-  //
-  // The one already chosen is marked, because this is a list of which skill the
-  // batch runs and not a list of skills to collect: a batch runs one, so picking
-  // a second is changing the answer. Saying so here is what makes the swap in the
-  // box read as a swap.
-  return skills.map((skill) => ({
-    id: skill.name,
-    label: skill.name,
-    keywords: [],
-    description: skill.description,
-    run: () => noteAttach.insertSkill(skill.name),
-  }))
+  const res = await api('/acp/skills').catch(() => null)
+  if (!res?.ok) return []
+  const { skills } = (await res.json()) as { skills: SkillInfo[] }
+  return skills.map(({ name, description }) => ({ name, description }))
+}
+
+async function fetchSkills(into: AttachController): Promise<SlashCommand[]> {
+  return skillCommands(await fetchSkillList(), (name) => into.insertSkill(name))
 }
 
 /** What `#` offers: the places a batch's result can go. Only with canvas tools -
  *  without them the app is the only place there is, and a choice of one is not
  *  a choice. Asked on every keystroke behind the `#`, so a canvas made a moment
  *  ago is already on the list. */
-function targetCommands(): SlashCommand[] {
+function placeList(): BatchTarget[] {
   if (!snapshot?.canvas.agentHasTools) return []
-  const offer = (target: BatchTarget, hint: string, keywords: string[]): SlashCommand => ({
-    // Never the canvas id: it is hex, and `#a1b2c3` typed as a colour would
-    // match the canvas whose id happens to start that way.
-    id: target.kind === 'canvas' ? target.label : target.kind,
-    label: target.label,
-    hint,
-    keywords,
-    run: () => noteAttach.insertTarget(target),
-  })
   const canvases = snapshot.canvas.canvases
     .filter((c) => !c.archived)
     .sort((a, b) => a.createdAt - b.createdAt)
   return [
-    ...(snapshot.app ? [offer({ kind: 'app', label: 'App' }, '改到實際的 app', ['app', '網站', '頁面', '程式'])] : []),
-    ...canvases.map((c) =>
-      offer({ kind: 'canvas', canvasId: c.id, label: c.name }, 'canvas', ['canvas', '畫布']),
-    ),
-    offer({ kind: 'new-canvas', label: '新 canvas' }, '建立新的 canvas', ['new', 'canvas', '新', '畫布']),
+    ...(snapshot.app ? [{ kind: 'app' as const, label: 'App' }] : []),
+    ...canvases.map((c) => ({ kind: 'canvas' as const, canvasId: c.id, label: c.name })),
+    { kind: 'new-canvas', label: '新 canvas' },
   ]
+}
+
+/** Hoisted: the composers are built while this module is still initialising. */
+function hasSkills(): boolean {
+  return !!snapshot?.acp
+}
+
+function hasPlaces(): boolean {
+  return placeList().length > 0
+}
+
+/** What a page composer's `$` and `#` may offer, pushed whenever it changes: a
+ *  guest cannot read the snapshot, and `#` is asked on every keystroke. */
+let composerSaid = ''
+
+function paintComposerOffers(to?: string): void {
+  const message = { type: 'ez:composer', acp: !!snapshot?.acp, places: placeList() } as const
+  const said = JSON.stringify(message)
+  if (to) return frames.post(to, message)
+  if (said === composerSaid) return
+  composerSaid = said
+  frames.postAll(message)
 }
 
 // --------------------------------------------------------------- chat picker
@@ -4604,6 +4671,8 @@ function paintQueue(annotations: AnnotationWire[]): void {
       a.references?.map(referenceEcho),
       a.attachments?.map((f) => (f.origin ? { name: f.name, pick: f.origin.pick } : f.name)),
       'ez-qi-comment',
+      a.skills,
+      a.target,
     )
     if (a.comment || a.references?.length || a.attachments?.length) li.append(row.box)
     const files = fileChips(row.unplacedFiles)
@@ -4624,6 +4693,12 @@ function annotationLabel(a: AnnotationWire): string {
   if (whole?.length) {
     const titles = whole.map((ref) => canvasUi?.frameTitle(ref) ?? '?')
     return whole.length === 1 ? `整個 ${titles[0]}` : `${whole.length} 個 frame · ${titles.join('、')}`
+  }
+  const spread = a.anchor.parts
+  if (spread?.length) {
+    // Where the members are, in the words the board and the device row use.
+    const places = spread.map((p) => (p.frame ? canvasUi?.frameTitle(p.frame) : p.viewport?.preset && gridDevice(p.viewport.preset).name) ?? '?')
+    return [`選取 ${a.anchor.contains?.length ?? spread.length} 項`, [...new Set(places)].join('、')].join(' · ')
   }
   const parts: string[] = []
   if (a.anchor.contains?.length) parts.push(`選取 ${a.anchor.contains.length} 項`)
@@ -4660,6 +4735,7 @@ function buildSaid(entry: ConversationWire, isUser: boolean): HTMLElement {
         item.attachments,
         undefined,
         entry.skills,
+        entry.target,
       )
       // The anchor stays off the screen: within a session the author remembers
       // what they pointed at, and the agent's reply echoes it anyway. The rare
@@ -4967,6 +5043,7 @@ function render(): void {
   canvasUi.render(s)
   paintDevServer()
   paintPage()
+  paintComposerOffers()
 
   const ended = s.state === 'ended'
   // Explicitly, rather than leaving it to the overlay: a pick from the note box
@@ -5488,7 +5565,22 @@ window.addEventListener('message', (e: MessageEvent) => {
       if (msg.open) setPopupFrame(from)
       else if (from === popupFrame) setPopupFrame(null)
       return
+    case 'ez:share':
+      // A pick's share outlives no pick, and a comment's needs a mode armed.
+      if (msg.purpose === 'pick' ? !pickState : annotateMode === 'off' && msg.anchor) return
+      dispatchSelection(msg.purpose, { t: 'share', source: from, anchor: msg.anchor, lines: msg.lines })
+      return
+    case 'ez:shift-released':
+      shiftReleased(from)
+      return
+    case 'ez:pointer-here':
+      pointerMoved(from)
+      return
+    case 'ez:skills-request':
+      void fetchSkillList().then((skills) => frames.post(from, { type: 'ez:skills', reqId: msg.reqId, skills }))
+      return
     case 'ez:mode':
+      if (msg.mode !== annotateMode) dispatchSelection('compose', { t: 'reset' })
       annotateMode = msg.mode
       paintAnnotateMode()
       // A change born inside one frame - Escape, mostly - has to reach the rest:
@@ -5559,8 +5651,13 @@ window.addEventListener('message', (e: MessageEvent) => {
       }
       // A frame that (re)booted while an annotation is being composed elsewhere
       // starts held; its own popup died with the page it was on.
-      if (popupFrame && popupFrame !== from) frames.post(from, { type: 'ez:hold', held: true })
+      if (popupFrame && popupFrame !== from) frames.post(from, holdMessage())
       else if (popupFrame === from) setPopupFrame(null)
+      // Its members went with the document it was showing.
+      for (const purpose of ['compose', 'pick'] as const) {
+        dispatchSelection(purpose, { t: 'share', source: from, anchor: null, lines: [] })
+      }
+      paintComposerOffers(from)
       dispatchPick({ t: 'ready', page: msg.page, now: Date.now(), frame: from })
       return
     }
@@ -5626,7 +5723,7 @@ document.addEventListener('keyup', (e) => {
   // A Shift+click on the page does not take focus from the shell, so the overlay
   // gathering under it never hears the key come up.
   // A pick from the note box runs with no mode armed.
-  if (e.key === 'Shift' && (annotateMode !== 'off' || pickState)) frames.postAll({ type: 'ez:shift-up' })
+  if (e.key === 'Shift') shiftReleased()
   canvasUi?.onKeyUp(e)
 })
 

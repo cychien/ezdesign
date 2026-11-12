@@ -13,6 +13,7 @@
  *  wrote, so a page cannot switch an App overlay into relay. */
 
 import { type AttachmentTransport, directAttachments } from './attach.js'
+import type { SkillInfo } from './directives.js'
 import type { AnchorWire } from './draft.js'
 
 /** The part of the snapshot an overlay draws from. */
@@ -37,6 +38,8 @@ export interface OverlayLink {
   readonly attachments: AttachmentTransport
   /** Asks the shell to open the library. Absent unframed: there is no shell. */
   readonly chooseLibrary?: () => Promise<{ id: string; name: string }[]>
+  /** The skills the agent can run, asked of the shell. Absent unframed. */
+  readonly skills?: () => Promise<SkillInfo[]>
   /** Called with every snapshot, the first as soon as one is known. */
   subscribe(onSnapshot: (snapshot: OverlaySnapshot) => void): void
   /** Whether a message event is from the shell this overlay answers to. */
@@ -77,6 +80,34 @@ function libraryChooser(
     })
 }
 
+/** Asked each time the `$` menu opens: skills are read off disk and can change
+ *  while a review runs. A shell that never answers leaves the menu empty. */
+function skillsAsker(
+  post: (message: Record<string, unknown>) => void,
+  fromShell: (e: MessageEvent) => boolean,
+): () => Promise<SkillInfo[]> {
+  const pending = new Map<string, (skills: SkillInfo[]) => void>()
+  let seq = 0
+  window.addEventListener('message', (e: MessageEvent) => {
+    if (!fromShell(e)) return
+    const data = e.data as { type?: string; reqId?: string; skills?: unknown }
+    if (data?.type !== 'ez:skills' || typeof data.reqId !== 'string') return
+    pending.get(data.reqId)?.(Array.isArray(data.skills) ? (data.skills as SkillInfo[]) : [])
+    pending.delete(data.reqId)
+  })
+  return () =>
+    new Promise((resolve) => {
+      const reqId = `k${++seq}-${Date.now().toString(36)}`
+      pending.set(reqId, resolve)
+      window.setTimeout(() => {
+        if (pending.delete(reqId)) resolve([])
+      }, SKILLS_TIMEOUT_MS)
+      post({ type: 'ez:skills-request', reqId })
+    })
+}
+
+const SKILLS_TIMEOUT_MS = 5000
+
 export function directLink(api: string): OverlayLink {
   const post = (message: Record<string, unknown>) => window.parent?.postMessage(message, location.origin)
   const fromShell = (e: MessageEvent) => e.source === window.parent && e.origin === location.origin
@@ -92,7 +123,9 @@ export function directLink(api: string): OverlayLink {
       if (!res.ok) throw new Error(`annotation rejected (${res.status})`)
     },
     attachments: directAttachments(api),
-    ...(window.parent !== window ? { chooseLibrary: libraryChooser(post, fromShell) } : {}),
+    ...(window.parent !== window
+      ? { chooseLibrary: libraryChooser(post, fromShell), skills: skillsAsker(post, fromShell) }
+      : {}),
     subscribe: (onSnapshot) => {
       if (window.parent === window) {
         const events = new EventSource(`${api}/events`)
@@ -171,6 +204,7 @@ export function relayLink(config: { shellOrigin: string }): OverlayLink {
       },
     },
     chooseLibrary: libraryChooser(post, fromShell),
+    skills: skillsAsker(post, fromShell),
     subscribe: (onSnapshot) => {
       listeners.push(onSnapshot)
       if (last) onSnapshot(last)

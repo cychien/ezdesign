@@ -28,6 +28,9 @@ export interface AnchorWire {
   /** See `Anchor.frames`. Kept only when it names the sender's own frame, on
    *  the sender's own canvas (`attributeAnchor`). */
   frames?: { canvasId: string; frameId: string }[]
+  /** See `Anchor.parts`. Kept only within the sender's own canvas, with the
+   *  sender among them (`attributeAnchor`). */
+  parts?: AnchorWire[]
 }
 
 /** An element the user pointed the agent *at* from inside a comment. What the

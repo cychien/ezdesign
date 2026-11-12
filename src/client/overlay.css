@@ -87,6 +87,10 @@
   /* Mirrors the shell's library teal. See the note on --library there. */
   --ez-library: #c3e2d8;
   --ez-library-ink: #2c5a4b;
+  /* The shell's `--skill-ink` and `--target-ink`: a `$skill` or `#place` reads
+     the same in the popup as in the sidebar it is queued into. */
+  --ez-skill-ink: #1a6aa8;
+  --ez-target-ink: #2a743f;
   /* Explore's violet - the fourth hue in this palette, after the mark's orange
      (40), the attachment sage (137) and the reference pink (350). Hue 300 is
      true violet: 288 reads as indigo and technical, 312 leans magenta and gets
@@ -379,6 +383,28 @@
 .ez-chip-library {
   background: var(--ez-library);
   color: var(--ez-library-ink);
+}
+
+/* A skill or a place is something the sentence says, not an object dropped
+   into it: no fill, no shape, its own ink, as in the shell. */
+.ez-chip-skill,
+.ez-chip-target {
+  display: inline;
+  max-width: none;
+  padding: 0;
+  border-radius: 0;
+  background: none;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.92em;
+  font-weight: 400;
+}
+
+.ez-chip-skill {
+  color: var(--ez-skill-ink);
+}
+
+.ez-chip-target {
+  color: var(--ez-target-ink);
 }
 
 /* Still uploading. Dimmed rather than spinner'd: it resolves in a blink on a

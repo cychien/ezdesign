@@ -110,6 +110,15 @@ function anchorParts(
   if (anchor.components?.length) parts.push(`<${anchor.components.join(' ← ')}>`)
   if (anchor.section) parts.push(`[section: ${anchor.section}]`)
   if (anchor.text) parts.push(`"${truncate(anchor.text, textMax)}"`)
+  // A group over several documents is told one document at a time, each in its
+  // own terms - its members, its file, its frame. The anchor's own place is only
+  // where the comment was written.
+  if (anchor.parts?.length) {
+    const each = anchor.parts.map((part, i) => `(${i + 1}) ${anchorParts(part, textMax, withViewport, frames).join(' · ')}`)
+    const count = anchor.contains?.length ?? anchor.parts.length
+    parts.push(`[group of ${count} across ${anchor.parts.length} places: ${each.join('; ')}]`)
+    return parts
+  }
   // After the anchor's own fields, because those describe the common ancestor
   // and this is what says the user meant a group - framed, or Shift-picked -
   // rather than that ancestor.

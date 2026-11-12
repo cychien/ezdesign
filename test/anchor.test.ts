@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { attachmentIds, parseReferences, sanitizeAnchor, sanitizeCapture, wholeFramesValid } from '../src/anchor.js'
+import { attachmentIds, parseReferences, partsValid, sanitizeAnchor, sanitizeCapture, wholeFramesValid } from '../src/anchor.js'
 import { MAX_GROUP_MEMBERS } from '../src/label.js'
 
 test('an absent field means none, a malformed one is an error', () => {
@@ -249,4 +249,37 @@ test('whole frames are live frames on the canvas of the frame they were written 
   assert.equal(wholeFramesValid('f1', own, live), false)
   const many = Array.from({ length: MAX_GROUP_MEMBERS + 1 }, (_, i) => ({ canvasId: 'c', frameId: i ? `f${i + 1}` : 'f1' }))
   assert.equal(wholeFramesValid(many, own, live), false)
+})
+
+test('parts and whole frames survive sanitizing, one level deep', () => {
+  const frame = { canvasId: 'c1', frameId: 'f1' }
+  const clean = sanitizeAnchor({
+    contains: ['a', 'b'],
+    frames: [frame, { canvasId: 'c1' }],
+    parts: [
+      { source: 'a.html:1', frame, evil: 'x' },
+      { source: 'b.html', frame: { canvasId: 'c1', frameId: 'f2' }, parts: [{ source: 'deeper' }] },
+      'nope',
+    ],
+  })
+  assert.deepEqual(clean, {
+    contains: ['a', 'b'],
+    frames: [frame],
+    parts: [{ source: 'a.html:1', frame }, { source: 'b.html', frame: { canvasId: 'c1', frameId: 'f2' } }],
+  })
+})
+
+test('parts name live frames on the comment\'s canvas, or none at all on the App', () => {
+  const live = (ref: { frameId: string }) => ref.frameId !== 'gone'
+  const f1 = { canvasId: 'c1', frameId: 'f1' }
+  const f2 = { canvasId: 'c1', frameId: 'f2' }
+  assert.equal(partsValid([{ frame: f1 }, { frame: f2, frames: [f2] }], f1, live), true)
+  assert.equal(partsValid([{ selector: 'h1' }, { selector: 'p' }], undefined, live), true)
+  assert.equal(partsValid([{ frame: f1 }], f1, live), false, 'one part is not a spread')
+  assert.equal(partsValid([{ frame: f1 }, { frame: { canvasId: 'c1', frameId: 'gone' } }], f1, live), false)
+  assert.equal(partsValid([{ frame: f1 }, { frame: { canvasId: 'c2', frameId: 'f2' } }], f1, live), false)
+  assert.equal(partsValid([{ frame: f1 }, { frame: f2, frames: [f1] }], f1, live), false)
+  assert.equal(partsValid([{ frame: f1 }, { selector: 'p' }], f1, live), false, 'a canvas part names its frame')
+  assert.equal(partsValid([{ frame: f1 }, { frame: f2, parts: [] }], f1, live), false)
+  assert.equal(partsValid([{ selector: 'h1' }, { frame: f1 }], undefined, live), false)
 })

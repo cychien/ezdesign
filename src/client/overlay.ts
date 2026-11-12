@@ -5,6 +5,8 @@ import AlignSelectionIcon from '@hugeicons/core-free-icons/AlignSelectionIcon'
 import TextSelectIcon from '@hugeicons/core-free-icons/TextSelectIcon'
 import MagicWand01Icon from '@hugeicons/core-free-icons/MagicWand01Icon'
 import { type AttachController, attachify } from './attach.js'
+import { directiveRows, placeCommands, skillCommands } from './directives.js'
+import type { BatchTarget } from '../protocol.js'
 import { GRACE_MS, draftExpired, draftPendingNames, normalizeDraft } from './draft.js'
 import type { AnchorWire, DraftSubject, DraftWire, RefWire } from './draft.js'
 import { type IconNode, icon } from './icon.js'
@@ -169,11 +171,35 @@ let pickGathered: Gathered[] = []
 /** What an open element or region popup is about. Null for every other popup -
  *  a text run, a rebuilt draft - which Shift+click cannot add to. */
 let popupItems: Gathered[] | null = null
+/** Whether this document's members are part of a selection spanning others -
+ *  other frames, other device previews, whole canvas frames. While they are,
+ *  the shell settles it: one composer, one reference, for all of it. */
+const multi = { compose: false, pick: false }
+/** What each purpose last told the shell, so a repaint does not repeat it. */
+const shared = { compose: 'null', pick: 'null' }
+/** Held, and the popup elsewhere still takes Shift additions from here. */
+let heldExtendable = false
+/** What this page's composers may offer under `$` and `#`, as the shell says. */
+let composerAcp = false
+let composerPlaces: BatchTarget[] = []
+/** The pointer is in this document, as far as the shell has been told. */
+let pointerHere = false
+
+/** Everything a composer says, read off it in one walk. */
+interface Said {
+  comment: string
+  attachments: string[]
+  references: RefWire[]
+  skills: string[]
+  target: BatchTarget | null
+}
+
+type Save = (said: Said) => Promise<void>
 
 interface PopupTarget {
   subject: DraftSubject
   rect: () => DOMRect
-  save: (comment: string, attachments: string[], references: RefWire[]) => Promise<void>
+  save: Save
   /** The element an explore would be about; a box or a group has none. */
   element: Element | null
 }
@@ -634,7 +660,7 @@ const EXPLORE_PLACEHOLDER = '給予探索方向，或留白自由探索'
 function openPopup(
   subject: DraftSubject,
   anchor: () => DOMRect,
-  onSave: (comment: string, attachments: string[], references: RefWire[]) => Promise<void>,
+  onSave: Save,
   /** Taken through the open rather than set around it: `closePopup` below is
    *  what clears the previous one, and a caller assigning it first would have
    *  it wiped out from under them. */
@@ -709,7 +735,17 @@ function openPopup(
         enabled: () => canExplore && !!exploreTarget && !exploring,
         run: () => setExploring(true),
       },
+      ...directiveRows({ skills: () => composerAcp && !exploring, places: () => composerPlaces.length > 0 && !exploring }),
     ],
+    // An explore's direction is not a comment: it runs no skill and goes nowhere
+    // but the variants, so neither menu opens inside one.
+    ...(link.skills
+      ? {
+          skills: async () =>
+            composerAcp && !exploring ? skillCommands(await link.skills!(), (name) => attach.insertSkill(name)) : [],
+        }
+      : {}),
+    targets: () => (exploring ? [] : placeCommands(composerPlaces, (place) => attach.insertTarget(place))),
   })
   const input = attach.editable
   ui.popupAttach = attach
@@ -782,6 +818,8 @@ function openPopup(
     const comment = attach.text()
     const attachments = attach.ids()
     const references = attach.refs()
+    const skills = attach.skills()
+    const target = attach.target()
     // A pasted screenshot, or an element pointed at, can be the whole remark, so
     // text is only required when nothing came with it.
     // An explore with no direction is a request in its own right - "show me
@@ -813,7 +851,7 @@ function openPopup(
           references,
         })
       } else {
-        await commit(comment, attachments, references)
+        await commit({ comment, attachments, references, skills, target })
       }
     } catch {
       // Nothing was recorded, so the composer is taken back whole - text, files
@@ -890,7 +928,7 @@ function openPopup(
   popup.setAttribute('data-ez-subject', subject.kind)
   document.body.appendChild(popup)
   ui.popup = popup
-  post({ type: 'ez:popup', open: true, ...(subject.anchor.frames ? { frames: subject.anchor.frames } : {}) })
+  post({ type: 'ez:popup', open: true })
   popupRect = anchor
   paintPopup()
   // The click painted the highlight before this popup existed, so the label is
@@ -902,9 +940,7 @@ function openPopup(
 async function saveAnnotation(
   kind: AnnotationWire['kind'],
   element: Element | null,
-  comment: string,
-  attachments: string[],
-  references: RefWire[],
+  said: Said,
   extra?: {
     selectedText?: string
     pin?: { x: number; y: number }
@@ -917,7 +953,16 @@ async function saveAnnotation(
   const anchor =
     extra?.anchor ?? (element ? buildAnchor(element, extra?.selectedText, extra?.pin) : null)
   if (!anchor) throw new Error('no anchor to save against')
-  await link.annotate({ kind, comment, attachments, references, anchor })
+  const { comment, attachments, references, skills, target } = said
+  await link.annotate({
+    kind,
+    comment,
+    attachments,
+    references,
+    anchor,
+    ...(skills.length ? { skills } : {}),
+    ...(target ? { target } : {}),
+  })
 }
 
 // ---------------------------------------------------------------- restore
@@ -1058,8 +1103,8 @@ function rebuildPopup(draft: DraftWire, subject: DraftSubject, target: Element |
       : target
         ? () => target.getBoundingClientRect()
         : () => staleRect(subject.anchor.rect),
-    (comment, files, refs) =>
-      saveAnnotation(subject.kind, target, comment, files, refs, {
+    (said) =>
+      saveAnnotation(subject.kind, target, said, {
         selectedText: subject.selectedText,
         pin: subject.pin,
         // Keeps the recorded viewport too: it says what the user was actually
@@ -1096,10 +1141,19 @@ function resolveSelector(selector: string | undefined): Element | null {
 /** Whether this screen is the one an annotation was made on. An annotation from
  *  before the shell could show several at once carries no device, so it has no
  *  screen to be kept off and shows wherever it lands. */
-function madeHere(a: AnnotationWire): boolean {
+function madeHere(anchor: AnchorWire): boolean {
   if (!scopedToDevice) return true
-  const preset = a.anchor.viewport?.preset
+  const preset = anchor.viewport?.preset
   return !preset || preset === viewportPreset
+}
+
+/** The anchor a marker on this screen sits on: of one spread over several
+ *  previews, the part made here. A relay overlay is handed its own part already. */
+function anchorHere(a: AnnotationWire): AnchorWire | null {
+  const here = (anchor: AnchorWire) =>
+    (link.kind === 'relay' || anchor.page === location.pathname) && madeHere(anchor)
+  if (!a.anchor.parts?.length) return here(a.anchor) ? a.anchor : null
+  return a.anchor.parts.find(here) ?? null
 }
 
 /** Viewport coordinates for a marker. A point annotation re-derives its spot from
@@ -1107,27 +1161,27 @@ function madeHere(a: AnnotationWire): boolean {
  *  marker follows the layout across viewports; the absolute page coordinate is
  *  only trusted when the element is gone, and only inside the layout it was
  *  recorded in. */
-function markerPosition(a: AnnotationWire): { top: number; left: number } | null {
-  if (a.anchor.frames?.length) return { top: -window.scrollY, left: -window.scrollX }
-  const target = resolveSelector(a.anchor.selector)
+function markerPosition(kind: AnnotationWire['kind'], anchor: AnchorWire): { top: number; left: number } | null {
+  if (anchor.frames?.length) return { top: -window.scrollY, left: -window.scrollX }
+  const target = resolveSelector(anchor.selector)
   const rect = target?.getBoundingClientRect()
   const live = rect && (rect.width > 0 || rect.height > 0) ? rect : null
-  if (a.kind === 'point' && a.anchor.point) {
+  if (kind === 'point' && anchor.point) {
     if (live) {
       return {
-        top: live.top + a.anchor.point.rel.y * live.height,
-        left: live.left + a.anchor.point.rel.x * live.width,
+        top: live.top + anchor.point.rel.y * live.height,
+        left: live.left + anchor.point.rel.x * live.width,
       }
     }
-    if (a.anchor.viewport && window.innerWidth !== a.anchor.viewport.width) return null
-    return { top: a.anchor.point.y - window.scrollY, left: a.anchor.point.x - window.scrollX }
+    if (anchor.viewport && window.innerWidth !== anchor.viewport.width) return null
+    return { top: anchor.point.y - window.scrollY, left: anchor.point.x - window.scrollX }
   }
   // A framed region's marker sits on the box the user drew, not on the common
   // ancestor the anchor resolves to - that can be as wide as the page. The box
   // is a coordinate, so it only holds inside the layout it was drawn in.
-  if (a.anchor.contains?.length && a.anchor.rect) {
-    if (!a.anchor.viewport || window.innerWidth === a.anchor.viewport.width) {
-      return { top: a.anchor.rect.y - window.scrollY, left: a.anchor.rect.x - window.scrollX }
+  if (anchor.contains?.length && anchor.rect) {
+    if (!anchor.viewport || window.innerWidth === anchor.viewport.width) {
+      return { top: anchor.rect.y - window.scrollY, left: anchor.rect.x - window.scrollX }
     }
     return live ? { top: live.top, left: live.left } : null
   }
@@ -1137,12 +1191,9 @@ function markerPosition(a: AnnotationWire): { top: number; left: number } | null
 function renderMarkers(): void {
   ui.markers.textContent = ''
   if (pick) return
-  // A relay overlay is handed only its own frame's annotations, page-less.
-  const relevant = annotations.filter(
-    (a) => (link.kind === 'relay' || a.anchor.page === location.pathname) && madeHere(a),
-  )
-  relevant.forEach((a) => {
-    const at = markerPosition(a)
+  annotations.forEach((a) => {
+    const anchor = anchorHere(a)
+    const at = anchor && markerPosition(a.kind, anchor)
     if (!at) return
     const marker = el('div', 'ez-marker')
     // The queue's number, so a pin and its row in the sidebar say the same thing
@@ -1343,6 +1394,7 @@ function endPick(): Pick {
   document.documentElement.removeAttribute('data-ez-pick')
   document.documentElement.removeAttribute('data-ez-pick-hot')
   pickGathered = []
+  reportShare('pick')
   hoverTarget = null
   moveHighlight(done.prevHighlight)
   scheduleRepaint()
@@ -1369,6 +1421,7 @@ function landPick(e: MouseEvent): void {
 function pickGather(item: Gathered): void {
   pickGathered = toggled(pickGathered, item)
   paintGathered()
+  reportShare('pick')
 }
 
 /** One element or box is the ordinary reference to it; several are one group. */
@@ -1442,7 +1495,8 @@ function paintRegion(): void {
 function startFraming(at: Point): void {
   framing = { from: at, to: at }
   pendingFrame = null
-  if (link.kind === 'relay' && mode === 'region' && !pick && !ui.popup && !held) {
+  // A pick's box is carried across frames too: several frames are an answer.
+  if (link.kind === 'relay' && (pick || (mode === 'region' && !ui.popup && !held))) {
     sweepAnnounced = true
     post({ type: 'ez:sweep-start', from: { x: at.x - window.scrollX, y: at.y - window.scrollY } })
   }
@@ -1568,25 +1622,57 @@ function sweepTaken(): void {
 }
 
 /** The board settled a carried box on this frame alone: it is this frame's
- *  region after all. `from` and `to` are in this viewport. */
-function composeSweptBack(from: Point, to: Point): void {
-  if (mode !== 'region' || ui.popup || held || pick) return
+ *  region after all - or, during a pick, its answer. `from` and `to` are in
+ *  this viewport; `add` is Shift. */
+function composeSweptBack(from: Point, to: Point, add: boolean): void {
   const page = (p: Point) => ({ x: p.x + window.scrollX, y: p.y + window.scrollY })
-  compose([{ box: regionFrom(page(from), page(to)) }])
+  const box = regionFrom(page(from), page(to))
+  if (pick) {
+    if (add) pickGather({ box })
+    else deliverPick(regionRef(box))
+    return
+  }
+  if (mode !== 'region' || ui.popup || held) return
+  if (add) gather({ box })
+  else compose([{ box }])
 }
 
-/** A popup about whole frames, opened by the shell: their titles were clicked,
- *  or a box swept across them. Nothing here is the subject, so nothing is
- *  highlighted; the shell outlines the frames themselves. */
-function composeFrames(anchor: AnchorWire, at: Point | null): void {
-  if (mode === 'off' || ui.popup || held || pick) return
-  dismiss()
-  openPopup(
-    { kind: 'element', page: location.pathname, anchor },
-    () => (at ? new DOMRect(at.x, at.y, 0, 0) : new DOMRect(0, 0, window.innerWidth, 0)),
-    (comment, files, refs) => saveAnnotation('element', null, comment, files, refs, { anchor }),
-  )
+/** A popup about a selection that spans documents, opened - or pointed at it,
+ *  if one is up - by the shell. The anchor is the shell's; this document's own
+ *  members stay painted as theirs, and the popup sits by the last of them, or
+ *  at `at`, or along the top for a selection of whole frames, which the shell
+ *  outlines itself. */
+function composeGroup(anchor: AnchorWire, at: Point | null): void {
+  if (mode === 'off' || pick) return
+  const last = gathered[gathered.length - 1]
+  const kept = ui.popup ? popupRect : null
+  const target: PopupTarget = {
+    subject: { kind: 'element', page: location.pathname, anchor },
+    rect: last
+      ? itemRect(last)
+      : (kept ?? (at ? () => new DOMRect(at.x, at.y, 0, 0) : () => new DOMRect(0, 0, window.innerWidth, 0))),
+    save: (said) => saveAnnotation('element', null, said, { anchor }),
+    element: null,
+  }
+  if (ui.popup) {
+    if (!retargetPopup?.(target)) return
+  } else {
+    if (held) return
+    movePin(null)
+    ui.selectionBubble?.remove()
+    ui.selectionBubble = null
+    openPopup(target.subject, target.rect, target.save)
+  }
+  popupItems = [...gathered]
+  markedRegion = null
+  paintRegion()
+  hoverTarget = null
+  moveHighlight(null)
+  paintGathered()
 }
+
+const itemRect = (item: Gathered): (() => DOMRect) =>
+  'element' in item ? () => item.element.getBoundingClientRect() : () => regionViewportRect(item.box)
 
 // ---------------------------------------------------------------- gathering
 
@@ -1602,11 +1688,41 @@ function toggled(items: Gathered[], item: Gathered): Gathered[] {
 function gather(item: Gathered): void {
   gathered = toggled(gathered, item)
   paintGathered()
+  reportShare('compose')
 }
 
 function dropGathered(): void {
   if (!gathered.length) return
   gathered = []
+  paintGathered()
+  reportShare('compose')
+}
+
+/** This document's members as the shell is told them: one anchor - built the
+ *  way this document's own composer or pick would build it - and one line per
+ *  member. Only framed: unframed there is no shell, and nothing else to span. */
+function reportShare(purpose: 'compose' | 'pick'): void {
+  if (!framed) return
+  const items = purpose === 'pick' ? pickGathered : gathered
+  const share = items.length
+    ? {
+        anchor: purpose === 'pick' ? gatheredRef(items).anchor : composeTarget(items).subject.anchor,
+        lines: groupLines(groupMembers(items).map(framedLabel)),
+      }
+    : null
+  const said = JSON.stringify(share)
+  if (said === shared[purpose]) return
+  shared[purpose] = said
+  post({ type: 'ez:share', purpose, anchor: share?.anchor ?? null, lines: share?.lines ?? [] })
+}
+
+/** The shell spent or refused the selection: this document's members go, and
+ *  nothing is said back about it. */
+function endShare(purpose: 'compose' | 'pick'): void {
+  multi[purpose] = false
+  shared[purpose] = 'null'
+  if (purpose === 'pick') pickGathered = []
+  else if (!ui.popup) gathered = []
   paintGathered()
 }
 
@@ -1688,7 +1804,7 @@ function composeTarget(items: Gathered[]): PopupTarget {
     return {
       subject: subjectOf('element', element),
       rect: () => element.getBoundingClientRect(),
-      save: (comment, files, refs) => saveAnnotation('element', element, comment, files, refs),
+      save: (said) => saveAnnotation('element', element, said),
       element,
     }
   }
@@ -1699,8 +1815,8 @@ function composeTarget(items: Gathered[]): PopupTarget {
   const last = items[items.length - 1]!
   return {
     subject: { kind: 'element', page: location.pathname, anchor },
-    rect: 'element' in last ? () => last.element.getBoundingClientRect() : () => regionViewportRect(last.box),
-    save: (comment, files, refs) => saveAnnotation('element', null, comment, files, refs, { anchor }),
+    rect: itemRect(last),
+    save: (said) => saveAnnotation('element', null, said, { anchor }),
     element: null,
   }
 }
@@ -1722,12 +1838,19 @@ function compose(items: Gathered[]): void {
   hoverTarget = null
   moveHighlight(null)
   paintGathered()
+  reportShare('compose')
 }
 
 /** The open popup can still take Shift+clicks: it came from element or region
  *  mode, and nothing is covering it. */
 function extendable(): boolean {
   return Boolean(ui.popup) && !pick?.suspended && popupItems !== null && !held
+}
+
+/** Shift+click here adds to the selection being composed: into this frame's
+ *  own popup, or - held - into the one open in another document. */
+function canAdd(): boolean {
+  return extendable() || (held && heldExtendable && !pick)
 }
 
 function stepAside(): void {
@@ -1749,24 +1872,32 @@ function reachingWithShift(e: MouseEvent): void {
 }
 
 function extend(item: Gathered): void {
-  compose(toggled(popupItems!, item))
+  const items = toggled(popupItems!, item)
+  // About more than this document: the shell points the popup at the whole of
+  // it again once it hears what this one's members now are.
+  if (!multi.compose) return compose(items)
+  popupItems = items
+  gathered = items
+  paintGathered()
+  reportShare('compose')
 }
 
 /** Shift is up: the gathered set opens, and the frame that was offering the next
- *  addition to an open popup goes. Also reached from a move with Shift up, for a
- *  keyup lost to focus. */
+ *  addition goes. Also reached from a move with Shift up, for a keyup lost to
+ *  focus. A selection spanning other documents is not this one's to settle: the
+ *  shell does that, once, wherever Shift came up. */
 function shiftReleased(): void {
   shiftFrom = null
   if (pick) {
-    if (pickGathered.length) deliverPick(gatheredRef(pickGathered))
+    if (pickGathered.length && !multi.pick) deliverPick(gatheredRef(pickGathered))
     return
   }
-  if (ui.popup && popupItems && hoverTarget) {
+  if ((popupItems || held) && hoverTarget) {
     hoverTarget = null
     moveHighlight(null)
   }
   setPopupAside?.(false)
-  if (!gathered.length || ui.popup || held || pick) return
+  if (!gathered.length || ui.popup || held || multi.compose) return
   compose(gathered)
 }
 
@@ -1813,6 +1944,10 @@ function setMode(next: Mode): void {
 
 function onMouseMove(e: MouseEvent): void {
   lastPointer = { x: e.clientX, y: e.clientY }
+  if (!pointerHere && framed) {
+    pointerHere = true
+    post({ type: 'ez:pointer-here' })
+  }
   if (!e.shiftKey) shiftReleased()
   else reachingWithShift(e)
   if (framing) {
@@ -1847,7 +1982,7 @@ function onMouseMove(e: MouseEvent): void {
   // Region mode has no hover frame: the gesture is a sweep over an area, and a
   // box chasing the cursor would promise an element click that means nothing.
   // With an element popup open, the frame shows only what a Shift+click would add.
-  const offering = mode === 'element' && e.shiftKey && extendable()
+  const offering = mode === 'element' && e.shiftKey && canAdd()
   if (!pick && !offering && (mode === 'off' || mode === 'region' || ui.popup || held)) return
   // A selected run has already named the subject, so the frame stops answering
   // the pointer and sits on the run's own element. Letting it keep chasing would
@@ -1866,7 +2001,11 @@ function onMouseMove(e: MouseEvent): void {
  *  read as a selection nobody made. A popup's pinned subject and a live text
  *  selection stay - those mark a choice, not the pointer. */
 function onMouseLeave(): void {
-  if ((ui.popup && !popupItems) || !hoverTarget) return
+  if (!hoverTarget) return
+  // Outside a pick, a popup that is not about a Shift selection has its
+  // subject in the frame, not under the pointer. During one, the frame is
+  // only ever the pointer's.
+  if (!pick && ui.popup && !popupItems) return
   if (!pick && liveSelectionRange()) return
   hoverTarget = null
   moveHighlight(null)
@@ -1898,7 +2037,7 @@ function onMouseDown(e: MouseEvent): void {
   // not reach the page either, the way an armed mode's gestures never do.
   if (ui.popup || held) {
     e.preventDefault()
-    if (mode === 'region' && e.shiftKey && extendable()) pendingFrame = pagePoint(e)
+    if (mode === 'region' && e.shiftKey && canAdd()) pendingFrame = pagePoint(e)
     return
   }
   // A Shift press would otherwise extend a text selection from the last click.
@@ -1945,9 +2084,11 @@ function onClick(e: MouseEvent): void {
   if (ui.popup || held) {
     e.preventDefault()
     e.stopPropagation()
-    if (mode === 'element' && e.shiftKey && extendable() && e.target instanceof Element) {
-      extend({ element: e.target })
-      stepAside()
+    if (mode === 'element' && e.shiftKey && e.target instanceof Element) {
+      if (extendable()) {
+        extend({ element: e.target })
+        stepAside()
+      } else if (canAdd()) gather({ element: e.target })
     }
     return
   }
@@ -1988,7 +2129,11 @@ function onMouseUp(e: MouseEvent): void {
     // Re-checked at release, not only at press: a draft restored into this frame
     // mid-drag has a popup open by now, and opening over it would discard the
     // uploads it is still holding.
-    if (mode !== 'region' || held) return
+    if (mode !== 'region') return
+    if (held) {
+      if (e.shiftKey && canAdd()) gather({ box })
+      return
+    }
     if (ui.popup) {
       if (e.shiftKey && extendable()) {
         extend({ box })
@@ -2024,8 +2169,7 @@ function onMouseUp(e: MouseEvent): void {
       openPopup(
         subjectOf('text', container, { selectedText: text }),
         () => range.getBoundingClientRect(),
-        (comment, files, refs) =>
-          saveAnnotation('text', container, comment, files, refs, { selectedText: text }),
+        (said) => saveAnnotation('text', container, said, { selectedText: text }),
         range,
       )
     }
@@ -2112,7 +2256,7 @@ function onKeyDown(e: KeyboardEvent): void {
   // Shift alone leaves the popup where it is: it is also how a capital or a
   // full-width punctuation mark is typed into it. A pointer moved with it held,
   // or an element added, is what sends the popup aside.
-  if (e.key === 'Shift' && extendable()) {
+  if (e.key === 'Shift' && canAdd()) {
     if (!e.repeat) shiftFrom = lastPointer
     if (mode === 'element' && !composerFocused()) frameUnderPointer()
   } else if (e.key !== 'Shift' && popupAside() && composerFocused()) {
@@ -2291,7 +2435,10 @@ function boot(): void {
   // On the document itself, uncaptured: mouseleave does not bubble, so this
   // fires only when the pointer exits the page - not on every element boundary
   // a capture listener would hear about.
-  document.addEventListener('mouseleave', onMouseLeave)
+  document.addEventListener('mouseleave', () => {
+    pointerHere = false
+    onMouseLeave()
+  })
   document.addEventListener('click', onClick, true)
   if (framed) document.addEventListener('click', onNavClick)
   document.addEventListener('mouseup', onMouseUp, true)
@@ -2300,7 +2447,11 @@ function boot(): void {
     'keyup',
     (e) => {
       if (isModKey(e.key)) setModHeld(false)
-      if (e.key === 'Shift') shiftReleased()
+      if (e.key !== 'Shift') return
+      // The shell settles a selection spanning documents, and the others may
+      // not have the focus to hear this.
+      if (framed) post({ type: 'ez:shift-released' })
+      shiftReleased()
     },
     true,
   )
@@ -2342,6 +2493,12 @@ function boot(): void {
       at?: Point | null
       from?: Point
       to?: Point
+      add?: boolean
+      purpose?: 'compose' | 'pick'
+      multi?: boolean
+      extendable?: boolean
+      acp?: boolean
+      places?: BatchTarget[]
     }
     // What the page is being asked to show in place of what it really has, and
     // whether an explore can be started at all.
@@ -2375,17 +2532,34 @@ function boot(): void {
       armPick(data.host ?? 'note', data.pickId)
     }
     if (data?.type === 'ez:hold') {
+      const was = held
       held = Boolean(data.held)
-      if (held) {
+      heldExtendable = held && data.extendable === true
+      if (held && !was) {
         // A drag can be mid-flight when the hold lands: a draft restored into
         // another frame opens its popup under the user's hand.
         endFraming()
-        dropGathered()
+        // Unless they are what that popup is about.
+        if (!multi.compose) dropGathered()
         hoverTarget = null
         moveHighlight(null)
         ui.selectionBubble?.remove()
         ui.selectionBubble = null
       }
+    }
+    if (data?.type === 'ez:selection' && data.purpose) {
+      multi[data.purpose] = data.multi === true
+      // Back to this document alone: its popup is about its own members again.
+      if (data.purpose === 'compose' && !multi.compose && ui.popup && popupItems && gathered.length) compose(gathered)
+    }
+    if (data?.type === 'ez:selection-end' && data.purpose) endShare(data.purpose)
+    if (data?.type === 'ez:composer') {
+      composerAcp = data.acp === true
+      composerPlaces = Array.isArray(data.places) ? data.places : []
+    }
+    if (data?.type === 'ez:pointer-away') {
+      pointerHere = false
+      onMouseLeave()
     }
     if (data?.type === 'ez:scroll-to' && typeof data.ratio === 'number') scrollToRatio(data.ratio)
     if (data?.type === 'ez:pick-abort') cancelPick('abort')
@@ -2398,8 +2572,8 @@ function boot(): void {
     }
     if (data?.type === 'ez:restore' && data.draft) restoreDraft(data.draft)
     if (data?.type === 'ez:sweep-taken') sweepTaken()
-    if (data?.type === 'ez:sweep-local' && data.from && data.to) composeSweptBack(data.from, data.to)
-    if (data?.type === 'ez:compose-frames' && data.anchor) composeFrames(data.anchor, data.at ?? null)
+    if (data?.type === 'ez:sweep-local' && data.from && data.to) composeSweptBack(data.from, data.to, data.add === true)
+    if (data?.type === 'ez:compose-group' && data.anchor) composeGroup(data.anchor, data.at ?? null)
   })
 
   link.subscribe((snapshot) => {

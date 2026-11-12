@@ -115,16 +115,15 @@ export interface BoardHost {
   /** Escape on the board, or a click on its empty background: stand down any
    *  pick or popup. */
   escape(): void
-  /** A frame's title clicked while a pick is out: the whole frame answers it. */
-  chooseFrame(frame: FrameWire): void
-  /** While annotating: a comment about these whole frames, written in `host`'s
-   *  popup at `at` in its viewport (null: its top-left). */
-  composeFrames(frames: FrameWire[], host: FrameWire, at: Point | null): void
+  /** While annotating or picking: these whole frames, for a comment written in
+   *  `host`'s popup at `at` in its viewport (null: its top-left), or as the
+   *  pick's answer. `add` is Shift: join the selection rather than settle it. */
+  selectFrames(frames: FrameWire[], host: FrameWire, at: Point | null, add: boolean): void
   /** The pointer left `frame` mid-drag: the board has its box now. */
   takeSweep(frame: FrameWire): void
   /** A box carried out of `frame` that touched no other: hand it back to the
    *  frame as its own region, `from` and `to` in its viewport. */
-  returnSweep(frame: FrameWire, from: Point, to: Point): void
+  returnSweep(frame: FrameWire, from: Point, to: Point, add: boolean): void
 }
 
 /** Whole frames a gesture settled on, and where to ask about them. */
@@ -205,8 +204,8 @@ type Gesture =
       /** What a shift-press keeps selected. */
       base: ReadonlySet<FrameId>
       started: boolean
-      /** Region mode: the box comments on the frames it touches rather than
-       *  selecting them. */
+      /** Region mode, or a pick: the box is about the frames it touches rather
+       *  than selecting them. */
       sweep: boolean
     }
 
@@ -238,10 +237,12 @@ export class BoardView {
   private readonly mounted = new Set<FrameId>()
   private picking = false
   private annotating: Mode = 'off'
-  /** Outlined as the subject of the open comment, or of the box being swept. */
-  private targets = new Set<FrameId>()
+  /** Under the box being swept, outlined as it goes. */
+  private swept = new Set<FrameId>()
   /** The frames whose comment is open: kept mounted, as a selection is. */
   private composing = new Set<FrameId>()
+  /** Whole frames Shift has gathered for the pick that is out. */
+  private picked = new Set<FrameId>()
   /** A region drag under way in `frame`, which the board takes on if the
    *  pointer leaves it. */
   private armed: { frame: FrameWire; origin: Point } | null = null
@@ -442,7 +443,13 @@ export class BoardView {
   /** The comment about these frames opened (or, with none, closed). */
   setComposing(ids: readonly FrameId[]): void {
     this.composing = new Set(ids)
-    this.paintTargets(this.composing)
+    this.paintTargets()
+  }
+
+  /** The whole frames gathered for the pick (or, with none, nothing). */
+  setPicked(ids: readonly FrameId[]): void {
+    this.picked = new Set(ids)
+    this.paintTargets()
   }
 
   /** A region drag began in `frame` at `from` in its viewport. Chrome sends a
@@ -491,16 +498,16 @@ export class BoardView {
     this.paintTargets(new Set(this.framesIn(box).map((f) => f.id)))
   }
 
-  /** Several frames: a comment about them all. Only the one it started in: its
-   *  own region after all, clipped to it. */
-  private settleCarried(): void {
+  /** Several frames: a comment about them all, or the pick's answer. Only the
+   *  one it started in: its own region after all, clipped to it. */
+  private settleCarried(add: boolean): void {
     const c = this.carried
     if (!c) return
     this.dropCarried()
     const touched = this.framesIn(boxBetween(c.origin, c.at))
     if (touched.length > 1) {
       const target = this.framesTarget(touched, c.at, c.frame)
-      if (target) this.host.composeFrames(target.frames, target.host, target.at)
+      if (target) this.host.selectFrames(target.frames, target.host, target.at, add)
       return
     }
     const { rect } = c.frame
@@ -508,7 +515,7 @@ export class BoardView {
       x: Math.min(Math.max(p.x, rect.x), rect.x + rect.width) - rect.x,
       y: Math.min(Math.max(p.y, rect.y), rect.y + rect.height) - rect.y,
     })
-    this.host.returnSweep(c.frame, local(c.origin), local(c.at))
+    this.host.returnSweep(c.frame, local(c.origin), local(c.at), add)
   }
 
   private guestToWorld(frame: FrameWire, p: Point): Point {
@@ -535,6 +542,8 @@ export class BoardView {
     if (!camera) return
     const screen = boxBetween(worldToScreen(camera, world), worldToScreen(camera, { x: world.x + world.width, y: world.y + world.height }))
     this.marquee.classList.add('ez-sweeping')
+    // A pick's box lands in a ref chip, so it is drawn in the pick's pink.
+    this.marquee.classList.toggle('ez-sweep-pick', this.picking)
     this.marquee.style.transform = `translate(${screen.x}px, ${screen.y}px)`
     this.marquee.style.width = `${screen.width}px`
     this.marquee.style.height = `${screen.height}px`
@@ -545,12 +554,19 @@ export class BoardView {
     if (!this.marquee.classList.contains('ez-sweeping')) return
     this.marquee.classList.remove('ez-sweeping')
     this.marquee.hidden = true
-    this.paintTargets(this.composing)
+    this.paintTargets()
   }
 
-  private paintTargets(ids: ReadonlySet<FrameId>): void {
-    this.targets = new Set(ids)
-    for (const [id, card] of this.cards) card.el.classList.toggle('ez-annotate-target', this.targets.has(id))
+  /** `swept` is what the live box is over: a comment's subject, or a pick's. */
+  private paintTargets(swept: ReadonlySet<FrameId> = new Set()): void {
+    this.swept = new Set(swept)
+    for (const [id, card] of this.cards) this.paintTarget(id, card)
+  }
+
+  private paintTarget(id: FrameId, card: Card): void {
+    const swept = this.swept.has(id)
+    card.el.classList.toggle('ez-annotate-target', this.composing.has(id) || (swept && !this.picking))
+    card.el.classList.toggle('ez-pick-chosen', this.picked.has(id) || (swept && this.picking))
   }
 
   /** While a pick is out, a frame's title answers it with the whole frame,
@@ -559,7 +575,13 @@ export class BoardView {
     this.picking = on
     this.el.classList.toggle('ez-picking-frames', on)
     this.paintHandles()
-    if (!on) this.markPickTarget(null)
+    if (on) return
+    this.markPickTarget(null)
+    this.setPicked([])
+    if (this.annotating !== 'region') {
+      this.disarm()
+      this.dropCarried()
+    }
   }
 
   private onHeadOver(e: PointerEvent): void {
@@ -784,7 +806,7 @@ export class BoardView {
     for (const [id, card] of this.cards) {
       card.el.setAttribute('aria-selected', String(this.selection.has(id)))
       card.head.classList.toggle('ez-selected', this.selection.has(id))
-      card.el.classList.toggle('ez-annotate-target', this.targets.has(id))
+      this.paintTarget(id, card)
     }
     this.paintHandles()
   }
@@ -1101,7 +1123,7 @@ export class BoardView {
     if (pickedHead) {
       e.preventDefault()
       const card = this.cards.get(pickedHead.dataset.frameId as FrameId)
-      if (card) this.host.chooseFrame(card.frame)
+      if (card) this.host.selectFrames([card.frame], card.frame, null, e.shiftKey)
       return
     }
     const cardEl = target.closest<HTMLElement>('.ez-board-frame, .ez-board-frame-head')
@@ -1153,10 +1175,12 @@ export class BoardView {
       return
     }
     if (!id) {
-      const sweep = this.annotating === 'region'
+      const sweep = this.annotating === 'region' || this.picking
       this.setLive(null)
       if (!e.shiftKey || sweep) this.select(new Set())
-      this.host.escape()
+      // A pick is called off by a click on the background, not by a drag: the
+      // drag is how its answer is swept over several frames.
+      if (!this.picking) this.host.escape()
       const from = this.boardPoint(e)
       start({
         t: 'marquee',
@@ -1180,7 +1204,7 @@ export class BoardView {
     if (this.carried && this.camera) {
       this.carried.at = screenToWorld(this.camera, this.boardPoint(e))
       if (e.buttons & 1) this.paintCarried()
-      else this.settleCarried()
+      else this.settleCarried(e.shiftKey)
       return
     }
     const g = this.gesture
@@ -1282,7 +1306,7 @@ export class BoardView {
     if (this.carried && this.camera) {
       if (cancelled) return this.dropCarried()
       this.carried.at = screenToWorld(this.camera, this.boardPoint(e))
-      this.settleCarried()
+      this.settleCarried(e.shiftKey)
       return
     }
     const g = this.gesture
@@ -1304,14 +1328,16 @@ export class BoardView {
     }
     if (g.t === 'marquee' && g.sweep) {
       this.endSweep()
-      if (g.started && !cancelled && this.camera) this.composeSwept(g.origin, screenToWorld(this.camera, g.at))
+      if (cancelled || !this.camera) return
+      if (g.started) this.composeSwept(g.origin, screenToWorld(this.camera, g.at), e.shiftKey)
+      else if (this.picking) this.host.escape()
       return
     }
     if (g.t !== 'move') return
     if (!g.started) {
       if (g.toggleOnClick) this.select(new Set([...this.selection].filter((id) => id !== g.toggleOnClick)))
       const frame = g.composeOnClick && !cancelled ? this.cards.get(g.composeOnClick) : null
-      if (frame?.iframe) this.host.composeFrames([frame.frame], frame.frame, null)
+      if (frame?.iframe) this.host.selectFrames([frame.frame], frame.frame, null, e.shiftKey)
       return
     }
     if (cancelled || (g.dx === 0 && g.dy === 0)) {
@@ -1335,9 +1361,9 @@ export class BoardView {
     this.paintHeads()
   }
 
-  private composeSwept(origin: Point, end: Point): void {
+  private composeSwept(origin: Point, end: Point, add: boolean): void {
     const target = this.framesTarget(this.framesIn(boxBetween(origin, end)), end)
-    if (target) this.host.composeFrames(target.frames, target.host, target.at)
+    if (target) this.host.selectFrames(target.frames, target.host, target.at, add)
   }
 
   /** A double-click on a frame hands it the pointer, to scroll it or try its
