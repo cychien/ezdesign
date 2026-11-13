@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.13.0](https://github.com/cychien/ezdesign/compare/v0.12.0...v0.13.0) (2026-11-12)
+
+
+### Features
+
+* **canvas:** comment on whole frames, and bare shortcuts under an IME ([#95](https://github.com/cychien/ezdesign/issues/95)) ([7c38866](https://github.com/cychien/ezdesign/commit/7c38866a97b0af179535fb71e97a67089f4a2d6d))
+* **canvas:** copy, cut and paste frames, by reference, onto any canvas of the project ([#100](https://github.com/cychien/ezdesign/issues/100)) ([9113ccd](https://github.com/cychien/ezdesign/commit/9113ccdadfc0e4011662ddb513d0714b28c07803))
+* **canvas:** resize a pasted image by its handles, as in Figma ([#96](https://github.com/cychien/ezdesign/issues/96)) ([20611b3](https://github.com/cychien/ezdesign/commit/20611b3f5fbafe044e0c43b5dd4daf2b2b735562))
+* **overlay:** one Shift selection across canvas frames and device previews, and $ / # in the page composer ([#101](https://github.com/cychien/ezdesign/issues/101)) ([6e0551c](https://github.com/cychien/ezdesign/commit/6e0551c56c59ab1c08aa11753bb7566dad1224e2))
+* **shell:** install the Chrome extension and the Mac app from one menu, kept live ([#97](https://github.com/cychien/ezdesign/issues/97)) ([d261389](https://github.com/cychien/ezdesign/commit/d261389a180ceb3551f563f5ed66d17f19ebb5e8))
+* **shell:** the library beside the page, and its references dragged into a comment or onto a canvas ([#98](https://github.com/cychien/ezdesign/issues/98)) ([7b86898](https://github.com/cychien/ezdesign/commit/7b868980357e822c4c78626c651fd54ba7e018ff))
+
+
+### Bug Fixes
+
+* **app-proxy:** present the app's own origin for requests its page makes through the proxy ([#93](https://github.com/cychien/ezdesign/issues/93)) ([632de22](https://github.com/cychien/ezdesign/commit/632de22af3be93030fc157b9256af5c5268df1c6))
+* **dev-server:** show the origin that serves a page, not the first one printed ([#90](https://github.com/cychien/ezdesign/issues/90)) ([cff44fc](https://github.com/cychien/ezdesign/commit/cff44fc0ffd37d396b52a76d289fd291884c3205))
+* **overlay:** Shift alone leaves the comment popup up; reaching past it with the pointer is what hides it ([#99](https://github.com/cychien/ezdesign/issues/99)) ([424a124](https://github.com/cychien/ezdesign/commit/424a124e0a8b291401c4bd0695f224d02f495733))
+
 ## [0.12.0](https://github.com/cychien/ezdesign/compare/v0.11.0...v0.12.0) (2026-11-04)
 
 
