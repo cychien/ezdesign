@@ -2823,31 +2823,47 @@ interface RangeDaemon {
   boundAt?: bigint
 }
 
+type RangePort = { kind: 'ours'; daemon: RangeDaemon } | { kind: 'not-ours' } | { kind: 'silent' }
+
+async function probeRangePort(port: number): Promise<RangePort> {
+  try {
+    const res = await fetch(`http://127.0.0.1:${port}/control/health`, {
+      signal: AbortSignal.timeout(400),
+    })
+    if (!res.ok) return { kind: 'not-ours' }
+    const body = (await res.json()) as {
+      service?: string
+      pid?: number
+      dataDirId?: string
+      boundAt?: string
+    }
+    if (body.service !== APP_NAME || typeof body.pid !== 'number') return { kind: 'not-ours' }
+    if (body.pid === process.pid || !servesThisDataDir(body)) return { kind: 'not-ours' }
+    const boundAt = body.boundAt === undefined ? undefined : BigInt(body.boundAt)
+    return { kind: 'ours', daemon: { port, pid: body.pid, boundAt } }
+  } catch (err) {
+    return err instanceof DOMException && err.name === 'TimeoutError' ? { kind: 'silent' } : { kind: 'not-ours' }
+  }
+}
+
+/** How long a port that took the connection may stay silent before it counts
+ *  as nothing. Inside the 8s `ensureDaemon` gives a daemon to come up. */
+const SILENT_PORT_PATIENCE_MS = 5000
+
 /** The other live daemons of this data dir in the control range - from a run
  *  whose registry file was deleted or corrupted, or a cold start racing this one.
  *  Adopting one beats racing it for ports and leaving two daemons alive with one
- *  registry between them. One serving another data dir is only a taken port. */
+ *  registry between them. One serving another data dir is only a taken port.
+ *  A port that took the connection but has not answered is asked again: a
+ *  daemon too busy to answer at once is still there. */
 async function ownDaemonsInRange(range: { ports: readonly number[] }): Promise<RangeDaemon[]> {
   const found: RangeDaemon[] = []
-  for (const port of range.ports) {
-    try {
-      const res = await fetch(`http://127.0.0.1:${port}/control/health`, {
-        signal: AbortSignal.timeout(400),
-      })
-      if (!res.ok) continue
-      const body = (await res.json()) as {
-        service?: string
-        pid?: number
-        dataDirId?: string
-        boundAt?: string
-      }
-      if (body.service !== APP_NAME || typeof body.pid !== 'number') continue
-      if (body.pid === process.pid || !servesThisDataDir(body)) continue
-      const boundAt = body.boundAt === undefined ? undefined : BigInt(body.boundAt)
-      found.push({ port, pid: body.pid, boundAt })
-    } catch {
-      /* nothing listening, or not us */
-    }
+  const deadline = Date.now() + SILENT_PORT_PATIENCE_MS
+  let asking = [...range.ports]
+  while (asking.length > 0) {
+    const answers = await Promise.all(asking.map(async (port) => ({ port, answer: await probeRangePort(port) })))
+    for (const { answer } of answers) if (answer.kind === 'ours') found.push(answer.daemon)
+    asking = Date.now() < deadline ? answers.filter((a) => a.answer.kind === 'silent').map((a) => a.port) : []
   }
   return found
 }
