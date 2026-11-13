@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.13.1](https://github.com/cychien/ezdesign/compare/v0.13.0...v0.13.1) (2026-11-13)
+
+
+### Bug Fixes
+
+* **daemon:** a daemon too busy to answer is adopted, not started again beside it ([#103](https://github.com/cychien/ezdesign/issues/103)) ([fea7e0f](https://github.com/cychien/ezdesign/commit/fea7e0fadf5117dd317aee4c1bd8311df7f89d8c))
+
 ## [0.13.0](https://github.com/cychien/ezdesign/compare/v0.12.0...v0.13.0) (2026-11-12)
 
 
